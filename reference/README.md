@@ -1,6 +1,6 @@
 # Reference Materials
 
-Third-party repos, gists, and saved pages collected during research for the twitter-export project. These are reference copies — not our code.
+Third-party repos, gists, and saved pages collected during research for the tweetxvault project. These are reference copies — not our code.
 
 ## Repos
 
@@ -46,6 +46,18 @@ Third-party repos, gists, and saved pages collected during research for the twit
 - **Origin**: Started Jan 2, 2026. 100 commits (65 on day one). Built with Claude Code (Opus 4.5) using beads for task coordination. Architecture ported from [bird](https://github.com/steipete/bird) (TypeScript). Essentially entirely AI-generated code — no copyright protection under current law.
 - **Key insight**: Closest existing tool to our project — same stack (Python + SQLite + cookie auth + internal GraphQL). Solves query hash auto-discovery (JS bundle parsing with 4 regex patterns + fallback list + 24h TTL cache). Good reference for feature flags (~60 per endpoint), checkpoint/resume, adaptive rate limiting, and export formats. Does NOT do media downloads, search/embeddings, or scheduling.
 - **Status**: Active (last updated Mar 2026)
+
+### helioLJ-TweetVault
+- **Source**: https://github.com/helioLJ/TweetVault
+- **What**: Self-hosted bookmark archive (Go 1.23 backend + Next.js 15 frontend + PostgreSQL, Docker Compose). Imports via ZIP upload from twitter-web-exporter extension. Stores media as Postgres blobs, tag management with per-bookmark completion tracking. ~3,600 LOC.
+- **Key insight**: Uses a PostgreSQL **materialized view** to pre-compute aggregated bookmark data (tags + media as JSON), refreshed every 5 min via goroutine — good pattern for read-heavy workloads with complex joins. Also tracks completion status per bookmark-tag pair (mark "To Read" as done without removing the tag).
+- **Status**: Active (MIT license)
+
+### TUNA-NOPE-TweetVault
+- **Source**: https://github.com/TUNA-NOPE/TweetVault
+- **What**: AI-powered post-processing tool — reads already-exported bookmark JSON, batch-classifies tweets via OpenRouter's free LLM API, generates organized Markdown output by category. Python CLI (~620 LOC) + Next.js web UI (~1,100 LOC).
+- **Key insight**: LLM can **dynamically create new categories** if tweets don't fit existing ones. Smart rate limiting with per-minute tracking, daily API caps with auto-sleep until midnight, and resumable batch processing (progress saved after every batch of 10). The auto-classification concept could inspire a future feature using local embeddings or LLM to auto-tag bookmarks by topic.
+- **Status**: Active (MIT license)
 
 ### UserScripts
 - **Source**: https://github.com/ChinaGodMan/UserScripts
