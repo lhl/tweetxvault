@@ -2,6 +2,8 @@
 
 ## 2026-03-14
 
+- Created `docs/IMPLEMENTATION.md` as a detailed MVP punchlist (including Phase 0 spikes for SeekDB open questions).
+- Clarified in PLAN.md that TweetHoarder is a loose prior-art reference (not a reference implementation); updated wording/rationale accordingly.
 - Locked in Python tooling decisions in PLAN.md: Typer + Rich (CLI), Pydantic v2 (data models), loguru (logging), uv/ruff/hatchling (project tooling). Reviewed shisad (Click) and TweetHoarder (Typer) for reference; chose Typer for this project.
 - Restructured PLAN.md Dependencies section into Runtime / Dev / Optional.
 - Assessed open questions: SeekDB perf questions become first implementation spike; articles endpoint is Phase 4, not blocking.

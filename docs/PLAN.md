@@ -46,8 +46,8 @@ TweetHoarder is used as prior art and is vendored only under `reference/` for st
 
 - **DB**: SeekDB (`pyseekdb`) in embedded mode.
 - **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
-- **Query IDs**: Auto-discovered from Twitter JS bundles + on-disk TTL cache + fallback static IDs (TweetHoarder approach).
-- **Rate limiting/backoff**: TweetHoarder-style exponential backoff and cooldown on repeated `429`.
+- **Query IDs**: Auto-discover query IDs from Twitter web JS bundles with an on-disk TTL cache + fallback static IDs (avoid manual weekly updates).
+- **Rate limiting/backoff**: Exponential backoff and cooldown on repeated `429` (parameters adjustable).
 - **Auth**: Cookie-based session auth (no username/password automation).
   - MVP: env vars + config file + Firefox cookie extraction (Linux).
 - **Chrome cookie extraction**: Defer until someone actually needs it (it adds keyring/decryption complexity).
@@ -57,9 +57,13 @@ TweetHoarder is used as prior art and is vendored only under `reference/` for st
 - **Project tooling**: uv (package management), ruff (lint + format), hatchling (build backend).
 - **Playwright**: Reserved as a future fallback adapter (debugging/CAPTCHA/JS challenge), not implemented in MVP.
 
-## Prior Art We’re Adopting from TweetHoarder
+## Prior Art (Loose Reference)
 
-This is the minimal set of patterns we should port conceptually:
+We’ll consult prior art (including TweetHoarder/bird and other exporters) as **ideas**, not a reference implementation.
+
+Rule: if the only rationale for a behavior is “TweetHoarder does it”, stop and justify it against our requirements or delete it.
+
+These are the key “risky areas” where prior art is useful. We may adopt the approaches below, but only after validating against real runs and keeping the simplest thing that works:
 
 1. **Query ID auto-discovery**: Fetch a discovery page, extract bundle URLs, regex operationName <-> queryId pairs, cache with TTL, refresh on `404`.
 2. **Feature flags**: Maintain per-operation feature flag builders (ported from bird); don’t send a single “one size fits all” blob.
@@ -141,7 +145,7 @@ Firefox cookie extraction rules (Linux):
 - Open the copied DB in read-only mode (`mode=ro`) via sqlite URI
 - Never log raw cookie values; treat them as secrets
 
-Expected request headers (aligned with TweetHoarder patterns):
+Expected request headers (browser-like; required by the internal web API):
 - `Authorization: Bearer <public web bearer token>`
 - `x-csrf-token: <ct0>`
 - `x-twitter-active-user: yes`
@@ -176,8 +180,8 @@ Recommended additional operations to include in query-id targets even if we don�
 ### Feature Flags
 
 Keep per-operation builders, not a single shared dict. Implementation plan:
-- Start by porting TweetHoarder’s current flag sets for `Bookmarks` and `Likes`.
-- If requests begin returning `400`, treat it as likely feature drift and update from reference/ prior art.
+- Start from a known working flag set (either from our own browser capture or prior art) and prune it down to what’s required.
+- If requests begin returning `400`, treat it as likely feature drift and refresh the flag set by diffing against a working browser request.
 
 ### Pagination + Cursor Extraction
 
