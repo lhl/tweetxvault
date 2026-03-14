@@ -63,9 +63,9 @@ What this means for tweetxvault:
 
 Current recommendation:
 
-1. Keep SQLite as the shipped MVP backend.
-2. If we want a phase-2 vector store spike, compare `SQLite + LanceDB` against the current SQLite-only baseline before revisiting SeekDB again.
-3. If we insist on SeekDB later, use raw SQL on an XDG data path under `/home`, keep `raw_json` columns at `MEDIUMTEXT` or larger, and avoid the Collection API for MVP-style sync storage.
+1. Keep SQLite as the shipped backend only until the LanceDB migration lands.
+2. Proceed with the LanceDB migration before loading real archive data, using the single-table archive model described below.
+3. Treat SeekDB as rejected for the current project direction unless a future revisit changes the runtime/footprint picture substantially.
 
 ## Pure LanceDB Backend Spike (2026-03-15)
 

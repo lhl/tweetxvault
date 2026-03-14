@@ -11,6 +11,10 @@ Hard constraints:
 
 Definition of done: passes `uv run ruff format --check`, `uv run ruff check`, and `uv run pytest`.
 
+Planning note (2026-03-15):
+- The sections below describe the completed SQLite-backed MVP.
+- The active next milestone is replacing that backend with LanceDB before real archive data is loaded.
+
 ---
 
 ## Task 0: SeekDB Spikes
@@ -103,9 +107,9 @@ Config and auth are tightly coupled — build them together.
   - `parse_timeline_response(data, operation) -> (tweets: list, cursor: str | None)` — extract tweet entries and bottom cursor. Per-operation parsing since response shapes differ.
 - [x] Unit tests: URL building, cursor extraction for both Bookmarks and Likes response shapes (minimal JSON fixtures), `400/404/429` classification, backoff logic (httpx.MockTransport to simulate 429/404/200 sequences).
 
-## Task 5: Storage (SeekDB)
+## Task 5: Storage (SQLite Fallback Backend)
 
-Depends on Task 0 spike results. Adjust schema/approach based on spike decisions.
+Historical note: this was the shipped MVP backend after the SeekDB spike failed the runtime/footprint gate.
 
 - [x] Implement `tweetxvault/storage/seekdb.py`
   - Open/create embedded DB in XDG data dir.
@@ -176,3 +180,40 @@ Optional but useful early.
 - [x] Verify first-run UX: run against empty XDG dirs with no config → confirm dirs created, clear error message about missing cookies.
 - [x] Update `WORKLOG.md` with milestone completions.
 - [x] Keep `docs/PLAN.md` in sync if any decision changed during implementation.
+
+## Task 10: Replace SQLite Storage with LanceDB
+
+This is the active follow-on migration. The goal is to switch the real archive backend before we load meaningful user data.
+
+- [ ] Replace runtime storage deps in `pyproject.toml`:
+  - Remove `pyseekdb`.
+  - Add `lancedb` and `pyarrow`.
+  - Refresh `uv.lock`.
+- [ ] Implement `tweetxvault/storage/lancedb.py` behind the existing `ArchiveStore` / `SyncState` API.
+  - Use a single LanceDB table keyed by `row_key`.
+  - Row types per `docs/PLAN.md`: `tweet`, `raw_capture`, `sync_state`, `metadata`.
+  - Represent one persisted page as one `merge_insert` batch.
+- [ ] Update storage path conventions in `tweetxvault/config.py`.
+  - Switch from `archive.sqlite3` to a LanceDB directory name such as `archive.lancedb/`.
+  - Preserve XDG behavior and first-run auto-create semantics.
+- [ ] Keep higher-level call sites stable where possible.
+  - `tweetxvault/storage/__init__.py`
+  - `tweetxvault/sync.py`
+  - `tweetxvault/export/json_export.py`
+  - `tweetxvault/cli.py`
+- [ ] Port the storage test suite to the LanceDB backend semantics.
+  - Atomic page persistence
+  - Owner guardrail
+  - Sync-state reset/resume
+  - Collection-scoped duplicate detection
+  - Export ordering
+- [ ] Re-run the existing sync/integration tests against the LanceDB backend and fix behavioral regressions.
+- [ ] Add LanceDB-specific regression coverage:
+  - one table-version increment per successful page write
+  - no partial state if failure occurs before the batch write
+  - filtered export/search queries over `tweet` rows only
+- [ ] Update docs after migration lands.
+  - `docs/PLAN.md`
+  - `docs/ANALYSIS-db.md`
+  - `docs/README.md`
+  - `WORKLOG.md`

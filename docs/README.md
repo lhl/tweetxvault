@@ -2,7 +2,7 @@
 
 ## Plans
 
-- **`PLAN.md`** — Current implementation plan (SeekDB, direct GraphQL API, query-id auto-discovery, rate limiting, phased roadmap)
+- **`PLAN.md`** — Current implementation plan (LanceDB migration, direct GraphQL API, query-id auto-discovery, rate limiting, phased roadmap)
 - `initial/` — Historical, frozen planning snapshots (do not edit; may contradict current plan):
 - `initial/PLAN-A.md` — Playwright browser automation + GraphQL interception approach
 - `initial/PLAN-B.md` — Direct GraphQL API client (requests) approach

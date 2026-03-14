@@ -2,6 +2,10 @@
 
 ## 2026-03-15
 
+- Locked the next backend plan to LanceDB:
+  - Updated `docs/PLAN.md` to make LanceDB the planned backend, with a single-table `row_key` archive model and LanceDB-native FTS/vector search phases
+  - Updated `docs/IMPLEMENTATION.md` with a new active migration task for replacing the shipped SQLite backend
+  - Updated `docs/ANALYSIS-db.md` and `docs/README.md` so the docs agree that SQLite is the shipped fallback and LanceDB is the planned next backend
 - Spiked pure LanceDB archive viability in `dev/lancedb-test/` instead of the shipped package to keep the experiment isolated:
   - Added `dev/lancedb-test/archive_store.py`, a single-table LanceDB archive prototype keyed by `row_key`
   - Added `dev/lancedb-test/storage_spike.py` to verify current archive semantics against the prototype

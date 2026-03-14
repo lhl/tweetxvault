@@ -8,9 +8,10 @@ Build a Python tool for regular, unattended export of Twitter/X bookmarks and li
 - local search (full-text + semantic) and eventually hybrid search
 - first-class media archival (images + video + GIF) as a later phase
 
-Implementation note (2026-03-14):
-- Task 0 found embedded SeekDB unusable in this environment (`pylibseekdb` `open`/`connect` failed across multiple writable paths), so the first working MVP stores data in SQLite while preserving the planned schema and sync semantics.
-- SeekDB remains the intended future backend once the runtime issue is resolved and re-spiked.
+Implementation note (2026-03-15):
+- Task 0 ruled out embedded SeekDB for the MVP on runtime/footprint grounds.
+- The first working MVP ships on SQLite as a safe fallback.
+- A pure LanceDB backend spike on 2026-03-15 validated the archive/search semantics well enough that the next planned implementation step is to migrate from SQLite to LanceDB before real archive data is loaded.
 
 This is part of the broader [attention-export](~/github/lhl/attention-export) system.
 
@@ -39,7 +40,7 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 
 Several open-source Twitter/X exporters exist (see `reference/README.md`). We build from scratch because:
 
-- Our differentiators (SeekDB, embeddings/hybrid search, media archival, attention-export integration) cut across every layer. Adapting any existing tool would become a long-lived divergence.
+- Our differentiators (LanceDB-backed search/embeddings, media archival, attention-export integration) cut across every layer. Adapting any existing tool would become a long-lived divergence.
 - We want async-first architecture (httpx) with a clean adapter boundary (Playwright as optional fallback, not a core dependency).
 - The hard reverse-engineering problems (query ID discovery, feature flags, cursor formats) are well-documented across multiple open-source projects. We learn from their empirical findings without inheriting their architectural decisions.
 
@@ -49,7 +50,7 @@ The `reference/` directory contains third-party snapshots for study — see `ref
 
 These are our architectural choices, made to serve tweetxvault's goals (unattended sync, raw data preservation, embedded search, attention-export integration). They are independent decisions, not inherited from any existing tool.
 
-- **DB**: SeekDB remains the intended backend, but the implemented MVP currently uses SQLite because embedded SeekDB failed Task 0 runtime validation on 2026-03-14.
+- **DB**: the shipped MVP currently uses SQLite, but the planned backend is pure LanceDB. The migration target is a denormalized LanceDB archive model that preserves page-atomic sync semantics while unlocking local FTS/vector search.
 - **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
 - **Query IDs**: Auto-discover query IDs from Twitter web JS bundles with an on-disk TTL cache + fallback static IDs (avoid manual weekly updates).
 - **Rate limiting/backoff**: Exponential backoff and cooldown on repeated `429` (parameters adjustable).
@@ -103,7 +104,7 @@ tweetxvault/
 │   │   └── timelines.py       # URL builders, fetch_page(), parse_page()
 │   ├── storage/
 │   │   ├── __init__.py
-│   │   └── seekdb.py          # schema + upserts + checkpoints
+│   │   └── lancedb.py         # LanceDB archive model + checkpoints
 │   ├── export/
 │   │   ├── __init__.py
 │   │   └── json_export.py
@@ -290,54 +291,68 @@ Behavior:
 See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoughts.
 
 Current implementation status:
-- The MVP ships with SQLite storage in `tweetxvault/storage/seekdb.py`.
-- The schema below is still the source of truth for tables and sync semantics.
-- A fresh full-permission re-spike on 2026-03-14 showed embedded SeekDB now initializes on supported `/home`-backed paths, but it still missed the MVP threshold (~3.23s cold benchmark, ~1.0GB RSS; `/tmp`/`tmpfs` unsupported), so SQLite remains the default backend.
+- The shipped MVP still stores data in SQLite in `tweetxvault/storage/seekdb.py`.
+- The next implementation step is to replace that backend with `tweetxvault/storage/lancedb.py`.
+- The source of truth below is the intended LanceDB archive model to migrate to next.
 
-### Minimal Schema (Phase 1)
+### Minimal Archive Model (LanceDB Migration)
 
-- `raw_captures` (append-only):
-  - `id` (UUID)
-  - `operation` (Bookmarks/Likes)
-  - `cursor_in`, `cursor_out`
-  - `captured_at` (UTC)
-  - `http_status`, `source` ("api")
-  - `raw_json` (TEXT or JSON)
+- Use a **single LanceDB table** named `archive`, keyed by `row_key`.
+- Every row also carries `record_type`, which determines which subset of columns is meaningful.
+- This is intentionally denormalized. The goal is to express one fetched page as **one LanceDB `merge_insert` batch**, so page persistence advances the archive by one table version or not at all.
 
-- `tweets` (upsert by `tweet_id`):
-  - `tweet_id` (rest_id; PK)
+- `raw_capture` rows:
+  - `row_key = raw_capture:{uuid}`
+  - `record_type = "raw_capture"`
+  - `operation`, `cursor_in`, `cursor_out`
+  - `captured_at`, `http_status`, `source`
+  - `raw_json`
+
+- `tweet` rows:
+  - `row_key = tweet:{collection_type}:{folder_id}:{tweet_id}`
+  - `record_type = "tweet"`
+  - `tweet_id`, `collection_type`, `folder_id`
+  - `sort_index`
   - `text`
   - `author_id`, `author_username`, `author_display_name`
   - `created_at`
-  - `raw_json` (tweet-level raw block)
+  - `raw_json`
   - `first_seen_at`, `last_seen_at`
+  - `added_at`, `synced_at`
+  - These rows are the source of truth for collection-scoped duplicate detection; do **not** use global tweet existence for incremental stop logic.
 
-- `collections` (upsert by `(tweet_id, collection_type, folder_id)`):
-  - `tweet_id`
-  - `collection_type` ("bookmark" | "like")
-  - `bookmark_folder_id` (nullable)
-  - `sort_index` (nullable)
-  - `added_at` (sync-time for now; if we later find a real “liked/bookmarked at” timestamp we can backfill)
-  - `synced_at`
-  - This table is the source of truth for collection-scoped duplicate detection; do **not** use global tweet existence for incremental stop logic.
-
-- `sync_state` (checkpoint/resume):
-  - `collection_type` (+ folder_id where relevant)
+- `sync_state` rows:
+  - `row_key = sync_state:{collection_type}:{folder_id}`
+  - `record_type = "sync_state"`
+  - `collection_type`, `folder_id`
   - `last_head_tweet_id`
-  - `backfill_cursor` (nullable)
+  - `backfill_cursor`
   - `backfill_incomplete`
   - `updated_at`
 
-- `archive_metadata` (single-row or key/value):
-  - `owner_user_id`
-  - `created_at`
+- `metadata` rows:
+  - `row_key = metadata:{key}`
+  - `record_type = "metadata"`
+  - `key`, `value`
   - `updated_at`
+
+- Page persistence rules:
+  - One persisted page issues one LanceDB `merge_insert` batch containing:
+    - one new `raw_capture` row
+    - all touched `tweet` rows for that page
+    - the updated `sync_state` row
+  - If anything fails **before** the batch write, no partial state should be left behind.
+  - `export` reads only `tweet` rows and reconstructs the existing JSON export shape from them.
 
 ### Embeddings (Phase 3)
 
-- Use SeekDB’s built-in local embedding by default (`all-MiniLM-L6-v2`, 384d).
-- Store embeddings alongside tweets and build a vector index (HNSW).
-- Prefer hybrid search via SeekDB’s API (vector + FTS + metadata filters).
+- Use LanceDB indexes instead of a second search engine:
+  - FTS index on tweet text
+  - scalar indexes on common filter fields (`collection_type`, later `author_username` / `created_at` if needed)
+  - vector index on tweet embeddings
+- Add an `embedding` column to `tweet` rows once the embedding pipeline is implemented.
+- Prefer LanceDB hybrid search (FTS + vector + metadata filters, with reranking as needed).
+- Lock the embedding model during the Phase 3 spike; the backend no longer depends on a database-provided built-in model.
 
 ## CLI Design
 
@@ -397,9 +412,9 @@ Reserved for future (not implemented in MVP):
 
 ### Phase 3: Search + Embeddings
 
-- [ ] Embeddings (SeekDB built-in)
+- [ ] Embeddings (local model + LanceDB vector column)
 - [ ] Semantic search CLI
-- [ ] Hybrid search (vector + full-text + metadata)
+- [ ] Hybrid search (LanceDB FTS + vector + metadata)
 - [ ] Similar tweet lookup
 
 ### Phase 4: Extended Collections + Polish
@@ -413,15 +428,17 @@ Reserved for future (not implemented in MVP):
 
 ## Open Questions (Remaining)
 
-1. **SeekDB revisit**: determine whether a newer `pyseekdb`/`pylibseekdb` stack makes embedded SeekDB viable enough to replace the current SQLite MVP backend.
-2. **Articles endpoint shape**: Does `UserArticlesTweets` include full body? If not, decide whether we will implement a targeted Playwright scrape for articles only.
+1. **Embedding runtime**: which local embedding model/runtime do we standardize on for Phase 3 (quality, footprint, licensing)?
+2. **Search table shape**: do we keep embeddings/indexes directly on `tweet` rows, or split out a derived LanceDB search table later if indexing mixed record types becomes awkward?
+3. **Articles endpoint shape**: Does `UserArticlesTweets` include full body? If not, decide whether we will implement a targeted Playwright scrape for articles only.
 
 ## Dependencies (Planned)
 
 ### Runtime
 ```
 httpx              # async HTTP client
-pyseekdb           # embedded DB
+lancedb            # embedded archive + search engine
+pyarrow            # LanceDB schemas / table payloads
 pydantic>=2        # data models, config validation
 typer              # CLI framework (built on Click)
 rich               # terminal formatting, progress bars
@@ -440,5 +457,7 @@ mypy               # type checking (optional, can add later)
 ```
 cryptography       # Chrome cookie decryption
 secretstorage      # Chrome cookie decryption (Linux keyring)
+sentence-transformers  # future local embedding pipeline
+onnxruntime            # possible lighter local embedding runtime
 playwright         # future fallback adapter
 ```
