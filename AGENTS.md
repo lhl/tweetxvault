@@ -92,6 +92,8 @@ Do not use destructive commands unless explicitly instructed:
 - See `reference/README.md` for source URLs and descriptions
 - Do not modify vendored code for style or cleanup
 - Research notes about reference code go in `docs/`, not inside `reference/`
+- **Use reference code only for Twitter API reverse engineering** (query IDs, feature flags, cursor formats, headers) — never copy architectural patterns, code structure, or implementation decisions from any reference project
+- tweetxvault is its own project with its own architecture; if the only rationale for a choice is "another tool does it this way", reject it
 
 ## Git Practices
 
@@ -99,7 +101,7 @@ Do not use destructive commands unless explicitly instructed:
 
 **Commit on completed logical units of work.** A task is a coherent change — not every file edit, but not only milestone closures either. Config changes, doc updates, dependency additions, and working feature increments are all committable units.
 
-- **Commit immediately** after validation passes — do not wait to be asked
+- **Commit immediately** after validation passes — do not ask, do not wait to be asked, just commit
 - Do not commit mid-task while exploring, debugging, or in a broken state
 
 ### Commit Mechanics

@@ -15,7 +15,7 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 ### MVP (what we will implement first)
 
 - Direct GraphQL API sync for `Bookmarks` and `Likes` using browser cookies
-- Query ID (query hash) auto-discovery from Twitter web JS bundles (TweetHoarder approach) with TTL cache + static fallback IDs
+- Query ID (query hash) auto-discovery from Twitter web JS bundles with TTL cache + static fallback IDs
 - Rate-limit handling with exponential backoff + cooldown
 - SeekDB storage:
   - append-only raw page captures
@@ -31,18 +31,19 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 - Extended collections (tweets/reposts/replies/feed) beyond likes/bookmarks
 - Multi-account support
 
-## Why a Clean Rewrite (Not a Fork)
+## Why Build From Scratch
 
-We are **building from scratch**, not forking [TweetHoarder](https://github.com/tfriedel/tweethoarder) (MIT).
+Several open-source Twitter/X exporters exist (see `reference/README.md`). We build from scratch because:
 
-Rationale:
-- Our differentiators (SeekDB, embeddings/hybrid search, media archival, attention-export integration) cut across every layer. A fork would become a long-lived divergence.
-- TweetHoarder’s hard problems are solved and well-documented (query ID refresh, feature flags, cursor parsing, rate limit handling). We can re-implement those patterns cleanly without inheriting unrelated decisions (SQLite schema, Typer UX, etc.).
-- We want an architecture that treats Playwright as an optional adapter rather than a core requirement.
+- Our differentiators (SeekDB, embeddings/hybrid search, media archival, attention-export integration) cut across every layer. Adapting any existing tool would become a long-lived divergence.
+- We want async-first architecture (httpx) with a clean adapter boundary (Playwright as optional fallback, not a core dependency).
+- The hard reverse-engineering problems (query ID discovery, feature flags, cursor formats) are well-documented across multiple open-source projects. We learn from their empirical findings without inheriting their architectural decisions.
 
-TweetHoarder is used as prior art and is vendored only under `reference/` for study, not as a code source.
+The `reference/` directory contains third-party snapshots for study — see `reference/README.md` for the full inventory.
 
 ## Key Decisions (Locked In)
+
+These are our architectural choices, made to serve tweetxvault's goals (unattended sync, raw data preservation, embedded search, attention-export integration). They are independent decisions, not inherited from any existing tool.
 
 - **DB**: SeekDB (`pyseekdb`) in embedded mode.
 - **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
@@ -57,21 +58,21 @@ TweetHoarder is used as prior art and is vendored only under `reference/` for st
 - **Project tooling**: uv (package management), ruff (lint + format), hatchling (build backend).
 - **Playwright**: Reserved as a future fallback adapter (debugging/CAPTCHA/JS challenge), not implemented in MVP.
 
-## Prior Art (Loose Reference)
+## Twitter API Reverse Engineering
 
-We’ll consult prior art (including TweetHoarder/bird and other exporters) as **ideas**, not a reference implementation.
+The Twitter/X web app uses an undocumented internal GraphQL API. Several areas require reverse-engineered knowledge. We consult existing open-source tools in `reference/` as **empirical data sources for Twitter’s API behavior**, not as architectural or code references.
 
-Rule: if the only rationale for a behavior is “TweetHoarder does it”, stop and justify it against our requirements or delete it.
+> **Rule**: if the only rationale for a design choice is “another tool does it this way”, stop and justify it against our own requirements or delete it. Reference code is for understanding Twitter’s undocumented API, not for copying implementation patterns.
 
-These are the key “risky areas” where prior art is useful. We may adopt the approaches below, but only after validating against real runs and keeping the simplest thing that works:
+Key areas where prior art provides useful empirical data:
 
-1. **Query ID auto-discovery**: Fetch a discovery page, extract bundle URLs, regex operationName <-> queryId pairs, cache with TTL, refresh on `404`.
-2. **Feature flags**: Maintain per-operation feature flag builders (ported from bird); don’t send a single “one size fits all” blob.
-3. **Cursor extraction**: Timeline instruction walking (cursor-bottom entries), with operation-specific parsers.
-4. **Rate limit handling**:
-   - per-request retries with exponential delay
-   - cooldown after N consecutive `429`
-5. **Checkpoint/resume**: Persist cursor and “where we were” per collection and resume automatically.
+1. **Query ID rotation** — Twitter periodically rotates GraphQL query hashes. Known approaches in the wild:
+   - JS bundle parsing + regex extraction (TweetHoarder, bird) — robust, automated
+   - XHR interception with operation-name regex matching (twitter-web-exporter) — never hardcodes hashes, but requires in-browser execution
+   - Hardcoded hashes from DevTools (twitter-likes-export, twitter-advanced-scraper) — simple but breaks on rotation
+2. **Feature flags** — Each operation expects ~60 feature flags; wrong flags return 400. Empirical flag sets can be sourced from our own browser DevTools captures or cross-referenced against `reference/` snapshots.
+3. **Cursor formats** — Timeline responses use nested instruction entries (`cursor-bottom-*`, `tweet-*` entry IDs). Response shapes vary between operations.
+4. **Required headers** — The internal API expects specific headers (`Authorization`, `x-csrf-token`, `x-twitter-auth-type`, etc.) observable in any browser’s DevTools network tab.
 
 ## Architecture
 
@@ -164,7 +165,7 @@ Recommended additional operations to include in query-id targets even if we don�
 - `UserArticlesTweets` (probe later)
 - `TweetDetail` (thread/context or media variants later)
 
-### Query ID Auto-Discovery (TweetHoarder Approach)
+### Query ID Auto-Discovery
 
 - Maintain `FALLBACK_QUERY_IDS` for the target operation set.
 - Maintain a disk cache file (JSON) with:
@@ -192,7 +193,6 @@ Per-operation parsers that:
 
 ### Rate Limiting / Backoff
 
-Adopt TweetHoarder’s spirit:
 - For timeline page fetches: retry up to N times on `429`, with exponential backoff (`base_delay * 2^attempt`) and a cooldown (e.g., 5 minutes) after 3 consecutive `429`.
 - For other hard failures (403/401): fail fast with actionable output (cookies expired, missing ct0, etc.).
 - For `404` on a known operation: refresh query IDs once, retry.
