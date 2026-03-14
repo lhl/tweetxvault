@@ -1,5 +1,23 @@
 # WORKLOG
 
+## 2026-03-15
+
+- Spiked pure LanceDB archive viability in `dev/lancedb-test/` instead of the shipped package to keep the experiment isolated:
+  - Added `dev/lancedb-test/archive_store.py`, a single-table LanceDB archive prototype keyed by `row_key`
+  - Added `dev/lancedb-test/storage_spike.py` to verify current archive semantics against the prototype
+  - Added `dev/lancedb-test/search_probe.py` to verify local scalar filter, FTS, and vector-index search behavior
+  - Added `dev/lancedb-test/README.md` with repro commands
+- Ran the isolated LanceDB spike:
+  - `uv run --with lancedb python dev/lancedb-test/storage_spike.py`
+  - Result: collection-scoped duplicate detection, sync-state persistence/reset, archive-owner guardrail, export ordering, and page-batched writes all worked
+  - Observed that each `persist_page(...)` call advanced the Lance table by exactly one version, supporting the single-table batch-write design
+  - `uv run --with lancedb python dev/lancedb-test/search_probe.py`
+  - Result: scalar index, FTS index, and vector index all worked locally with filtered queries
+- Conclusion from the LanceDB spike:
+  - Pure LanceDB looks viable enough for a real migration if we are willing to redesign the archive into a denormalized single-table model
+  - This is not a drop-in backend swap for the normalized SQLite schema; it is a storage-model change
+  - The lower-risk alternative remains SQLite as source of truth with LanceDB as a search sidecar
+
 ## 2026-03-14
 
 - Re-ran the storage spike with full sandbox permissions and added a reproducible harness in [docs/ANALYSIS-db.py](docs/ANALYSIS-db.py):

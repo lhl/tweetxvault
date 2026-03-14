@@ -67,6 +67,44 @@ Current recommendation:
 2. If we want a phase-2 vector store spike, compare `SQLite + LanceDB` against the current SQLite-only baseline before revisiting SeekDB again.
 3. If we insist on SeekDB later, use raw SQL on an XDG data path under `/home`, keep `raw_json` columns at `MEDIUMTEXT` or larger, and avoid the Collection API for MVP-style sync storage.
 
+## Pure LanceDB Backend Spike (2026-03-15)
+
+To answer the narrower question "can LanceDB replace SQLite now, before we load real data?", we built isolated spike scripts under `dev/lancedb-test/`:
+
+- `archive_store.py` — single-table archive design keyed by `row_key`
+- `storage_spike.py` — archive semantics probe
+- `search_probe.py` — scalar filter + FTS + vector index probe
+
+What the spike verified locally:
+
+- A **single-table** LanceDB archive can express the current storage contract cleanly enough for a real migration spike:
+  - collection-scoped duplicate detection
+  - sync-state persistence and reset
+  - archive-owner guardrail
+  - JSON export ordering
+  - one page write expressed as one `merge_insert` batch
+- In the storage spike, each `persist_page(...)` call advanced the Lance table by exactly **one version**, which is a strong sign that the page batch lands as one table-level commit.
+- Scalar filtering, FTS, and vector indexes all worked locally in the search probe with OSS LanceDB.
+
+What changed relative to the SQLite design:
+
+- The clean LanceDB shape is **not** a normalized multi-table port of the SQLite schema.
+- The workable design is a **denormalized single table** with typed records (`tweet`, `raw_capture`, `sync_state`, `metadata`) so one page can be committed with one keyed `merge_insert`.
+- That means moving from "backend swap" to "storage-model redesign".
+
+What the spike did **not** prove:
+
+- We did not wire the full app to LanceDB yet, so the current `sync.py` still runs against SQLite.
+- We did not simulate crash recovery in the middle of the LanceDB engine write itself; we only verified that our page design issues one table write per page and that failures before that write leave no partial state.
+- We only probed search with **manual embeddings**, not a full embedding-generation pipeline.
+
+Current read:
+
+- **Pure LanceDB now looks viable enough to justify a real migration if we want it.**
+- The main cost is redesign, not runtime risk: we would be replacing a normalized SQLite archive with a denormalized LanceDB archive model.
+- If our priority is search/embeddings and we are still pre-data-load, this is the cheapest moment to make that change.
+- If we want the lower-risk path, SQLite as source-of-truth plus LanceDB as search sidecar is still simpler.
+
 ## Candidates
 
 ### SQLite
