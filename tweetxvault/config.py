@@ -26,7 +26,7 @@ DEFAULT_USER_AGENT = (
 CONFIG_FILENAME = "config.toml"
 QUERY_ID_CACHE_FILENAME = "query-ids.json"
 LOCK_FILENAME = "sync.lock"
-DB_FILENAME = "archive.sqlite3"
+DB_DIRNAME = "archive.lancedb"
 
 
 class AuthConfig(BaseModel):
@@ -78,8 +78,13 @@ class XDGPaths(BaseModel):
         return self.data_dir / LOCK_FILENAME
 
     @property
+    def database_path(self) -> Path:
+        return self.data_dir / DB_DIRNAME
+
+    @property
     def database_file(self) -> Path:
-        return self.data_dir / DB_FILENAME
+        """Backward-compatible alias for older callers/tests."""
+        return self.database_path
 
 
 def _xdg_root(env: Mapping[str, str], *, name: str, default_dir: str) -> Path:

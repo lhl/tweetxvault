@@ -50,8 +50,8 @@ The `reference/` directory contains third-party snapshots for study — see `ref
 
 These are our architectural choices, made to serve tweetxvault's goals (unattended sync, raw data preservation, embedded search, attention-export integration). They are independent decisions, not inherited from any existing tool.
 
-- **DB**: the shipped MVP currently uses SQLite, but the planned backend is pure LanceDB. The migration target is a denormalized LanceDB archive model that preserves page-atomic sync semantics while unlocking local FTS/vector search.
-- **Storage module shape**: use `tweetxvault/storage/backend.py` as the real backend module once the migration lands. The LanceDB design changes storage semantics enough that pretending we have a thin interchangeable database adapter would be misleading; keep one concrete backend implementation behind the `ArchiveStore` API.
+- **DB**: the shipped backend is pure LanceDB. The archive uses a denormalized single-table model that preserves page-atomic sync semantics while unlocking local FTS/vector search.
+- **Storage module shape**: use `tweetxvault/storage/backend.py` as the concrete backend module. The LanceDB design changes storage semantics enough that pretending we have a thin interchangeable database adapter would be misleading; keep one real backend implementation behind the `ArchiveStore` API.
 - **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
 - **Query IDs**: Auto-discover query IDs from Twitter web JS bundles with an on-disk TTL cache + fallback static IDs (avoid manual weekly updates).
 - **Rate limiting/backoff**: Exponential backoff and cooldown on repeated `429` (parameters adjustable).
@@ -292,11 +292,11 @@ Behavior:
 See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoughts.
 
 Current implementation status:
-- The shipped MVP still stores data in SQLite in `tweetxvault/storage/seekdb.py`.
-- The next implementation step is to replace that backend with `tweetxvault/storage/backend.py`.
-- The source of truth below is the intended LanceDB archive model to migrate to next.
+- The shipped backend stores data in LanceDB in `tweetxvault/storage/backend.py`.
+- Archive state is expressed as a single `archive` table keyed by `row_key`.
+- The source of truth below is the live LanceDB archive model used by the package.
 
-### Minimal Archive Model (LanceDB Migration)
+### Minimal Archive Model
 
 - Use a **single LanceDB table** named `archive`, keyed by `row_key`.
 - Every row also carries `record_type`, which determines which subset of columns is meaningful.
@@ -346,16 +346,16 @@ Current implementation status:
   - The "latest head tweet id" update must live inside backend-managed state semantics, not as a separate outer commit after the sync loop.
   - `export` reads only `tweet` rows and reconstructs the existing JSON export shape from them.
 
-### Migration Cleanup Queue
+### Migration Cleanup Results
 
-These are concrete cleanup items to land as part of, or immediately before, the LanceDB migration:
+The backend migration also closed the main storage/sync cleanup items identified during review:
 
-- Remove `pyseekdb` from runtime dependencies. The current shipped backend is SQLite, and the planned backend is LanceDB.
-- Eliminate the redundant double-preflight path in `sync_all` so bookmarks/likes are not probed twice per run.
-- Move the post-loop `last_head_tweet_id` write into backend-owned state semantics instead of issuing a separate `commit()` outside the page-write path.
-- Rename the concrete storage implementation to `tweetxvault/storage/backend.py` when the migration lands, so the file name matches the fact that we are carrying one real backend, not a reusable SQL adapter.
-- Optionally fold the duplicate `response.json()` parse in the sync loop into `_fetch_and_parse_page(...)` by returning the parsed payload along with the tweets/cursor.
-- Leave `_iter_entries(...)` and the current `export_rows(...)` SQL shape alone unless profiling shows they matter; they are low-priority cleanup, not migration blockers.
+- Removed `pyseekdb` from runtime dependencies and replaced the shipped backend with LanceDB.
+- Eliminated the redundant double-preflight path in `sync_all`, so bookmarks/likes are probed once per run after shared preflight.
+- Moved the final head-state update into backend-owned page persistence semantics instead of issuing a separate outer `commit()`.
+- Renamed the concrete storage implementation to `tweetxvault/storage/backend.py`, matching the fact that we carry one real backend rather than a generic SQL adapter.
+- Folded the duplicate `response.json()` parse in the sync loop into `_fetch_and_parse_page(...)` by returning the parsed payload along with the tweets/cursor.
+- Left `_iter_entries(...)` alone; it remains acceptable until profiling proves otherwise.
 
 ### Embeddings (Phase 3)
 

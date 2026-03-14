@@ -59,12 +59,12 @@ What this means for tweetxvault:
 
 - **SeekDB is technically viable now**, but only if we accept a very heavy embedded runtime and use it on a non-tmpfs data directory.
 - **SeekDB is not viable for the current MVP constraints.** Task 0 explicitly said to evaluate alternatives if cold start exceeds 3s or RSS exceeds 200MB for an empty DB. The current raw-SQL benchmark came in at ~3.23s total and ~1.0GB RSS.
-- **LanceDB is the most plausible future vector sidecar** if we want a second empirical option beyond SQLite. It passes the cold-start test, but it still does not solve the "single engine for SQL + FTS + vectors + checkpoints" problem because it is not a relational SQL database.
+- **LanceDB was the strongest non-SQLite candidate** from the cold-start test. It passes the startup/RSS gate comfortably and was later validated in a pure-backend spike.
 
 Current recommendation:
 
-1. Keep SQLite as the shipped backend only until the LanceDB migration lands.
-2. Proceed with the LanceDB migration before loading real archive data, using the single-table archive model described below.
+1. Keep LanceDB as the shipped archive backend.
+2. Treat the earlier SQLite numbers as the storage-floor baseline, not the active implementation.
 3. Treat SeekDB as rejected for the current project direction unless a future revisit changes the runtime/footprint picture substantially.
 
 ## Pure LanceDB Backend Spike (2026-03-15)
@@ -85,6 +85,7 @@ What the spike verified locally:
   - one page write expressed as one `merge_insert` batch
 - In the storage spike, each `persist_page(...)` call advanced the Lance table by exactly **one version**, which is a strong sign that the page batch lands as one table-level commit.
 - Scalar filtering, FTS, and vector indexes all worked locally in the search probe with OSS LanceDB.
+- That spike has since been promoted into the shipped backend in `tweetxvault/storage/backend.py`.
 
 What changed relative to the SQLite design:
 
@@ -92,18 +93,17 @@ What changed relative to the SQLite design:
 - The workable design is a **denormalized single table** with typed records (`tweet`, `raw_capture`, `sync_state`, `metadata`) so one page can be committed with one keyed `merge_insert`.
 - That means moving from "backend swap" to "storage-model redesign".
 
-What the spike did **not** prove:
+What the original spike did **not** prove on its own:
 
-- We did not wire the full app to LanceDB yet, so the current `sync.py` still runs against SQLite.
-- We did not simulate crash recovery in the middle of the LanceDB engine write itself; we only verified that our page design issues one table write per page and that failures before that write leave no partial state.
-- We only probed search with **manual embeddings**, not a full embedding-generation pipeline.
+- It did not yet wire the full app to LanceDB; Task 10 later closed that gap and moved the real package onto `tweetxvault/storage/backend.py`.
+- It did not simulate crash recovery in the middle of the LanceDB engine write itself; we only verified that our page design issues one table write per page and that failures before that write leave no partial state.
+- It only probed search with **manual embeddings**, not a full embedding-generation pipeline.
 
 Current read:
 
-- **Pure LanceDB now looks viable enough to justify a real migration if we want it.**
-- The main cost is redesign, not runtime risk: we would be replacing a normalized SQLite archive with a denormalized LanceDB archive model.
-- If our priority is search/embeddings and we are still pre-data-load, this is the cheapest moment to make that change.
-- If we want the lower-risk path, SQLite as source-of-truth plus LanceDB as search sidecar is still simpler.
+- **Pure LanceDB proved viable enough, and we have now completed that migration in the shipped package.**
+- The main cost was redesign, not runtime risk: we replaced the normalized SQLite archive with a denormalized LanceDB archive model.
+- The remaining open question is not storage viability; it is how much of LanceDB's search/indexing surface we want to use next for embeddings and hybrid retrieval.
 
 ## Candidates
 

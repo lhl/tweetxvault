@@ -54,7 +54,56 @@ def test_owner_guardrail(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None
     store.set_archive_owner_id("42")
-    store.connection.commit()
     with pytest.raises(ArchiveOwnerMismatchError):
         store.ensure_archive_owner_id("84")
+    store.close()
+
+
+def test_persist_page_creates_single_version(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    before = store.version_count()
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out="cursor-1",
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[_tweet("1")],
+        last_head_tweet_id="1",
+        backfill_cursor="cursor-1",
+        backfill_incomplete=True,
+    )
+    after = store.version_count()
+
+    assert after == before + 1
+    assert store.counts() == {"raw_captures": 1, "tweets": 1, "collections": 1, "sync_state": 1}
+    store.close()
+
+
+def test_export_rows_only_returns_tweet_records(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    store.set_archive_owner_id("42")
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out="cursor-1",
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[_tweet("1")],
+        last_head_tweet_id="1",
+        backfill_cursor="cursor-1",
+        backfill_incomplete=True,
+    )
+
+    exported = store.export_rows("all")
+
+    assert len(exported) == 1
+    assert exported[0]["tweet_id"] == "1"
+    assert exported[0]["collection"]["type"] == "bookmark"
     store.close()

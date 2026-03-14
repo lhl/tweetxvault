@@ -2,6 +2,28 @@
 
 ## 2026-03-15
 
+- Landed the LanceDB backend migration in the shipped package:
+  - Replaced the SQLite fallback backend with `tweetxvault/storage/backend.py`
+  - Removed `tweetxvault/storage/seekdb.py`
+  - Switched runtime deps from `pyseekdb` to `lancedb` + `pyarrow`
+  - Switched the archive path convention from `archive.sqlite3` to `archive.lancedb/`
+- Folded the queued sync/storage cleanup into the migration:
+  - Removed the redundant `sync_all` double-preflight by sharing preflight results across collections
+  - Returned parsed payloads from `_fetch_and_parse_page(...)` so the sync loop no longer reparses JSON
+  - Removed the outer post-loop state commit and kept head-state updates inside backend-managed page persistence
+- Extended validation for LanceDB-specific semantics:
+  - Added regression coverage for one table-version increment per successful `persist_page(...)`
+  - Added export coverage confirming `export_rows(...)` only returns tweet records
+  - Updated sync tests to seed collection-scoped duplicates through backend APIs instead of SQLite connection access
+- Validation:
+  - `uv lock`
+  - `uv sync`
+  - `uv run ruff format --check tweetxvault tests`
+  - `uv run ruff check tweetxvault tests`
+  - `uv run pytest`
+  - `uv run tweetxvault --help`
+  - Result: `28 passed in 1.43s`, lint/format clean, CLI help still works
+
 - Queued follow-on cleanup work into the LanceDB migration plan after architecture review feedback:
   - Use `tweetxvault/storage/backend.py` as the concrete backend module name instead of a backend-specific filename
   - Remove the redundant `sync_all` double-preflight during the migration

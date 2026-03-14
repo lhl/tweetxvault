@@ -247,7 +247,7 @@ async def _fetch_and_parse_page(
     query_store: QueryIdStore,
     query_ids: dict[str, str],
     client: httpx.AsyncClient,
-) -> tuple[httpx.Response, list[TimelineTweet], str | None]:
+) -> tuple[httpx.Response, dict[str, Any], list[TimelineTweet], str | None]:
     operation = COLLECTION_TO_OPERATION[collection]
 
     async def refresh_once() -> str:
@@ -259,7 +259,7 @@ async def _fetch_and_parse_page(
     response = await fetch_page(client, url, config.sync, refresh_once=refresh_once)
     payload = response.json()
     tweets, next_cursor = parse_timeline_response(payload, operation)
-    return response, tweets, next_cursor
+    return response, payload, tweets, next_cursor
 
 
 def _store_state_for_page(
@@ -313,7 +313,7 @@ async def _run_pass(
             stop_reason = "limit"
             break
 
-        response, tweets, next_cursor = await _fetch_and_parse_page(
+        response, payload, tweets, next_cursor = await _fetch_and_parse_page(
             collection=collection,
             cursor=cursor,
             count=20,
@@ -323,7 +323,6 @@ async def _run_pass(
             query_ids=query_ids,
             client=client,
         )
-        payload = response.json()
         duplicate_seen = False
         if is_head_pass and stop_on_duplicate:
             duplicate_seen = any(
@@ -414,6 +413,31 @@ async def sync_collection(
         query_ids=query_ids,
         transport=transport,
     )
+    return await _sync_collection_ready(
+        collection=collection,
+        full=full,
+        limit=limit,
+        config=config,
+        paths=paths,
+        preflight=preflight,
+        transport=transport,
+        console=console,
+        sleep=sleep,
+    )
+
+
+async def _sync_collection_ready(
+    *,
+    collection: str,
+    full: bool,
+    limit: int | None,
+    config: AppConfig,
+    paths: XDGPaths,
+    preflight: PreflightResult,
+    transport: httpx.AsyncBaseTransport | None,
+    console: Console,
+    sleep: Callable[[float], Awaitable[None]],
+) -> SyncResult:
     probe = preflight.probes[collection]
     if not probe.ready:
         if probe.local_error:
@@ -444,7 +468,7 @@ async def sync_collection(
             preflight.auth, timeout=config.sync.timeout, transport=transport
         )
         try:
-            head_pages, head_tweets, head_reason, latest_head_id, _ = await _run_pass(
+            head_pages, head_tweets, head_reason, _latest_head_id, _ = await _run_pass(
                 collection=collection,
                 start_cursor=None,
                 config=config,
@@ -492,17 +516,6 @@ async def sync_collection(
                 pages_total += backfill_pages
                 tweets_total += backfill_tweets
                 stop_reason = backfill_reason
-
-            if latest_head_id and not prior_backfill_incomplete:
-                current_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
-                if current_state.last_head_tweet_id != latest_head_id:
-                    store.set_sync_state(
-                        COLLECTION_TO_STORAGE[collection],
-                        last_head_tweet_id=latest_head_id,
-                        backfill_cursor=current_state.backfill_cursor,
-                        backfill_incomplete=current_state.backfill_incomplete,
-                    )
-                    store.connection.commit()
         finally:
             await client.aclose()
             store.close()
@@ -549,14 +562,13 @@ async def sync_all(
     exit_code = 0
     for collection in ("bookmarks", "likes"):
         try:
-            result = await sync_collection(
-                collection,
+            result = await _sync_collection_ready(
+                collection=collection,
                 full=full,
                 limit=limit,
                 config=config,
                 paths=paths,
-                auth_bundle=preflight.auth,
-                query_ids=preflight.query_ids,
+                preflight=preflight,
                 transport=transport,
                 console=console,
                 sleep=sleep,

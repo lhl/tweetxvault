@@ -11,6 +11,7 @@ import pytest
 from rich.console import Console
 
 from tests.conftest import make_bookmarks_response, make_likes_response
+from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
 from tweetxvault.exceptions import ProcessLockError, TweetXVaultError
 from tweetxvault.query_ids import QueryIdStore
@@ -230,15 +231,29 @@ async def test_collection_scoped_duplicate_detection(paths, config: AppConfig, a
     _save_query_ids(paths)
     store = open_archive_store(paths, create=True)
     assert store is not None
-    store.connection.execute(
-        """
-        INSERT INTO tweets (
-            tweet_id, text, author_id, author_username, author_display_name,
-            created_at, raw_json, first_seen_at, last_seen_at
-        ) VALUES ('1', 'preexisting', '1', 'user1', 'User 1', 'date', '{}', 'now', 'now')
-        """
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"seed": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id="1",
+                text="preexisting",
+                author_id="1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="10",
+                raw_json={"tweet": "1"},
+            )
+        ],
+        last_head_tweet_id="1",
+        backfill_cursor=None,
+        backfill_incomplete=False,
     )
-    store.connection.commit()
     store.close()
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -293,7 +308,7 @@ async def test_sync_all_aborts_on_failed_preflight_without_writes(paths, config:
             sleep=lambda _: asyncio.sleep(0),
         )
 
-    assert not paths.database_file.exists()
+    assert not paths.database_path.exists()
 
 
 @pytest.mark.asyncio
@@ -379,6 +394,42 @@ async def test_sync_all_limit_applies_per_collection(paths, config: AppConfig) -
         ("bookmarks", 1),
         ("likes", 1),
     ]
+
+
+@pytest.mark.asyncio
+async def test_sync_all_shared_preflight_probes_once_per_collection(
+    paths, config: AppConfig
+) -> None:
+    _save_query_ids(paths)
+    probe_counts = {"Bookmarks": 0, "Likes": 0}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        count = int(variables["count"])
+        cursor = variables.get("cursor")
+        if count == 1:
+            probe_counts[operation] += 1
+            if operation == "Bookmarks":
+                return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+            return httpx.Response(200, json=make_likes_response(["10"]), request=request)
+        if operation == "Bookmarks" and cursor is None:
+            return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+        if operation == "Likes" and cursor is None:
+            return httpx.Response(200, json=make_likes_response(["10"]), request=request)
+        raise AssertionError(f"unexpected request {operation} {cursor}")
+
+    outcome = await sync_all(
+        full=False,
+        limit=1,
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+
+    assert outcome.exit_code == 0
+    assert probe_counts == {"Bookmarks": 1, "Likes": 1}
 
 
 def test_process_lock_prevents_second_holder(paths) -> None:

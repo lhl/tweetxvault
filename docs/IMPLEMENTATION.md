@@ -33,13 +33,13 @@ Resolve the open questions from PLAN.md before building the storage layer. Timeb
 - [x] **API surface spike** (SQL tables vs Collection API)
   - Determine which SeekDB API to use for Phase 1: SQL-style tables or the Collection/document API.
   - **Exit criteria**: pick whichever supports upsert-by-key and basic queries without friction. Document choice in `WORKLOG.md` and update PLAN.md schema section.
-  - Result: the original sandboxed spike failed initialization, but a fresh full-permission re-spike showed embedded SeekDB only works reliably on non-tmpfs paths and still misses the MVP startup/footprint threshold (~3.23s cold benchmark, ~1.0GB RSS), so the working MVP still uses SQLite while preserving the planned schema/transaction semantics.
+  - Result: the original sandboxed spike failed initialization, but a fresh full-permission re-spike showed embedded SeekDB only works reliably on non-tmpfs paths and still misses the MVP startup/footprint threshold (~3.23s cold benchmark, ~1.0GB RSS). We shipped SQLite first, then replaced it with LanceDB in Task 10.
 
 ## Task 1: Project Bootstrap
 
 - [x] Add `pyproject.toml` (hatchling backend) with:
   - Project metadata (`name=tweetxvault`, `requires-python>=3.12`).
-  - Runtime deps: `httpx`, `pyseekdb`, `pydantic>=2`, `typer`, `rich`, `loguru`.
+  - Runtime deps: `httpx`, `lancedb`, `pyarrow`, `pydantic>=2`, `typer`, `rich`, `loguru`.
   - Dev deps: `ruff`, `pytest`, `pytest-asyncio` (and `mypy` optional).
   - Console entrypoint: `tweetxvault = tweetxvault.cli:app`.
 - [x] Add ruff configuration (format + lint) in `pyproject.toml`.
@@ -183,44 +183,49 @@ Optional but useful early.
 
 ## Task 10: Replace SQLite Storage with LanceDB
 
-This is the active follow-on migration. The goal is to switch the real archive backend before we load meaningful user data.
+Completed on 2026-03-15. This replaced the temporary SQLite fallback before any real archive data was loaded.
 
-- [ ] Replace runtime storage deps in `pyproject.toml`:
-  - Remove `pyseekdb`.
-  - Add `lancedb` and `pyarrow`.
-  - Refresh `uv.lock`.
-- [ ] Rename the concrete storage module to `tweetxvault/storage/backend.py`.
-  - Stop using backend-specific filenames like `seekdb.py` / `lancedb.py` for the shipped implementation.
-  - Keep the public `ArchiveStore` / `SyncState` API in `tweetxvault/storage/__init__.py`.
-- [ ] Eliminate the current sync-loop cleanup items before or during the backend migration.
-  - Remove double-preflight in `sync_all`.
-  - Move the final `last_head_tweet_id` update into backend-managed state semantics instead of a bare outer `commit()`.
-  - Optionally return parsed payloads from `_fetch_and_parse_page(...)` to avoid the duplicate `response.json()` call.
-- [ ] Implement the LanceDB-backed archive in `tweetxvault/storage/backend.py`.
+- [x] Replace runtime storage deps in `pyproject.toml`:
+  - Removed `pyseekdb`.
+  - Added `lancedb` and `pyarrow`.
+  - Refreshed `uv.lock`.
+- [x] Rename the concrete storage module to `tweetxvault/storage/backend.py`.
+  - Stopped using backend-specific filenames like `seekdb.py` / `lancedb.py` for the shipped implementation.
+  - Kept the public `ArchiveStore` / `SyncState` API in `tweetxvault/storage/__init__.py`.
+- [x] Eliminate the current sync-loop cleanup items during the backend migration.
+  - Removed double-preflight in `sync_all`.
+  - Moved the final `last_head_tweet_id` update into backend-managed state semantics instead of a bare outer `commit()`.
+  - Returned parsed payloads from `_fetch_and_parse_page(...)` to avoid the duplicate `response.json()` call.
+- [x] Implement the LanceDB-backed archive in `tweetxvault/storage/backend.py`.
   - Use a single LanceDB table keyed by `row_key`.
   - Row types per `docs/PLAN.md`: `tweet`, `raw_capture`, `sync_state`, `metadata`.
-  - Represent one persisted page as one `merge_insert` batch.
-- [ ] Update storage path conventions in `tweetxvault/config.py`.
-  - Switch from `archive.sqlite3` to a LanceDB directory name such as `archive.lancedb/`.
-  - Preserve XDG behavior and first-run auto-create semantics.
-- [ ] Keep higher-level call sites stable where possible.
+  - Represent one persisted page as one batched table merge.
+- [x] Update storage path conventions in `tweetxvault/config.py`.
+  - Switched from `archive.sqlite3` to `archive.lancedb/`.
+  - Preserved XDG behavior and first-run auto-create semantics.
+- [x] Keep higher-level call sites stable where possible.
   - `tweetxvault/storage/__init__.py`
   - `tweetxvault/sync.py`
   - `tweetxvault/export/json_export.py`
   - `tweetxvault/cli.py`
-- [ ] Port the storage test suite to the LanceDB backend semantics.
+- [x] Port the storage test suite to the LanceDB backend semantics.
   - Atomic page persistence
   - Owner guardrail
   - Sync-state reset/resume
   - Collection-scoped duplicate detection
   - Export ordering
-- [ ] Re-run the existing sync/integration tests against the LanceDB backend and fix behavioral regressions.
-- [ ] Add LanceDB-specific regression coverage:
+- [x] Re-run the existing sync/integration tests against the LanceDB backend and fix behavioral regressions.
+- [x] Add LanceDB-specific regression coverage:
   - one table-version increment per successful page write
   - no partial state if failure occurs before the batch write
   - filtered export/search queries over `tweet` rows only
   - `sync_all` does not reprobe collections after a successful shared preflight
-- [ ] Update docs after migration lands.
+- [x] Verify the landed backend:
+  - `uv run ruff format --check tweetxvault tests`
+  - `uv run ruff check tweetxvault tests`
+  - `uv run pytest`
+  - `uv run tweetxvault --help`
+- [x] Update docs after migration lands.
   - `docs/PLAN.md`
   - `docs/ANALYSIS-db.md`
   - `docs/README.md`
