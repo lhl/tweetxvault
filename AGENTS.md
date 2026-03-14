@@ -1,6 +1,6 @@
 # tweetxvault — Agent Guide
 
-See `README.md` for project overview, `docs/` for plans and research, `reference/` for third-party repo snapshots.
+See `docs/PLAN.md` for the implementation plan, `docs/README.md` for the documentation index, and `reference/` for third-party repo snapshots.
 This `AGENTS.md`/`CLAUDE.md` covers ground rules, workflow, and repo conventions.
 
 Instruction precedence: if this file conflicts with platform/system/developer instructions, follow those first.
