@@ -125,6 +125,16 @@ cookies (env/config/firefox)
                       -> update checkpoints
 ```
 
+### Concurrency Model
+
+MVP assumes a single local account archive and **exactly one writer process at a time**.
+
+- `sync` and export commands that mutate local state must acquire a process lock in the XDG data dir before touching the DB or checkpoint state.
+- If another sync is already running, exit quickly with a clear message instead of attempting concurrent writes.
+- Cache/config writes must use atomic temp-file + rename semantics so `auth check` / `refresh-ids` cannot leave partially written JSON/TOML behind.
+- DB page persistence should use one transaction per fetched page so checkpoints never advance ahead of durable tweet/membership writes.
+- If raw JSON is stored as gzipped sidecar files instead of inline DB blobs, write the file via temp-file + rename and only commit the DB pointer after the file is durable.
+
 ## Direct GraphQL API Design
 
 ### Auth + Headers (MVP)
@@ -181,14 +191,33 @@ Recommended additional operations to include in query-id targets even if we don�
 - Refresh behavior:
   - On startup, use cached IDs if fresh.
   - If missing/stale, fetch a discovery page (e.g., `https://x.com/?lang=en`), extract bundle URLs matching the `abs.twimg.com/responsive-web/client-web/*.js` regex, fetch bundles, extract operationName/queryId pairs via regex patterns.
+  - If refresh fails but we still have fallback IDs for the requested operations, continue with a warning instead of failing first-run sync.
   - If an API call returns `404`, treat it as “stale query id”, refresh once, retry.
+  - Fail only when neither cache nor fallback can satisfy the requested operation, or when the post-refresh retry still returns `404`.
   - Provide `tweetxvault auth refresh-ids` to force refresh.
 
 ### Feature Flags
 
 Keep per-operation builders, not a single shared dict. Implementation plan:
-- Start from a known working flag set (either from our own browser capture or prior art) and prune it down to what’s required.
-- If requests begin returning `400`, treat it as likely feature drift and refresh the flag set by diffing against a working browser request.
+- Start from a known working flag set (captured from our own browser; prior art only as cross-check) and commit those static per-operation dicts in code for MVP.
+- MVP does **not** attempt automatic feature-flag discovery.
+- If requests begin returning `400` after auth and query IDs look healthy, treat it as likely feature drift and fail with an actionable error instead of retrying indefinitely.
+
+### Preflight + Validation
+
+Before any sync writes data:
+- Resolve local auth inputs (env → config → Firefox).
+- Resolve query IDs (cache → refresh → fallback).
+- Resolve the current archive owner identity (numeric user id from `twid` / config / env when available).
+- Run a lightweight authenticated probe for each requested collection (`count=1`, no checkpoint updates, no `raw_captures` write) so we distinguish missing credentials from expired sessions, stale query IDs, or feature-flag drift.
+- Validate the resolved owner identity against local DB metadata if the archive already exists; refuse to mix two X accounts into one archive.
+
+Command semantics:
+- `tweetxvault auth check` runs this shared preflight without creating or writing the DB; it reports which collections are ready.
+- `tweetxvault auth check` exit codes: `0` = all probed collections ready, `1` = local auth/config input missing or inconsistent, `2` = remote/API validation failed for at least one probed collection.
+- `tweetxvault sync all` is **all-or-nothing at preflight time**: if bookmarks or likes fail validation, abort before syncing either collection.
+- Once `tweetxvault sync all` has started syncing, it is **not** cross-collection atomic: if bookmarks finish and likes later fail, bookmark writes remain committed and the command exits non-zero with a partial-failure summary.
+- `--limit N` counts persisted sync pages only; preflight probes do not consume the limit.
 
 ### Pagination + Cursor Extraction
 
@@ -199,26 +228,42 @@ Per-operation parsers that:
 
 ### Sync Loop + Stop Conditions
 
-Each `sync` invocation runs a page-at-a-time loop:
+Each `sync` invocation runs a page-at-a-time loop. Important distinction:
 
-1. Resolve cookies → validate `auth_token` + `ct0` present (fail with actionable error if not)
-2. Resolve query IDs (cache → refresh → fallback)
-3. Load checkpoint (cursor) from `sync_state` if incremental
-4. Loop:
+- **Head sync**: always starts with `cursor=None` to fetch newest items first.
+- **Backfill resume**: if a previous run stopped before reaching the historical tail, continue from stored `backfill_cursor` *after* the head pass so we do not miss new items added since the interruption.
+
+This means `sync_state` is **not** “start next run from the last stored cursor.” A bottom cursor only paginates older results, so using it as the default starting point would skip newly added likes/bookmarks.
+
+Per collection, persist:
+- `last_head_tweet_id` (or equivalent top-of-timeline anchor) for normal incremental stop detection
+- `backfill_cursor` (nullable) for interrupted history scans / first-run continuation
+- `backfill_incomplete` flag (or equivalent derived state)
+
+`--full` semantics:
+- Reset `sync_state` for the targeted collection(s) only after preflight succeeds and the process lock is acquired.
+- Do **not** delete existing `tweets`, `collections`, or `raw_captures`; full sync is an idempotent re-walk implemented via upserts plus new append-only raw captures.
+- If a `--full` run is interrupted, leave `backfill_incomplete` / `backfill_cursor` set so a later run can resume safely.
+
+1. Run shared preflight for the requested collection(s)
+2. Acquire the process lock
+3. Run a head pass from `cursor=None`
+4. If `backfill_incomplete` is set, continue an older-history pass from stored `backfill_cursor`
+5. For each fetched page:
    a. Fetch one page with current cursor
-   b. Append raw response to `raw_captures`
-   c. Parse tweet entries and bottom cursor
-   d. Upsert tweets + collection memberships
-   e. Update `sync_state` checkpoint with new cursor
-   f. Check stop conditions (see below)
-   g. Polite delay between pages (default 2s, configurable)
-5. Print summary (tweets synced, pages fetched)
+   b. Parse tweet entries and bottom cursor
+   c. In one DB transaction: append raw response to `raw_captures`, upsert tweets, upsert collection memberships, update sync state
+   d. Check stop conditions (see below)
+   e. Polite delay between pages (default 2s, configurable)
+6. Release the process lock (always, via `finally`)
+7. Print summary (tweets synced, pages fetched)
 
 Stop conditions:
 - **Empty page**: response contains zero tweet entries → done
-- **Incremental duplicate detection**: encountered a tweet_id already in DB from a previous sync → stop (caught up to where we left off)
+- **Head-pass duplicate detection**: encountered a tweet that already has membership in the same collection (and folder, when relevant) from a previous sync → stop the head pass (caught up to known items)
+- **Backfill completion**: stored `backfill_cursor` becomes `null` / no further cursor → historical scan is complete
 - **`--full` mode**: ignores duplicate detection, only stops on empty page (full re-scan)
-- **`--limit N`**: stop after N pages (for testing or cautious first runs)
+- **`--limit N`**: stop after N persisted pages **per collection** (for testing or cautious first runs)
 - **Rate limit exhaustion**: after cooldown, if still getting 429s, stop gracefully and preserve checkpoint for resume
 
 ### Rate Limiting / Backoff
@@ -234,6 +279,7 @@ Behavior:
 - For `429`: retry with exponential backoff up to max retries, then enter cooldown. After cooldown, resume. If cooldown fails again, stop gracefully and preserve checkpoint.
 - For `401/403`: fail fast with actionable error (cookies expired, missing ct0, account locked, etc.).
 - For `404` on a known operation: refresh query IDs once, retry. If still 404, fail with "query ID refresh failed" error.
+- For any non-retryable or exhausted failure after sync has started: the last fully committed page remains durable, the in-progress page does not advance `sync_state`, and the command exits non-zero.
 
 ## Storage (SeekDB)
 
@@ -264,11 +310,18 @@ See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoug
   - `sort_index` (nullable)
   - `added_at` (sync-time for now; if we later find a real “liked/bookmarked at” timestamp we can backfill)
   - `synced_at`
+  - This table is the source of truth for collection-scoped duplicate detection; do **not** use global tweet existence for incremental stop logic.
 
 - `sync_state` (checkpoint/resume):
   - `collection_type` (+ folder_id where relevant)
-  - `cursor`
-  - `last_tweet_id` (optional)
+  - `last_head_tweet_id`
+  - `backfill_cursor` (nullable)
+  - `backfill_incomplete`
+  - `updated_at`
+
+- `archive_metadata` (single-row or key/value):
+  - `owner_user_id`
+  - `created_at`
   - `updated_at`
 
 ### Embeddings (Phase 3)
@@ -284,17 +337,17 @@ Primary commands:
 ```
 tweetxvault sync bookmarks            # incremental
 tweetxvault sync likes                # incremental
-tweetxvault sync all                  # sync likes + bookmarks
+tweetxvault sync all                  # preflight both, then sync bookmarks + likes
 tweetxvault sync all --full           # full resync (ignore duplicates)
 tweetxvault sync bookmarks --limit 5  # stop after 5 pages (testing)
 
 tweetxvault export json               # (phase 2+) export all collections
 
-tweetxvault auth check                # verify cookies are present/valid
+tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
 ```
 
-`--limit N` limits pagination to N pages (useful for testing or cautious first runs).
+`--limit N` limits persisted sync pagination to N pages per collection (useful for testing or cautious first runs).
 
 ### First-Run Behavior
 
@@ -302,11 +355,12 @@ On first invocation, tweetxvault:
 1. Auto-creates XDG directories (`~/.config/tweetxvault/`, `~/.local/share/tweetxvault/`, `~/.cache/tweetxvault/`)
 2. Attempts cookie resolution (env vars → config file → Firefox)
 3. If no cookies found: prints clear error with setup instructions (which env vars to set, or ensure Firefox is logged into x.com)
-4. If cookies found: discovers query IDs (first run has no cache, so fetches from JS bundles)
-5. Auto-creates DB on first write
-6. Begins sync
+4. If cookies found: resolves query IDs (first run has no cache, so fetches from JS bundles and falls back to static IDs if refresh fails)
+5. Runs a lightweight API probe for the requested collection(s); on failure, exits with actionable error before any checkpoint or DB writes
+6. Acquires the local process lock so overlapping cron/manual runs cannot race
+7. Auto-creates DB on first write, records archive owner metadata, and begins sync
 
-No `init` command needed — everything auto-creates on demand. Config file is optional; the tool works with just Firefox cookies or env vars.
+No `init` command needed — everything auto-creates on demand. Config file is optional; the tool works with just Firefox cookies or env vars. `tweetxvault auth check` uses the same preflight path as `sync`, so the first-run experience is testable before any data is written.
 
 Reserved for future (not implemented in MVP):
 - `tweetxvault sync ... --playwright` (adapter fallback)
@@ -322,6 +376,7 @@ Reserved for future (not implemented in MVP):
 - [ ] Likes sync
 - [ ] Append raw captures + upsert tweets + collections
 - [ ] Checkpoint/resume for interrupted sync
+- [ ] Single-process locking + atomic page commits
 - [ ] Rate limit handling (backoff + cooldown)
 - [ ] Minimal JSON export (optional but helpful early)
 

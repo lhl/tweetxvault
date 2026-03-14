@@ -2,6 +2,21 @@
 
 ## 2026-03-14
 
+- Additional architecture sweep for idempotency/race risks in planning docs:
+  - Found missing single-writer protection; added explicit process-lock requirement and atomic temp-file writes in `docs/PLAN.md`
+  - Found a bigger sync-state flaw: bottom cursor cannot be the default starting point for later incremental runs because it only paginates older items; updated PLAN/IMPLEMENTATION to separate head sync from interrupted backfill resume
+  - Added archive-owner guardrail so one local DB cannot silently mix data from two different X accounts
+  - Added implementation/test requirements for atomic per-page DB commits, lock behavior, interrupted-first-run head+backfill correctness, and atomic raw-json sidecar writes if Task 0 chooses file-backed raw storage
+- Final failure-semantics pass:
+  - Clarified `auth check` exit-code semantics and `sync all` partial-failure behavior after runtime starts
+  - Defined `--limit` as per-collection, not global across `sync all`
+  - Defined `--full` reset/resume behavior (reset sync state only, never delete data)
+  - Added explicit lock-release and partial-runtime-failure test requirements; removed duplicate “document date sourced” line in IMPLEMENTATION.md
+- Critical pass on MVP planning docs after reviewing `docs/PLAN.md` + `docs/IMPLEMENTATION.md` (`git status -sb`, `sed`, `rg`):
+  - PLAN.md: added shared preflight semantics (local auth + query-id resolution + lightweight remote probe) so first-run sync/auth-check behavior is explicit
+  - PLAN.md: made `sync all` all-or-nothing at preflight time; clarified `--limit` excludes probe requests
+  - PLAN.md + IMPLEMENTATION.md: fixed duplicate detection to be collection-scoped via `collections`, not global tweet existence (important because the same tweet can be both bookmarked and liked)
+  - IMPLEMENTATION.md: added explicit handling/tests for feature-flag drift (`400`), probe-without-write behavior, and no partial writes when `sync all` preflight fails
 - Filled PLAN.md gaps for OOTB first-run experience and rewrote IMPLEMENTATION.md:
   - PLAN.md: documented bearer token constant, env var names, cookie resolution chain, user_id resolution for Likes
   - PLAN.md: added Bookmarks vs Likes endpoint differences (user_id requirement)
