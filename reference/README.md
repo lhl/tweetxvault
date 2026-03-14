@@ -42,8 +42,9 @@ Third-party repos, gists, and saved pages collected during research for the twit
 
 ### tweethoarder
 - **Source**: https://github.com/tfriedel/tweethoarder
-- **What**: Python local archiver for likes, bookmarks, tweets, reposts, and home feed. Stores in SQLite, exports JSON/Markdown/CSV/searchable HTML. Cookie-based auth against internal GraphQL API.
-- **Key insight**: Closest existing tool to our project — same stack (Python + SQLite + cookie auth + internal GraphQL). Good reference for DB schema, export formats, and GraphQL query handling. Uses direct API calls with cookie auth (Plan B approach) rather than browser interception.
+- **What**: Python local archiver for likes, bookmarks, tweets, reposts, and home feed. Stores in SQLite, exports JSON/Markdown/CSV/searchable HTML. Cookie-based auth against internal GraphQL API. ~5,600 lines Python.
+- **Origin**: Started Jan 2, 2026. 100 commits (65 on day one). Built with Claude Code (Opus 4.5) using beads for task coordination. Architecture ported from [bird](https://github.com/steipete/bird) (TypeScript). Essentially entirely AI-generated code — no copyright protection under current law.
+- **Key insight**: Closest existing tool to our project — same stack (Python + SQLite + cookie auth + internal GraphQL). Solves query hash auto-discovery (JS bundle parsing with 4 regex patterns + fallback list + 24h TTL cache). Good reference for feature flags (~60 per endpoint), checkpoint/resume, adaptive rate limiting, and export formats. Does NOT do media downloads, search/embeddings, or scheduling.
 - **Status**: Active (last updated Mar 2026)
 
 ### UserScripts
