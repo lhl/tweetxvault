@@ -2,6 +2,25 @@
 
 ## 2026-03-14
 
+- Implemented the first end-to-end MVP codebase (`pyproject.toml`, `tweetxvault/`, `tests/`, `uv.lock`):
+  - Built Typer CLI commands for `sync`, `auth check`, `auth refresh-ids`, and JSON export
+  - Implemented XDG config loading, env/config/Firefox cookie resolution, query-id cache + scraper, async GraphQL client, per-page sync orchestration, and JSON export
+  - Added 25 tests covering auth, query-id discovery, HTTP retry/query-id refresh, storage atomicity, incremental/head+backfill resume, `--full` resume, preflight behavior, process locking, partial `sync all`, and first-run UX
+- Task 0 storage spike changed the storage backend decision for the working MVP:
+  - Reproduced embedded SeekDB failures with `pylibseekdb.open/connect` across repo and non-tmpfs writable paths (`open seekdb failed 4016`, `connect failed 4006`)
+  - Switched the implemented backend to SQLite in `tweetxvault/storage/seekdb.py` while preserving the planned schema and atomic page-write semantics
+  - Kept raw JSON inline in the DB for the MVP; no sidecar gzip path was needed after the fallback
+- Captured current X web artifacts to avoid placeholder query IDs / feature flags:
+  - Used `curl` against `https://x.com/?lang=en` plus the current `main`, bookmark shared chunk, and bookmark bundle to extract current `Bookmarks`, `Likes`, `BookmarkFolderTimeline`, `TweetDetail`, and `UserArticlesTweets` query IDs
+  - Sourced the committed feature-switch defaults from the same live X page fetch on 2026-03-14
+- Verified the repo-level definition of done:
+  - `UV_CACHE_DIR=/tmp/uv-cache uv sync --python 3.12`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault --help`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault tests`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check tweetxvault tests`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest`
+  - Result: all commands passed; `uv run pytest` finished with `25 passed`
+
 - Additional architecture sweep for idempotency/race risks in planning docs:
   - Found missing single-writer protection; added explicit process-lock requirement and atomic temp-file writes in `docs/PLAN.md`
   - Found a bigger sync-state flaw: bottom cursor cannot be the default starting point for later incremental runs because it only paginates older items; updated PLAN/IMPLEMENTATION to separate head sync from interrupted backfill resume

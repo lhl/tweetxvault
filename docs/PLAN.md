@@ -2,11 +2,15 @@
 
 ## Goal
 
-Build a Python tool for regular, unattended export of Twitter/X bookmarks and likes into a local embedded database (SeekDB) with:
+Build a Python tool for regular, unattended export of Twitter/X bookmarks and likes into a local embedded database with:
 - raw GraphQL capture (never lose data)
 - incremental sync with checkpoint/resume
 - local search (full-text + semantic) and eventually hybrid search
 - first-class media archival (images + video + GIF) as a later phase
+
+Implementation note (2026-03-14):
+- Task 0 found embedded SeekDB unusable in this environment (`pylibseekdb` `open`/`connect` failed across multiple writable paths), so the first working MVP stores data in SQLite while preserving the planned schema and sync semantics.
+- SeekDB remains the intended future backend once the runtime issue is resolved and re-spiked.
 
 This is part of the broader [attention-export](~/github/lhl/attention-export) system.
 
@@ -17,7 +21,7 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 - Direct GraphQL API sync for `Bookmarks` and `Likes` using browser cookies
 - Query ID (query hash) auto-discovery from Twitter web JS bundles with TTL cache + static fallback IDs
 - Rate-limit handling with exponential backoff + cooldown
-- SeekDB storage:
+- Local embedded storage:
   - append-only raw page captures
   - upserted per-tweet records
   - collection membership (like/bookmark) and sync checkpoints
@@ -45,7 +49,7 @@ The `reference/` directory contains third-party snapshots for study — see `ref
 
 These are our architectural choices, made to serve tweetxvault's goals (unattended sync, raw data preservation, embedded search, attention-export integration). They are independent decisions, not inherited from any existing tool.
 
-- **DB**: SeekDB (`pyseekdb`) in embedded mode.
+- **DB**: SeekDB remains the intended backend, but the implemented MVP currently uses SQLite because embedded SeekDB failed Task 0 runtime validation on 2026-03-14.
 - **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
 - **Query IDs**: Auto-discover query IDs from Twitter web JS bundles with an on-disk TTL cache + fallback static IDs (avoid manual weekly updates).
 - **Rate limiting/backoff**: Exponential backoff and cooldown on repeated `429` (parameters adjustable).
@@ -281,9 +285,14 @@ Behavior:
 - For `404` on a known operation: refresh query IDs once, retry. If still 404, fail with "query ID refresh failed" error.
 - For any non-retryable or exhausted failure after sync has started: the last fully committed page remains durable, the in-progress page does not advance `sync_state`, and the command exits non-zero.
 
-## Storage (SeekDB)
+## Storage
 
-See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoughts. The project decision is SeekDB.
+See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoughts.
+
+Current implementation status:
+- The MVP ships with SQLite storage in `tweetxvault/storage/seekdb.py`.
+- The schema below is still the source of truth for tables and sync semantics.
+- Revisit embedded SeekDB only after a fresh runtime spike shows reliable initialization and acceptable startup/footprint.
 
 ### Minimal Schema (Phase 1)
 
@@ -404,11 +413,8 @@ Reserved for future (not implemented in MVP):
 
 ## Open Questions (Remaining)
 
-These are the only “unknowns” we still need to answer before implementation punchlisting:
-
-1. **SeekDB embedded footprint/startup**: What are startup time and memory footprint for a typical cron run? (Need a small prototype before we commit too hard to schema choices.)
-2. **SeekDB raw JSON storage limits/perf**: Are large JSON blobs practical in a SeekDB table/collection? If not, store `raw_json_path` to gzipped files on disk and keep a hash in DB.
-3. **Articles endpoint shape**: Does `UserArticlesTweets` include full body? If not, decide whether we will implement a targeted Playwright scrape for articles only.
+1. **SeekDB revisit**: determine whether a newer `pyseekdb`/`pylibseekdb` stack makes embedded SeekDB viable enough to replace the current SQLite MVP backend.
+2. **Articles endpoint shape**: Does `UserArticlesTweets` include full body? If not, decide whether we will implement a targeted Playwright scrape for articles only.
 
 ## Dependencies (Planned)
 
