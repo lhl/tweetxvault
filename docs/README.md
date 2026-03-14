@@ -1,0 +1,23 @@
+# Documentation Index
+
+## Plans
+
+- **`PLAN.md`** — Current implementation plan (direct API primary + Playwright fallback, TweetHoarder analysis, feature roadmap)
+- `initial/PLAN-A.md` — Playwright browser automation + GraphQL interception approach
+- `initial/PLAN-B.md` — Direct GraphQL API client (requests) approach
+- `initial/COMPARISON.md` — Side-by-side comparison; recommends Plan A as primary
+
+## Research
+
+- `research/RESEARCH-claude.md` — Landscape review of Twitter/X export tools (2026)
+- `research/RESEARCH-chatgpt.md` — ChatGPT Deep Research: official API pricing, open-source tool survey, authentication flows, automation workflows
+
+## Analysis
+
+- `ANALYSIS-db.md` — Database choice comparison (SQLite, DuckDB, LanceDB, SeekDB), schema design, vector indexing, embedding models
+- `ANALYSIS-agents.md` — Survey of AGENTS.md patterns across repos; informs this project's conventions
+
+## Work Tracking
+
+- `IMPLEMENTATION.md` — Active checklist (created when implementation begins)
+- `../WORKLOG.md` — Running session log (lives in repo root)
