@@ -40,6 +40,12 @@ Third-party repos, gists, and saved pages collected during research for the twit
 - **Key insight**: Analysis/visualization tool, not an exporter. Shows interaction pattern analysis approach.
 - **Status**: Active (last updated Oct 2025)
 
+### tweethoarder
+- **Source**: https://github.com/tfriedel/tweethoarder
+- **What**: Python local archiver for likes, bookmarks, tweets, reposts, and home feed. Stores in SQLite, exports JSON/Markdown/CSV/searchable HTML. Cookie-based auth against internal GraphQL API.
+- **Key insight**: Closest existing tool to our project — same stack (Python + SQLite + cookie auth + internal GraphQL). Good reference for DB schema, export formats, and GraphQL query handling. Uses direct API calls with cookie auth (Plan B approach) rather than browser interception.
+- **Status**: Active (last updated Mar 2026)
+
 ### UserScripts
 - **Source**: https://github.com/ChinaGodMan/UserScripts
 - **What**: Large collection (100+) of UserScripts. Twitter-relevant scripts include: `twitter-media-downloader` (one-click image/video download), `twitter-download-blocklist`, `twitter-hide-reposts`, `twitter-show-date-normally`.
