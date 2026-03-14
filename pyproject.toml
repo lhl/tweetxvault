@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "tweetxvault"
 version = "0.1.0"
 description = "Export X bookmarks and likes into a local archive."
-readme = "docs/README.md"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "httpx>=0.27,<1",
