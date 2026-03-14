@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -30,6 +31,14 @@ class FirefoxCookieBundle(BaseModel):
     profile_path: Path
 
 
+@dataclass(slots=True)
+class FirefoxProfile:
+    name: str
+    path: Path
+    is_default: bool = False
+    install_defaults: list[str] = field(default_factory=list)
+
+
 def parse_twid(raw_value: str | None) -> str | None:
     if not raw_value:
         return None
@@ -38,6 +47,66 @@ def parse_twid(raw_value: str | None) -> str | None:
         candidate = decoded[2:]
         return candidate if candidate.isdigit() else None
     return decoded if decoded.isdigit() else None
+
+
+def _resolve_profile_path(profiles_ini: Path, raw_path: str, *, is_relative: bool) -> Path:
+    if is_relative:
+        return (profiles_ini.parent / raw_path).expanduser()
+    return Path(raw_path).expanduser()
+
+
+def _load_profiles(profiles_ini: Path) -> list[FirefoxProfile]:
+    parser = configparser.ConfigParser()
+    parser.read(profiles_ini)
+    profiles: list[FirefoxProfile] = []
+    by_path: dict[Path, FirefoxProfile] = {}
+
+    for section in parser.sections():
+        if not section.startswith("Profile"):
+            continue
+        raw_path = parser.get(section, "Path", fallback="")
+        if not raw_path:
+            continue
+        profile = FirefoxProfile(
+            name=parser.get(section, "Name", fallback=raw_path),
+            path=_resolve_profile_path(
+                profiles_ini,
+                raw_path,
+                is_relative=parser.getboolean(section, "IsRelative", fallback=True),
+            ),
+            is_default=parser.getboolean(section, "Default", fallback=False),
+        )
+        profiles.append(profile)
+        by_path[profile.path] = profile
+
+    for section in parser.sections():
+        if not section.startswith("Install"):
+            continue
+        raw_default = parser.get(section, "Default", fallback="")
+        if not raw_default:
+            continue
+        profile = by_path.get(_resolve_profile_path(profiles_ini, raw_default, is_relative=True))
+        if profile is not None:
+            profile.install_defaults.append(section)
+
+    return profiles
+
+
+def _profile_summary(profiles: list[FirefoxProfile]) -> str:
+    lines: list[str] = []
+    for profile in profiles:
+        tags: list[str] = []
+        if profile.is_default:
+            tags.append("default")
+        if profile.install_defaults:
+            tags.append("install-default")
+        suffix = f" [{', '.join(tags)}]" if tags else ""
+        lines.append(f"- {profile.name}: {profile.path}{suffix}")
+    return "\n".join(lines)
+
+
+def _discover_profiles_ini(env: Mapping[str, str]) -> Path:
+    return Path(env.get("TWEETXVAULT_FIREFOX_PROFILES_INI", FIREFOX_PROFILES_INI)).expanduser()
 
 
 def discover_default_profile(
@@ -51,32 +120,40 @@ def discover_default_profile(
             raise AuthResolutionError(f"Configured Firefox profile does not exist: {path}")
         return path
 
-    profiles_ini = Path(
-        env.get("TWEETXVAULT_FIREFOX_PROFILES_INI", FIREFOX_PROFILES_INI)
-    ).expanduser()
+    profiles_ini = _discover_profiles_ini(env)
     if not profiles_ini.exists():
         raise AuthResolutionError(
             "Firefox profiles.ini not found; set cookies via env/config instead."
         )
 
-    parser = configparser.ConfigParser()
-    parser.read(profiles_ini)
-    candidates: list[Path] = []
-    for section in parser.sections():
-        if not section.startswith("Profile"):
-            continue
-        is_relative = parser.getboolean(section, "IsRelative", fallback=True)
-        raw_path = parser.get(section, "Path", fallback="")
-        if not raw_path:
-            continue
-        profile_path = profiles_ini.parent / raw_path if is_relative else Path(raw_path)
-        if parser.getboolean(section, "Default", fallback=False):
-            return profile_path.expanduser()
-        candidates.append(profile_path.expanduser())
+    profiles = _load_profiles(profiles_ini)
+    if not profiles:
+        raise AuthResolutionError("No Firefox profile entries found in profiles.ini.")
 
-    if candidates:
-        return candidates[0]
-    raise AuthResolutionError("No Firefox profile entries found in profiles.ini.")
+    matches: list[FirefoxProfile] = []
+    for profile in profiles:
+        try:
+            bundle = extract_firefox_cookies(profile.path)
+        except AuthResolutionError:
+            continue
+        if bundle.auth_token and bundle.ct0:
+            matches.append(profile)
+
+    if len(matches) == 1:
+        return matches[0].path
+    if len(matches) > 1:
+        raise AuthResolutionError(
+            "Multiple Firefox profiles contain X session cookies. Set "
+            "TWEETXVAULT_FIREFOX_PROFILE_PATH or auth.firefox_profile_path to one of:\n"
+            f"{_profile_summary(matches)}"
+        )
+
+    raise AuthResolutionError(
+        "Discovered Firefox profiles, but none contained X session cookies. "
+        "Log into x.com in one of these profiles or set "
+        "TWEETXVAULT_FIREFOX_PROFILE_PATH / auth.firefox_profile_path explicitly:\n"
+        f"{_profile_summary(profiles)}"
+    )
 
 
 def _copy_sqlite_bundle(cookies_db: Path) -> Path:
@@ -97,24 +174,29 @@ def extract_firefox_cookies(profile_path: Path) -> FirefoxCookieBundle:
 
     copied_db = _copy_sqlite_bundle(cookies_db)
     try:
-        connection = sqlite3.connect(f"file:{copied_db}?mode=ro", uri=True)
-        connection.row_factory = sqlite3.Row
         try:
-            rows = connection.execute(
-                """
-                SELECT name, value, host
-                FROM moz_cookies
-                WHERE name IN (?, ?, ?)
-                  AND host IN (?, ?, ?, ?)
-                ORDER BY CASE
-                    WHEN host IN ('.x.com', 'x.com') THEN 0
-                    ELSE 1
-                END
-                """,
-                ("auth_token", "ct0", "twid", *COOKIE_HOSTS),
-            ).fetchall()
-        finally:
-            connection.close()
+            connection = sqlite3.connect(f"file:{copied_db}?mode=ro", uri=True)
+            connection.row_factory = sqlite3.Row
+            try:
+                rows = connection.execute(
+                    """
+                    SELECT name, value, host
+                    FROM moz_cookies
+                    WHERE name IN (?, ?, ?)
+                      AND host IN (?, ?, ?, ?)
+                    ORDER BY CASE
+                        WHEN host IN ('.x.com', 'x.com') THEN 0
+                        ELSE 1
+                    END
+                    """,
+                    ("auth_token", "ct0", "twid", *COOKIE_HOSTS),
+                ).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error as exc:
+            raise AuthResolutionError(
+                f"Failed to read Firefox cookies under {profile_path}: {exc}"
+            ) from exc
     finally:
         shutil.rmtree(copied_db.parent, ignore_errors=True)
 

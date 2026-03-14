@@ -153,7 +153,7 @@ We rely on browser session cookies:
 Cookie resolution chain (in priority order):
 1. **Env vars**: `TWEETXVAULT_AUTH_TOKEN`, `TWEETXVAULT_CT0`, `TWEETXVAULT_USER_ID` (numeric)
 2. **Config file**: `~/.config/tweetxvault/config.toml` (`[auth]` section)
-3. **Firefox extraction**: auto-discover default profile, copy `cookies.sqlite` to temp, read `x.com` cookies
+3. **Firefox extraction**: inspect discovered Firefox profiles, prefer the only profile that actually contains `x.com` cookies, and require an explicit override if multiple viable profiles exist; copy `cookies.sqlite` to temp before reading
 
 User ID resolution (needed for Likes only):
 - Parsed from `twid` cookie (`u%3D<numeric_id>` → `<numeric_id>`)

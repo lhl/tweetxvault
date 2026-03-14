@@ -2,6 +2,11 @@
 
 ## 2026-03-15
 
+- Tightened Firefox profile autodiscovery for multi-profile setups:
+  - Changed `discover_default_profile(...)` to scan discovered Firefox profiles and auto-pick the only profile that actually contains `x.com` session cookies
+  - Added explicit ambiguity/no-cookie errors that list discovered profile paths and point users at `TWEETXVAULT_FIREFOX_PROFILE_PATH` / `auth.firefox_profile_path`
+  - Added auth tests covering the real Developer Edition case, ambiguous profile selection, and no-cookie profile listing
+
 - Tightened LanceDB export filtering after post-migration review:
   - Changed `ArchiveStore.export_rows(...)` to push `record_type = 'tweet'` and optional collection filtering into LanceDB instead of materializing the full archive table in Python
   - Added a storage regression test that monkeypatches `table.to_arrow()` to fail so export coverage proves the search path is used

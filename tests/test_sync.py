@@ -479,6 +479,7 @@ def test_first_run_creates_dirs_and_missing_auth_is_actionable(
         "XDG_CONFIG_HOME": str(tmp_path / "config-root"),
         "XDG_DATA_HOME": str(tmp_path / "data-root"),
         "XDG_CACHE_HOME": str(tmp_path / "cache-root"),
+        "TWEETXVAULT_FIREFOX_PROFILES_INI": str(tmp_path / "missing-profiles.ini"),
     }
     monkeypatch.delenv("TWEETXVAULT_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("TWEETXVAULT_CT0", raising=False)

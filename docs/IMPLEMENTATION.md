@@ -66,7 +66,7 @@ Config and auth are tightly coupled — build them together.
   - Persist local archive owner id in DB metadata on first successful sync.
   - Refuse later syncs if resolved owner id differs from stored owner id.
 - [x] Implement `tweetxvault/auth/firefox.py`
-  - Discover default profile from `profiles.ini` (allow explicit path override via config/env).
+  - Discover candidate profiles from `profiles.ini`, prefer the only profile that actually contains `x.com` cookies, and allow explicit path override via config/env when multiple profiles are viable.
   - Copy `cookies.sqlite` to temp file; open read-only; query `moz_cookies` for `.x.com` / `.twitter.com`.
   - Extract `auth_token`, `ct0`, `twid`.
   - Parse `twid` (`u%3D<numeric_id>`) into numeric user_id.
