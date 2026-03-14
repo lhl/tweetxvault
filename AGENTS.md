@@ -7,43 +7,11 @@ Instruction precedence: if this file conflicts with platform/system/developer in
 
 ## Project Overview
 
-tweetxvault is a Python tool for regularly exporting Twitter/X bookmarks and likes into a local embedded database. It extracts authentication credentials automatically from the user's Firefox profile and uses Playwright to intercept Twitter's internal GraphQL API responses.
+tweetxvault is a Python tool for regularly exporting Twitter/X bookmarks and likes into a local embedded database (SeekDB). Implementation details live in [docs/PLAN.md](docs/PLAN.md).
 
-Part of the broader `attention-export` project (~/github/lhl/attention-export) — a personal system for collecting saved/written content from various online platforms into a searchable local repository.
-
-### Design Principles
-
-1. **Local/private** — all data stays on-machine. No external services, no telemetry, no cloud sync.
-2. **Zero-maintenance auth** — credentials extracted automatically from Firefox cookies.sqlite (plaintext on Linux). No manual token copying.
-3. **Hash-agnostic** — intercept GraphQL responses by operation name, never hardcode query hashes. The browser supplies current hashes automatically.
-4. **Raw-first storage** — store full API responses in the DB. Parse/transform as a separate concern so nothing is lost.
-5. **Cronnable** — designed to run unattended on a schedule with no human interaction.
-
-### Tech Stack
-
-- **Language**: Python 3.12+
-- **Browser automation**: Playwright (Chromium, headless)
-- **Database**: TBD (LanceDB or DuckDB)
-- **CLI**: argparse (keep it minimal)
-- **Auth**: Firefox cookies.sqlite extraction (sqlite3 stdlib)
-
-## Key Directories
-
-```
-tweetxvault/
-├── twitter/              # Core Python source (the tool we're building)
-│   ├── firefox_creds.py  # Firefox cookie extraction
-│   ├── scraper.py        # Playwright browser automation + GraphQL capture
-│   ├── db.py             # Embedded DB storage layer
-│   ├── models.py         # Data models / schemas
-│   ├── config.py         # Constants
-│   └── cli.py            # CLI entry point
-├── docs/                 # Plans, research, implementation notes (separate git repo)
-│   ├── initial/          # Initial plans (PLAN-A, PLAN-B, COMPARISON)
-│   └── research/         # Research notes
-├── reference/            # Third-party repo snapshots (read-only, see reference/README.md)
-└── tests/                # Test suite
-```
+Notes:
+- `docs/initial/` is historical and intentionally frozen (do not edit; it may contradict current plans).
+- `reference/` is for study only (read-only snapshots).
 
 ## Work Tracking
 
@@ -118,25 +86,12 @@ Do not use destructive commands unless explicitly instructed:
 - Firefox profile paths should be auto-detected or passed as CLI args, never hardcoded with user-specific paths
 - `.gitignore` must exclude: `*.sqlite`, `*.db`, `twitter_session.json`, any `data/` output directories
 
-### Browser Automation
-
-- Default to headless Chromium via Playwright
-- Always copy cookies.sqlite to a temp file before reading (Firefox holds WAL lock on the live DB)
-- Include `--headful` flag for debugging
-- Use reasonable scroll delays (1.5-3s) to avoid triggering rate limits
-
 ### Reference Directory
 
 - `reference/` contains third-party repos for study — treat as read-only
 - See `reference/README.md` for source URLs and descriptions
 - Do not modify vendored code for style or cleanup
 - Research notes about reference code go in `docs/`, not inside `reference/`
-
-### Database
-
-- Store raw GraphQL JSON responses as-is before any parsing/transformation
-- Deduplicate by tweet `rest_id`
-- Track capture metadata: operation type, timestamp, source (playwright/api)
 
 ## Git Practices
 

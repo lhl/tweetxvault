@@ -2,255 +2,312 @@
 
 ## Goal
 
-Build a Python tool for regular, unattended export of Twitter/X bookmarks and likes into a local embedded database with semantic search capabilities and full media archival. Part of the broader [attention-export](~/github/lhl/attention-export) system.
+Build a Python tool for regular, unattended export of Twitter/X bookmarks and likes into a local embedded database (SeekDB) with:
+- raw GraphQL capture (never lose data)
+- incremental sync with checkpoint/resume
+- local search (full-text + semantic) and eventually hybrid search
+- first-class media archival (images + video + GIF) as a later phase
 
-## Decision: Build Fresh, Cite TweetHoarder
+This is part of the broader [attention-export](~/github/lhl/attention-export) system.
 
-We are **building our own tool from scratch**, not forking [TweetHoarder](https://github.com/tfriedel/tweethoarder) (MIT licensed). Rationale:
+## Scope and Non-Goals
 
-- Our differentiators (vector search/embeddings, media archival, articles export, attention-export integration) touch every layer — storage, client, CLI, export. A fork would require rewriting most of it anyway.
-- We want a different storage architecture (SeekDB/LanceDB with native vector search, not SQLite).
-- We can build leaner (~2,000-3,000 lines vs their ~5,600) by making our own dependency and design choices.
-- The hard problems (query hash discovery, feature flags, cursor extraction, Chrome cookie decryption) are well-documented in tweethoarder's codebase — reimplementing independently with that reference is straightforward.
+### MVP (what we will implement first)
 
-TweetHoarder is cited as prior art and its `reference/tweethoarder/` checkout is used for studying patterns, not as a code source.
+- Direct GraphQL API sync for `Bookmarks` and `Likes` using browser cookies
+- Query ID (query hash) auto-discovery from Twitter web JS bundles (TweetHoarder approach) with TTL cache + static fallback IDs
+- Rate-limit handling with exponential backoff + cooldown
+- SeekDB storage:
+  - append-only raw page captures
+  - upserted per-tweet records
+  - collection membership (like/bookmark) and sync checkpoints
+- Minimal exports (JSON first; CSV/Markdown later)
 
-## Prior Art: TweetHoarder
+### Explicitly out of scope for MVP
 
-[TweetHoarder](https://github.com/tfriedel/tweethoarder) — the closest existing tool.
+- Playwright-based scraping CLI (we will keep the architecture ready for it, but not implement it now)
+- Media downloads
+- HTML export UI
+- Extended collections (tweets/reposts/replies/feed) beyond likes/bookmarks
+- Multi-account support
 
-- **Origin**: Started Jan 2, 2026. ~100 commits (65 on day one). Built with Claude Code (Opus 4.5), using beads for coordination. Architecture ported from [bird](https://github.com/steipete/bird) (TypeScript). MIT licensed.
-- **Stack**: Python 3.13+, async (httpx), SQLite, Typer CLI, cookie-based auth
+## Why a Clean Rewrite (Not a Fork)
 
-### What It Does Well
+We are **building from scratch**, not forking [TweetHoarder](https://github.com/tfriedel/tweethoarder) (MIT).
 
-| Area | Details |
-|------|---------|
-| **Auth extraction** | Firefox + Chrome cookie auto-detection with fallback chain (env vars → config file → Firefox → Chrome w/ keyring decryption). Extracts `auth_token`, `ct0`, `twid`. |
-| **Query hash discovery** | Dynamic: fetches Twitter's JS bundles, regex-extracts operation→hash mappings. Falls back to hardcoded list. 24h TTL cache. Auto-refreshes on 404. |
-| **Feature flags** | ~60 flags ported from bird reference implementation. Per-endpoint flag sets. |
-| **Checkpoint/resume** | Tracks sync progress (cursor, last_tweet_id, sort_index) per collection type. |
-| **Rate limiting** | Adaptive exponential backoff: 0.2s initial → 60s max, 2x multiplier, resets after 5 successes. 5-minute cooldown after 3 consecutive 429s. |
-| **Raw data preservation** | Full GraphQL JSON stored in `raw_json` column alongside parsed fields. |
-| **Export formats** | JSON, Markdown (thread-aware), CSV, HTML (single-file viewer with virtual scrolling, themes, faceted search). |
-| **Collection types** | likes, bookmarks (with folder support), tweets, reposts, replies, feed |
+Rationale:
+- Our differentiators (SeekDB, embeddings/hybrid search, media archival, attention-export integration) cut across every layer. A fork would become a long-lived divergence.
+- TweetHoarder’s hard problems are solved and well-documented (query ID refresh, feature flags, cursor parsing, rate limit handling). We can re-implement those patterns cleanly without inheriting unrelated decisions (SQLite schema, Typer UX, etc.).
+- We want an architecture that treats Playwright as an optional adapter rather than a core requirement.
 
-### Our Differentiators
+TweetHoarder is used as prior art and is vendored only under `reference/` for study, not as a code source.
 
-| Gap in TweetHoarder | Our Approach |
-|---------------------|-------------|
-| **No media downloads** | First-class media archival: images, videos (MP4 + m3u8/ffmpeg), GIFs. Content-hash dedup. |
-| **No search/embeddings** | Native vector search via SeekDB or LanceDB. Semantic "find similar" queries. Hybrid search (vector + text + metadata filters). |
-| **No articles export** | `UserArticlesTweets` GraphQL endpoint — nobody has implemented this yet. Novel feature. |
-| **No scheduling** | Designed for cron from day one. Incremental by default, clear exit codes. |
-| **SQLite only** | Embedded DB with native vector + full-text + hybrid search. |
-| **No Playwright fallback** | Direct API primary, Playwright for debugging/CAPTCHA fallback. |
-| **No attention-export integration** | Module in the attention-export ecosystem. |
+## Key Decisions (Locked In)
 
-### Patterns to Study Independently
+- **DB**: SeekDB (`pyseekdb`) in embedded mode.
+- **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
+- **Query IDs**: Auto-discovered from Twitter JS bundles + on-disk TTL cache + fallback static IDs (TweetHoarder approach).
+- **Rate limiting/backoff**: TweetHoarder-style exponential backoff and cooldown on repeated `429`.
+- **Auth**: Cookie-based session auth (no username/password automation).
+  - MVP: env vars + config file + Firefox cookie extraction (Linux).
+- **Chrome cookie extraction**: Defer until someone actually needs it (it adds keyring/decryption complexity).
+- **CLI framework**: Typer (keep it minimal; no sprawling command surface).
+- **Playwright**: Reserved as a future fallback adapter (debugging/CAPTCHA/JS challenge), not implemented in MVP.
 
-These are non-obvious problems TweetHoarder solved. We study the approach and write our own:
+## Prior Art We’re Adopting from TweetHoarder
 
-1. **Query hash auto-discovery** (`query_ids/scraper.py`): 4 regex patterns against JS bundles from multiple discovery pages. Fallback list + 24h TTL cache.
-2. **Feature flag sets** (`client/features.py`): ~60 flags, different per endpoint. Ported from bird.
-3. **Cursor extraction**: Timeline response walking for pagination cursors across different GraphQL response shapes.
-4. **Chrome cookie decryption** (`auth/chrome.py`): AES-128-CBC with PBKDF2, key from GNOME Keyring via secretstorage.
-5. **Sort index tracking** (`sync/sort_index.py`): Preserving Twitter's timeline ordering for resume.
+This is the minimal set of patterns we should port conceptually:
+
+1. **Query ID auto-discovery**: Fetch a discovery page, extract bundle URLs, regex operationName <-> queryId pairs, cache with TTL, refresh on `404`.
+2. **Feature flags**: Maintain per-operation feature flag builders (ported from bird); don’t send a single “one size fits all” blob.
+3. **Cursor extraction**: Timeline instruction walking (cursor-bottom entries), with operation-specific parsers.
+4. **Rate limit handling**:
+   - per-request retries with exponential delay
+   - cooldown after N consecutive `429`
+5. **Checkpoint/resume**: Persist cursor and “where we were” per collection and resume automatically.
 
 ## Architecture
 
-### Approach: Direct API (primary) + Playwright (fallback)
-
-TweetHoarder's query hash auto-discovery proves the direct API approach is viable without constant maintenance. With reliable hash discovery, direct API keeps its advantages (fast, lightweight, precise rate control, cronnable) without its main disadvantage (hash staleness).
-
-**Primary**: Direct HTTP API client (httpx, async) with auto-discovered query hashes
-**Fallback**: Playwright browser automation for debugging, CAPTCHA handling, or when direct API fails
-
-### File Tree
+### Package Layout (Planned)
 
 ```
 tweetxvault/
-├── twitter/
-│   ├── NEW  __init__.py
-│   ├── NEW  config.py           # Constants, XDG paths, TOML config
-│   ├── NEW  auth/
-│   │   ├── NEW  __init__.py
-│   │   ├── NEW  firefox.py      # Firefox cookie extraction
-│   │   ├── NEW  chrome.py       # Chrome cookie extraction + keyring
-│   │   └── NEW  cookies.py      # Resolution chain (env → config → browser)
-│   ├── NEW  client/
-│   │   ├── NEW  __init__.py
-│   │   ├── NEW  base.py         # HTTP client, headers, bearer token
-│   │   ├── NEW  features.py     # GraphQL feature flags per endpoint
-│   │   ├── NEW  timelines.py    # Endpoint implementations + pagination
-│   │   └── NEW  query_ids.py    # Hash discovery, caching, fallback
-│   ├── NEW  scraper.py          # Playwright fallback (--headful, --browser)
-│   ├── NEW  db.py               # DB layer (SeekDB)
-│   ├── NEW  models.py           # Data models / schemas
-│   ├── NEW  media.py            # Media download (images, video, m3u8)
-│   ├── NEW  export/
-│   │   ├── NEW  __init__.py
-│   │   ├── NEW  json.py
-│   │   ├── NEW  csv.py
-│   │   └── NEW  markdown.py
-│   └── NEW  cli.py              # CLI entry point
-├── tests/
-│   └── ...
-├── data/                         # Local data (gitignored)
-│   ├── db/                       # Database files
-│   └── media/                    # Downloaded media
-├── docs/                         # Plans, research, analysis
-├── reference/                    # Third-party repo snapshots (read-only)
-└── README.md
+├── tweetxvault/
+│   ├── __init__.py
+│   ├── config.py              # XDG paths, config file, constants
+│   ├── auth/
+│   │   ├── __init__.py
+│   │   ├── firefox.py         # Firefox cookies.sqlite reader (copy-to-temp)
+│   │   └── cookies.py         # Resolution chain (env -> config -> firefox)
+│   ├── query_ids/
+│   │   ├── __init__.py
+│   │   ├── constants.py       # fallback query IDs + target ops
+│   │   ├── scraper.py         # bundle discovery + regex extraction
+│   │   └── store.py           # TTL cache on disk
+│   ├── client/
+│   │   ├── __init__.py
+│   │   ├── base.py            # httpx client, headers, error classification
+│   │   ├── features.py        # per-operation feature flag builders
+│   │   └── timelines.py       # URL builders, fetch_page(), parse_page()
+│   ├── storage/
+│   │   ├── __init__.py
+│   │   └── seekdb.py          # schema + upserts + checkpoints
+│   ├── export/
+│   │   ├── __init__.py
+│   │   └── json_export.py
+│   ├── sync.py                # orchestrates sync loops (likes/bookmarks)
+│   └── cli.py                 # CLI entry point
+└── tests/
 ```
+
+### Adapter Boundary (Playwright Future-Proofing)
+
+Define a small internal interface:
+
+```python
+class Fetcher(Protocol):
+    async def sync_collection(self, collection: str, *, full: bool) -> None: ...
+```
+
+MVP implements `GraphQLAPIFetcher`. A future `PlaywrightFetcher` can implement the same interface and share storage + export.
 
 ### Data Flow
 
 ```
-Browser cookies ──> auth/ ──> auth_token + ct0 + twid
-                                    │
-          query_ids.py ─────────────┤ (discovers current hashes)
-                                    │
-                                    v
-                            client/ (httpx async)
-                            ┌─────────────────────┐
-                            │  1. Build headers     │
-                            │  2. Discover hashes   │
-                            │  3. Paginate endpoint │
-                            │  4. Store raw JSON    │
-                            └────────┬──────────────┘
-                                     │
-                    ┌────────────────┼────────────────┐
-                    v                v                 v
-                 db.py          media.py          export/
-              (raw JSON +     (images, video,    (JSON, CSV,
-               parsed fields   m3u8 → local)      Markdown)
-               + embeddings)
+cookies (env/config/firefox)
+  -> auth (auth_token + ct0 + twid)
+      -> query_ids (cache -> refresh -> fallback)
+          -> client (httpx)
+              -> store raw captures (append)
+              -> parse tweets + cursors
+                  -> upsert tweets + collections
+                      -> update checkpoints
 ```
 
-### DB Choice
+## Direct GraphQL API Design
 
-See [ANALYSIS-db.md](ANALYSIS-db.md) for the full comparison of SQLite, DuckDB, LanceDB, and SeekDB.
+### Auth + Headers (MVP)
 
-**Top contenders**: SeekDB and LanceDB. Both support native vector search in embedded mode.
+We rely on browser session cookies:
+- `auth_token` (session)
+- `ct0` (CSRF; also sent as `x-csrf-token`)
+- `twid` (contains numeric user id; useful for Likes without extra lookup)
 
-| | SeekDB | LanceDB |
-|--|--------|---------|
-| **Best for** | Hybrid search (vector + full-text + SQL in one query) | Pure vector similarity |
-| **SQL** | MySQL-compatible | None (Python API) |
-| **Full-text search** | Native | Basic |
-| **Built-in embeddings** | Yes (all-MiniLM-L6-v2 default, 14 providers) | No |
-| **Hybrid search** | Single `hybrid_search()` call with RRF ranking | Manual stitching |
-| **Maturity** | Engine: OceanBase (15+ years); SDK: ~4 months | ~2 years |
-| **Distance metrics** | L2, cosine, inner product | L2, cosine, dot |
+Firefox cookie extraction rules (Linux):
+- Always copy `cookies.sqlite` to a temp file before reading (Firefox often holds WAL locks on the live DB)
+- Open the copied DB in read-only mode (`mode=ro`) via sqlite URI
+- Never log raw cookie values; treat them as secrets
 
-**Decision**: SeekDB. Its hybrid search (vector + full-text + SQL in one query) is exactly what we need, built-in embeddings avoid extra dependencies, and the OceanBase engine underneath is proven. The SDK is young but we'll learn its edges as we go. See [ANALYSIS-db.md](ANALYSIS-db.md) for full comparison.
+Expected request headers (aligned with TweetHoarder patterns):
+- `Authorization: Bearer <public web bearer token>`
+- `x-csrf-token: <ct0>`
+- `x-twitter-active-user: yes`
+- `x-twitter-auth-type: OAuth2Session`
+- `x-twitter-client-language: en`
+- plus basic browser-like `User-Agent`, `Referer`, `Origin`
+
+### Operations (Phase 1)
+
+Minimum operations needed:
+- `Bookmarks`
+- `Likes`
+
+Recommended additional operations to include in query-id targets even if we don’t sync them yet:
+- `BookmarkFolderTimeline` (folders)
+- `UserArticlesTweets` (probe later)
+- `TweetDetail` (thread/context or media variants later)
+
+### Query ID Auto-Discovery (TweetHoarder Approach)
+
+- Maintain `FALLBACK_QUERY_IDS` for the target operation set.
+- Maintain a disk cache file (JSON) with:
+  - `fetched_at` (UTC)
+  - `ttl_seconds` (24h)
+  - `ids` mapping `{operation_name: query_id}`
+- Refresh behavior:
+  - On startup, use cached IDs if fresh.
+  - If missing/stale, fetch a discovery page (e.g., `https://x.com/?lang=en`), extract bundle URLs matching the `abs.twimg.com/responsive-web/client-web/*.js` regex, fetch bundles, extract operationName/queryId pairs via regex patterns.
+  - If an API call returns `404`, treat it as “stale query id”, refresh once, retry.
+  - Provide `tweetxvault auth refresh-ids` to force refresh.
+
+### Feature Flags
+
+Keep per-operation builders, not a single shared dict. Implementation plan:
+- Start by porting TweetHoarder’s current flag sets for `Bookmarks` and `Likes`.
+- If requests begin returning `400`, treat it as likely feature drift and update from reference/ prior art.
+
+### Pagination + Cursor Extraction
+
+Per-operation parsers that:
+- find tweet entries (`entryId` prefix `tweet-...`)
+- find bottom cursor entries (`entryId` prefix `cursor-bottom-...`) and return cursor value
+- extract `sortIndex` when available so we can preserve timeline order
+
+### Rate Limiting / Backoff
+
+Adopt TweetHoarder’s spirit:
+- For timeline page fetches: retry up to N times on `429`, with exponential backoff (`base_delay * 2^attempt`) and a cooldown (e.g., 5 minutes) after 3 consecutive `429`.
+- For other hard failures (403/401): fail fast with actionable output (cookies expired, missing ct0, etc.).
+- For `404` on a known operation: refresh query IDs once, retry.
+
+## Storage (SeekDB)
+
+See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoughts. The project decision is SeekDB.
+
+### Minimal Schema (Phase 1)
+
+- `raw_captures` (append-only):
+  - `id` (UUID)
+  - `operation` (Bookmarks/Likes)
+  - `cursor_in`, `cursor_out`
+  - `captured_at` (UTC)
+  - `http_status`, `source` ("api")
+  - `raw_json` (TEXT or JSON)
+
+- `tweets` (upsert by `tweet_id`):
+  - `tweet_id` (rest_id; PK)
+  - `text`
+  - `author_id`, `author_username`, `author_display_name`
+  - `created_at`
+  - `raw_json` (tweet-level raw block)
+  - `first_seen_at`, `last_seen_at`
+
+- `collections` (upsert by `(tweet_id, collection_type, folder_id)`):
+  - `tweet_id`
+  - `collection_type` ("bookmark" | "like")
+  - `bookmark_folder_id` (nullable)
+  - `sort_index` (nullable)
+  - `added_at` (sync-time for now; if we later find a real “liked/bookmarked at” timestamp we can backfill)
+  - `synced_at`
+
+- `sync_state` (checkpoint/resume):
+  - `collection_type` (+ folder_id where relevant)
+  - `cursor`
+  - `last_tweet_id` (optional)
+  - `updated_at`
+
+### Embeddings (Phase 3)
+
+- Use SeekDB’s built-in local embedding by default (`all-MiniLM-L6-v2`, 384d).
+- Store embeddings alongside tweets and build a vector index (HNSW).
+- Prefer hybrid search via SeekDB’s API (vector + FTS + metadata filters).
+
+## CLI Design
+
+Primary commands:
+
+```
+tweetxvault sync bookmarks          # incremental
+tweetxvault sync likes              # incremental
+tweetxvault sync all                # sync likes + bookmarks
+tweetxvault sync all --full         # full resync
+
+tweetxvault export json             # (phase 2+) export all collections
+
+tweetxvault auth check              # verify cookies are present/valid
+tweetxvault auth refresh-ids        # force query id refresh
+```
+
+Reserved for future (not implemented in MVP):
+- `tweetxvault sync ... --playwright` (adapter fallback)
 
 ## Feature Roadmap
 
 ### Phase 1: Core Sync (MVP)
 
-- [ ] Auth extraction (Firefox, Chrome, env var fallback)
-- [ ] Query hash auto-discovery + fallback list + cache
-- [ ] GraphQL client with feature flags and pagination
+- [ ] Auth extraction (env vars, config file, Firefox)
+- [ ] Query ID auto-discovery + fallback + TTL cache
+- [ ] GraphQL client (httpx async) + per-operation feature flags
 - [ ] Bookmarks sync
 - [ ] Likes sync
-- [ ] Raw JSON storage in DB
-- [ ] Parsed tweet fields (id, text, author, timestamps, media URLs, engagement)
-- [ ] Checkpoint/resume for interrupted syncs
-- [ ] Rate limit handling (adaptive backoff)
-- [ ] CLI: `sync bookmarks`, `sync likes`, `sync all`
-- [ ] Incremental sync by default, `--full` for complete re-sync
+- [ ] Append raw captures + upsert tweets + collections
+- [ ] Checkpoint/resume for interrupted sync
+- [ ] Rate limit handling (backoff + cooldown)
+- [ ] Minimal JSON export (optional but helpful early)
 
-### Phase 2: Media + Export
+### Phase 2: Export + Media Foundations
 
-- [ ] Image download (photos, profile images)
-- [ ] Video download (MP4 direct, m3u8 via ffmpeg)
-- [ ] GIF download
-- [ ] Media dedup by content hash
-- [ ] Export: JSON
-- [ ] Export: CSV
-- [ ] Export: Markdown
-- [ ] CLI: `export json`, `export csv`, `export md`
+- [ ] Export: JSON / CSV / Markdown
+- [ ] Media metadata extraction to DB (URLs, types, dimensions, variants)
+- [ ] Media download (photos first; video later)
 
 ### Phase 3: Search + Embeddings
 
-- [ ] Embedding generation for tweet text (local model, 384d default)
-- [ ] Vector storage + HNSW indexing (SeekDB native)
-- [ ] Semantic search CLI: `search "topic"`
-- [ ] Hybrid search via SeekDB `hybrid_search()` — vector + text + metadata filters in one query
-- [ ] Similar tweet lookup: `similar <tweet_id>`
+- [ ] Embeddings (SeekDB built-in)
+- [ ] Semantic search CLI
+- [ ] Hybrid search (vector + full-text + metadata)
+- [ ] Similar tweet lookup
 
 ### Phase 4: Extended Collections + Polish
 
-- [ ] User's own tweets sync
-- [ ] Reposts sync
-- [ ] Thread expansion (on-demand via TweetDetail)
-- [ ] Articles export (`UserArticlesTweets` — novel, no existing tool does this)
-- [ ] Following/followers lists
 - [ ] Bookmark folders
-- [ ] HTML export with search/filter
-- [ ] Systemd timer template
+- [ ] Thread expansion (TweetDetail)
+- [ ] Articles export (`UserArticlesTweets`)
+- [ ] Following/followers lists
+- [ ] HTML export viewer (optional)
 - [ ] attention-export integration
-- [ ] Multimodal embeddings for media (Jina CLIP or local CLIP model)
 
-## Articles Export (Novel Feature)
+## Open Questions (Remaining)
 
-Twitter/X Articles (long-form content) are accessible via the `UserArticlesTweets` GraphQL operation. TweetHoarder has the query ID (`8zBy9h4L90aDL02RsBcCFg`) and feature flags reserved but **no existing tool has implemented article export**.
+These are the only “unknowns” we still need to answer before implementation punchlisting:
 
-### Open questions (need to probe the endpoint):
-- Does `UserArticlesTweets` return full article body or just a tweet stub with a link?
-- Are articles you've bookmarked/liked discoverable, or only articles by a specific user?
-- If the endpoint returns stubs, can we fetch full content via `TweetDetail` or do we need Playwright page scraping?
-- What metadata is available (title, cover image, word count)?
-
-### Plan:
-Once auth is working (phase 1), probe the endpoint with a test request and inspect the response shape. If full content is available via GraphQL, add as a collection type. If not, consider Playwright-based scraping as a targeted fallback for article body extraction.
-
-## CLI Design
-
-```
-tweetxvault sync bookmarks          # incremental bookmark sync
-tweetxvault sync likes              # incremental likes sync
-tweetxvault sync all                # sync everything
-tweetxvault sync all --full         # full re-sync from scratch
-tweetxvault sync articles           # sync articles (phase 4)
-
-tweetxvault export json             # export all to JSON
-tweetxvault export csv --collection likes
-tweetxvault export md --collection bookmarks
-
-tweetxvault search "machine learning"    # semantic search (phase 3)
-tweetxvault similar 1234567890           # find similar tweets (phase 3)
-
-tweetxvault auth check              # verify cookies are valid
-tweetxvault auth refresh-ids        # force query hash refresh
-
-tweetxvault --headful sync likes    # Playwright fallback (visible browser)
-tweetxvault --profile PATH sync bookmarks  # custom browser profile
-```
+1. **SeekDB embedded footprint/startup**: What are startup time and memory footprint for a typical cron run? (Need a small prototype before we commit too hard to schema choices.)
+2. **SeekDB raw JSON storage limits/perf**: Are large JSON blobs practical in a SeekDB table/collection? If not, store `raw_json_path` to gzipped files on disk and keep a hash in DB.
+3. **Articles endpoint shape**: Does `UserArticlesTweets` include full body? If not, decide whether we will implement a targeted Playwright scrape for articles only.
 
 ## Dependencies (Planned)
 
 ```
-httpx              # async HTTP client
-typer              # CLI framework
-rich               # progress bars, formatted output
-cryptography       # Chrome cookie decryption
-secretstorage      # GNOME Keyring (Chrome cookies on Linux)
+httpx
+pyseekdb
 
-pyseekdb           # SeekDB embedded + vector + hybrid search
+typer
+rich
 
-# Optional:
-playwright         # fallback browser automation
-ffmpeg-python      # m3u8 video download (or subprocess ffmpeg)
+# Optional (only if we add Chrome support):
+cryptography
+secretstorage
+
+# Optional (future fallback adapter):
+playwright
 ```
-
-## Open Questions
-
-1. ~~SeekDB vs LanceDB~~ — **Decided: SeekDB.** Hybrid search, built-in embeddings, MySQL-compatible SQL. Will discover SDK edges as we go.
-2. **Embedding model** — Start with SeekDB's bundled all-MiniLM-L6-v2 (384d, local, free). Upgrade to larger model or swap provider if recall is insufficient — SeekDB supports 14 embedding providers.
-3. **Media storage layout** — Flat by content hash (`data/media/{sha256[:2]}/{sha256}.{ext}`). Simple, dedup-native. See ANALYSIS-db.md.
-4. **Articles endpoint shape** — Need to probe `UserArticlesTweets` once auth works. Determines whether articles are a GraphQL collection type or need Playwright scraping.
-5. **attention-export schema conventions** — Need to align with other exporters in the ecosystem.
-6. **HTML export** — Defer to phase 4. TweetHoarder's is impressive but significant effort; our search/embedding features may provide a better browsing experience anyway.
