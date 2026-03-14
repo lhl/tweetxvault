@@ -85,7 +85,7 @@ twitter-export/
 │   │   ├── NEW  timelines.py    # Endpoint implementations + pagination
 │   │   └── NEW  query_ids.py    # Hash discovery, caching, fallback
 │   ├── NEW  scraper.py          # Playwright fallback (--headful, --browser)
-│   ├── NEW  db.py               # DB layer (SeekDB or LanceDB)
+│   ├── NEW  db.py               # DB layer (SeekDB)
 │   ├── NEW  models.py           # Data models / schemas
 │   ├── NEW  media.py            # Media download (images, video, m3u8)
 │   ├── NEW  export/
@@ -144,7 +144,7 @@ See [ANALYSIS-db.md](ANALYSIS-db.md) for the full comparison of SQLite, DuckDB, 
 | **Maturity** | Engine: OceanBase (15+ years); SDK: ~4 months | ~2 years |
 | **Distance metrics** | L2, cosine, inner product | L2, cosine, dot |
 
-**Decision**: Prototype both. SeekDB's hybrid search is exactly what we want ("bookmarks about AI from @user"), but the SDK is young. LanceDB is more proven but requires a second system for structured queries. See evaluation plan in ANALYSIS-db.md.
+**Decision**: SeekDB. Its hybrid search (vector + full-text + SQL in one query) is exactly what we need, built-in embeddings avoid extra dependencies, and the OceanBase engine underneath is proven. The SDK is young but we'll learn its edges as we go. See [ANALYSIS-db.md](ANALYSIS-db.md) for full comparison.
 
 ## Feature Roadmap
 
@@ -176,9 +176,9 @@ See [ANALYSIS-db.md](ANALYSIS-db.md) for the full comparison of SQLite, DuckDB, 
 ### Phase 3: Search + Embeddings
 
 - [ ] Embedding generation for tweet text (local model, 384d default)
-- [ ] Vector storage + HNSW indexing
+- [ ] Vector storage + HNSW indexing (SeekDB native)
 - [ ] Semantic search CLI: `search "topic"`
-- [ ] Hybrid search: vector + text + metadata filters in one query
+- [ ] Hybrid search via SeekDB `hybrid_search()` — vector + text + metadata filters in one query
 - [ ] Similar tweet lookup: `similar <tweet_id>`
 
 ### Phase 4: Extended Collections + Polish
@@ -239,9 +239,7 @@ rich               # progress bars, formatted output
 cryptography       # Chrome cookie decryption
 secretstorage      # GNOME Keyring (Chrome cookies on Linux)
 
-# DB (one of — pending prototype evaluation):
 pyseekdb           # SeekDB embedded + vector + hybrid search
-# or: lancedb     # LanceDB embedded vector DB
 
 # Optional:
 playwright         # fallback browser automation
@@ -250,8 +248,8 @@ ffmpeg-python      # m3u8 video download (or subprocess ffmpeg)
 
 ## Open Questions
 
-1. **SeekDB vs LanceDB** — Need to prototype both. SeekDB's hybrid search is ideal but SDK is young. See ANALYSIS-db.md evaluation plan.
-2. **Embedding model** — Default: all-MiniLM-L6-v2 (384d, local, free). SeekDB bundles this. Consider upgrading to larger model if recall is insufficient.
+1. ~~SeekDB vs LanceDB~~ — **Decided: SeekDB.** Hybrid search, built-in embeddings, MySQL-compatible SQL. Will discover SDK edges as we go.
+2. **Embedding model** — Start with SeekDB's bundled all-MiniLM-L6-v2 (384d, local, free). Upgrade to larger model or swap provider if recall is insufficient — SeekDB supports 14 embedding providers.
 3. **Media storage layout** — Flat by content hash (`data/media/{sha256[:2]}/{sha256}.{ext}`). Simple, dedup-native. See ANALYSIS-db.md.
 4. **Articles endpoint shape** — Need to probe `UserArticlesTweets` once auth works. Determines whether articles are a GraphQL collection type or need Playwright scraping.
 5. **attention-export schema conventions** — Need to align with other exporters in the ecosystem.
