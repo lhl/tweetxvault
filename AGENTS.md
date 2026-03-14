@@ -1,4 +1,4 @@
-# twitter-export — Agent Guide
+# tweetxvault — Agent Guide
 
 See `README.md` for project overview, `docs/` for plans and research, `reference/` for third-party repo snapshots.
 This `AGENTS.md`/`CLAUDE.md` covers ground rules, workflow, and repo conventions.
@@ -7,7 +7,7 @@ Instruction precedence: if this file conflicts with platform/system/developer in
 
 ## Project Overview
 
-twitter-export is a Python tool for regularly exporting Twitter/X bookmarks and likes into a local embedded database. It extracts authentication credentials automatically from the user's Firefox profile and uses Playwright to intercept Twitter's internal GraphQL API responses.
+tweetxvault is a Python tool for regularly exporting Twitter/X bookmarks and likes into a local embedded database. It extracts authentication credentials automatically from the user's Firefox profile and uses Playwright to intercept Twitter's internal GraphQL API responses.
 
 Part of the broader `attention-export` project (~/github/lhl/attention-export) — a personal system for collecting saved/written content from various online platforms into a searchable local repository.
 
@@ -30,7 +30,7 @@ Part of the broader `attention-export` project (~/github/lhl/attention-export) �
 ## Key Directories
 
 ```
-twitter-export/
+tweetxvault/
 ├── twitter/              # Core Python source (the tool we're building)
 │   ├── firefox_creds.py  # Firefox cookie extraction
 │   ├── scraper.py        # Playwright browser automation + GraphQL capture

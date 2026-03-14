@@ -2,7 +2,7 @@
 
 ## Context
 
-twitter-export needs an embedded database that handles:
+tweetxvault needs an embedded database that handles:
 1. **Structured storage** — tweets, authors, collections, sync state, media metadata
 2. **Raw JSON preservation** — full GraphQL responses stored as-is
 3. **Vector search** — semantic similarity over tweet text embeddings
@@ -127,7 +127,7 @@ Used by: LanceDB (IVF-PQ), FAISS
 - **Memory**: Compressed vectors. For 384d with 48 subquantizers: ~48 bytes per vector (vs ~1.5KB for HNSW)
 - **Best for**: Large datasets (millions+) where memory is constrained. Overkill for our scale.
 
-### For twitter-export
+### For tweetxvault
 
 **HNSW is clearly the right choice.** Our dataset is small (tens of thousands, maybe low hundreds of thousands of tweets). We want high recall for semantic search. Memory is not a constraint. HNSW's "no training needed" property also means we can add tweets incrementally without rebuilding the index.
 

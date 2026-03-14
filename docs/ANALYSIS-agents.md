@@ -79,7 +79,7 @@ Focused utilities, personal tools, one-off scripts.
 | msi-prestige13-a2vm-webcam | Hardware debugging | Medium-light | Communication rules (lead with findings), privilege boundaries (sudo/reboot as user-run), evidence vs inference separation |
 | chotto-subtitler | Subtitle tool | Light | Conda/mamba rules, basic coordination hygiene |
 | juku | Synthetic data framework | Light | Quality gates (ruff, mypy, pytest), no network in tests, interface-first PRs |
-| **twitter-export** | **Scraping tool** | **Light** | **Cookie safety, browser automation rules, hash-agnostic design principle** |
+| **tweetxvault** | **Scraping tool** | **Light** | **Cookie safety, browser automation rules, hash-agnostic design principle** |
 
 **Common patterns at this scale:**
 - Minimal AGENTS.md — just the essentials
@@ -266,9 +266,9 @@ Does the project involve multiple human+AI teams?
   → Examples: re-vibed, learn-japanese
 ```
 
-## What twitter-export Adopted and Why
+## What tweetxvault Adopted and Why
 
-twitter-export is a **small tool** (focused scope, single developer, personal use) in the **research-transitioning-to-implementation** phase. We chose **light-to-medium** weight.
+tweetxvault is a **small tool** (focused scope, single developer, personal use) in the **research-transitioning-to-implementation** phase. We chose **light-to-medium** weight.
 
 | Pattern | Adopted? | Source | Why |
 |---------|----------|--------|-----|

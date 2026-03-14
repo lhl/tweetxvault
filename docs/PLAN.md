@@ -1,4 +1,4 @@
-# twitter-export — Implementation Plan
+# tweetxvault — Implementation Plan
 
 ## Goal
 
@@ -69,7 +69,7 @@ TweetHoarder's query hash auto-discovery proves the direct API approach is viabl
 ### File Tree
 
 ```
-twitter-export/
+tweetxvault/
 ├── twitter/
 │   ├── NEW  __init__.py
 │   ├── NEW  config.py           # Constants, XDG paths, TOML config
@@ -210,24 +210,24 @@ Once auth is working (phase 1), probe the endpoint with a test request and inspe
 ## CLI Design
 
 ```
-twitter-export sync bookmarks          # incremental bookmark sync
-twitter-export sync likes              # incremental likes sync
-twitter-export sync all                # sync everything
-twitter-export sync all --full         # full re-sync from scratch
-twitter-export sync articles           # sync articles (phase 4)
+tweetxvault sync bookmarks          # incremental bookmark sync
+tweetxvault sync likes              # incremental likes sync
+tweetxvault sync all                # sync everything
+tweetxvault sync all --full         # full re-sync from scratch
+tweetxvault sync articles           # sync articles (phase 4)
 
-twitter-export export json             # export all to JSON
-twitter-export export csv --collection likes
-twitter-export export md --collection bookmarks
+tweetxvault export json             # export all to JSON
+tweetxvault export csv --collection likes
+tweetxvault export md --collection bookmarks
 
-twitter-export search "machine learning"    # semantic search (phase 3)
-twitter-export similar 1234567890           # find similar tweets (phase 3)
+tweetxvault search "machine learning"    # semantic search (phase 3)
+tweetxvault similar 1234567890           # find similar tweets (phase 3)
 
-twitter-export auth check              # verify cookies are valid
-twitter-export auth refresh-ids        # force query hash refresh
+tweetxvault auth check              # verify cookies are valid
+tweetxvault auth refresh-ids        # force query hash refresh
 
-twitter-export --headful sync likes    # Playwright fallback (visible browser)
-twitter-export --profile PATH sync bookmarks  # custom browser profile
+tweetxvault --headful sync likes    # Playwright fallback (visible browser)
+tweetxvault --profile PATH sync bookmarks  # custom browser profile
 ```
 
 ## Dependencies (Planned)
