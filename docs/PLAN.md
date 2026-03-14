@@ -108,16 +108,9 @@ tweetxvault/
 └── tests/
 ```
 
-### Adapter Boundary (Playwright Future-Proofing)
+### Adapter Boundary
 
-Define a small internal interface:
-
-```python
-class Fetcher(Protocol):
-    async def sync_collection(self, collection: str, *, full: bool) -> None: ...
-```
-
-MVP implements `GraphQLAPIFetcher`. A future `PlaywrightFetcher` can implement the same interface and share storage + export.
+The MVP sync loop calls the GraphQL client directly — no abstraction layer needed with only one implementation. If we later add Playwright as a fallback fetcher, we can introduce a `Fetcher` protocol at that point.
 
 ### Data Flow
 
@@ -139,26 +132,39 @@ cookies (env/config/firefox)
 We rely on browser session cookies:
 - `auth_token` (session)
 - `ct0` (CSRF; also sent as `x-csrf-token`)
-- `twid` (contains numeric user id; useful for Likes without extra lookup)
+- `twid` (contains numeric user id as `u%3D<id>`; required for Likes endpoint)
+
+Cookie resolution chain (in priority order):
+1. **Env vars**: `TWEETXVAULT_AUTH_TOKEN`, `TWEETXVAULT_CT0`, `TWEETXVAULT_USER_ID` (numeric)
+2. **Config file**: `~/.config/tweetxvault/config.toml` (`[auth]` section)
+3. **Firefox extraction**: auto-discover default profile, copy `cookies.sqlite` to temp, read `x.com` cookies
+
+User ID resolution (needed for Likes only):
+- Parsed from `twid` cookie (`u%3D<numeric_id>` → `<numeric_id>`)
+- Or set explicitly via `TWEETXVAULT_USER_ID` env var or `user_id` in config
+- If user_id can't be resolved, `sync likes` fails with actionable error; `sync bookmarks` works fine
 
 Firefox cookie extraction rules (Linux):
 - Always copy `cookies.sqlite` to a temp file before reading (Firefox often holds WAL locks on the live DB)
 - Open the copied DB in read-only mode (`mode=ro`) via sqlite URI
 - Never log raw cookie values; treat them as secrets
 
-Expected request headers (browser-like; required by the internal web API):
-- `Authorization: Bearer <public web bearer token>`
-- `x-csrf-token: <ct0>`
+Required request headers:
+- `Authorization: Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA` (public web bearer token — same static constant for all users, hardcode it)
+- `x-csrf-token: <ct0 cookie value>`
 - `x-twitter-active-user: yes`
 - `x-twitter-auth-type: OAuth2Session`
 - `x-twitter-client-language: en`
-- plus basic browser-like `User-Agent`, `Referer`, `Origin`
+- Standard browser-like `User-Agent`, `Referer: https://x.com`, `Origin: https://x.com`
 
 ### Operations (Phase 1)
 
-Minimum operations needed:
-- `Bookmarks`
-- `Likes`
+Both operations use `GET https://x.com/i/api/graphql/{query_id}/{OperationName}?variables=...&features=...`
+
+- **`Bookmarks`** — authenticated user’s bookmarks. No user_id needed. Variables: `{count, includePromotedContent, ...}`
+- **`Likes`** — requires `userId` in variables. Variables: `{userId, count, includePromotedContent, ...}`
+
+Default page size: 20 tweets per request.
 
 Recommended additional operations to include in query-id targets even if we don’t sync them yet:
 - `BookmarkFolderTimeline` (folders)
@@ -191,11 +197,43 @@ Per-operation parsers that:
 - find bottom cursor entries (`entryId` prefix `cursor-bottom-...`) and return cursor value
 - extract `sortIndex` when available so we can preserve timeline order
 
+### Sync Loop + Stop Conditions
+
+Each `sync` invocation runs a page-at-a-time loop:
+
+1. Resolve cookies → validate `auth_token` + `ct0` present (fail with actionable error if not)
+2. Resolve query IDs (cache → refresh → fallback)
+3. Load checkpoint (cursor) from `sync_state` if incremental
+4. Loop:
+   a. Fetch one page with current cursor
+   b. Append raw response to `raw_captures`
+   c. Parse tweet entries and bottom cursor
+   d. Upsert tweets + collection memberships
+   e. Update `sync_state` checkpoint with new cursor
+   f. Check stop conditions (see below)
+   g. Polite delay between pages (default 2s, configurable)
+5. Print summary (tweets synced, pages fetched)
+
+Stop conditions:
+- **Empty page**: response contains zero tweet entries → done
+- **Incremental duplicate detection**: encountered a tweet_id already in DB from a previous sync → stop (caught up to where we left off)
+- **`--full` mode**: ignores duplicate detection, only stops on empty page (full re-scan)
+- **`--limit N`**: stop after N pages (for testing or cautious first runs)
+- **Rate limit exhaustion**: after cooldown, if still getting 429s, stop gracefully and preserve checkpoint for resume
+
 ### Rate Limiting / Backoff
 
-- For timeline page fetches: retry up to N times on `429`, with exponential backoff (`base_delay * 2^attempt`) and a cooldown (e.g., 5 minutes) after 3 consecutive `429`.
-- For other hard failures (403/401): fail fast with actionable output (cookies expired, missing ct0, etc.).
-- For `404` on a known operation: refresh query IDs once, retry.
+Defaults (configurable via `config.toml`):
+- **Max retries per request**: 3
+- **Base delay**: 2 seconds (exponential: `base_delay * 2^attempt`)
+- **Consecutive 429 cooldown threshold**: 3 (after 3 consecutive 429s, enter cooldown)
+- **Cooldown duration**: 5 minutes
+- **Inter-page delay**: 2 seconds (polite pause between successful page fetches)
+
+Behavior:
+- For `429`: retry with exponential backoff up to max retries, then enter cooldown. After cooldown, resume. If cooldown fails again, stop gracefully and preserve checkpoint.
+- For `401/403`: fail fast with actionable error (cookies expired, missing ct0, account locked, etc.).
+- For `404` on a known operation: refresh query IDs once, retry. If still 404, fail with "query ID refresh failed" error.
 
 ## Storage (SeekDB)
 
@@ -244,16 +282,31 @@ See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoug
 Primary commands:
 
 ```
-tweetxvault sync bookmarks          # incremental
-tweetxvault sync likes              # incremental
-tweetxvault sync all                # sync likes + bookmarks
-tweetxvault sync all --full         # full resync
+tweetxvault sync bookmarks            # incremental
+tweetxvault sync likes                # incremental
+tweetxvault sync all                  # sync likes + bookmarks
+tweetxvault sync all --full           # full resync (ignore duplicates)
+tweetxvault sync bookmarks --limit 5  # stop after 5 pages (testing)
 
-tweetxvault export json             # (phase 2+) export all collections
+tweetxvault export json               # (phase 2+) export all collections
 
-tweetxvault auth check              # verify cookies are present/valid
-tweetxvault auth refresh-ids        # force query id refresh
+tweetxvault auth check                # verify cookies are present/valid
+tweetxvault auth refresh-ids          # force query id refresh
 ```
+
+`--limit N` limits pagination to N pages (useful for testing or cautious first runs).
+
+### First-Run Behavior
+
+On first invocation, tweetxvault:
+1. Auto-creates XDG directories (`~/.config/tweetxvault/`, `~/.local/share/tweetxvault/`, `~/.cache/tweetxvault/`)
+2. Attempts cookie resolution (env vars → config file → Firefox)
+3. If no cookies found: prints clear error with setup instructions (which env vars to set, or ensure Firefox is logged into x.com)
+4. If cookies found: discovers query IDs (first run has no cache, so fetches from JS bundles)
+5. Auto-creates DB on first write
+6. Begins sync
+
+No `init` command needed — everything auto-creates on demand. Config file is optional; the tool works with just Firefox cookies or env vars.
 
 Reserved for future (not implemented in MVP):
 - `tweetxvault sync ... --playwright` (adapter fallback)

@@ -2,6 +2,14 @@
 
 ## 2026-03-14
 
+- Filled PLAN.md gaps for OOTB first-run experience and rewrote IMPLEMENTATION.md:
+  - PLAN.md: documented bearer token constant, env var names, cookie resolution chain, user_id resolution for Likes
+  - PLAN.md: added Bookmarks vs Likes endpoint differences (user_id requirement)
+  - PLAN.md: added "Sync Loop + Stop Conditions" section (empty page, duplicate detection, --limit, rate limit exhaustion)
+  - PLAN.md: specified concrete rate limit defaults (3 retries, 2s base delay, 5min cooldown)
+  - PLAN.md: added "First-Run Behavior" section (auto-create dirs, validate auth pre-sync, actionable errors)
+  - PLAN.md: clarified --limit = pages, simplified Adapter Boundary (no premature Fetcher protocol)
+  - IMPLEMENTATION.md: full rewrite — renamed phases to "Task N" (avoid collision with PLAN phases), merged config+auth into one task, added spike exit criteria/fallbacks with timeboxes, dropped Fetcher Protocol from MVP, added end-to-end integration test task
 - Rewrote PLAN.md to remove all clone-any-tool framing. Key changes:
   - "Why a Clean Rewrite (Not a Fork)" -> "Why Build From Scratch" — no longer singles out one tool
   - "Prior Art (Loose Reference)" -> "Twitter API Reverse Engineering" — reframed as empirical data about Twitter's undocumented API, not patterns to adopt from a specific tool
