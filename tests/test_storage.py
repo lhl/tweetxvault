@@ -107,3 +107,48 @@ def test_export_rows_only_returns_tweet_records(paths) -> None:
     assert exported[0]["tweet_id"] == "1"
     assert exported[0]["collection"]["type"] == "bookmark"
     store.close()
+
+
+def test_export_rows_filters_collection_without_table_scan(
+    paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[_tweet("1")],
+        last_head_tweet_id="1",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[_tweet("2")],
+        last_head_tweet_id="2",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    def fail_to_arrow() -> None:
+        raise AssertionError(
+            "export_rows should filter through LanceDB search, not table.to_arrow()"
+        )
+
+    monkeypatch.setattr(store.table, "to_arrow", fail_to_arrow)
+
+    exported = store.export_rows("bookmark")
+
+    assert [row["tweet_id"] for row in exported] == ["1"]
+    assert exported[0]["collection"]["type"] == "bookmark"
+    store.close()

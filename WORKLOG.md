@@ -2,6 +2,11 @@
 
 ## 2026-03-15
 
+- Tightened LanceDB export filtering after post-migration review:
+  - Changed `ArchiveStore.export_rows(...)` to push `record_type = 'tweet'` and optional collection filtering into LanceDB instead of materializing the full archive table in Python
+  - Added a storage regression test that monkeypatches `table.to_arrow()` to fail so export coverage proves the search path is used
+  - Validation: `uv run pytest tests/test_storage.py tests/test_sync.py`, `uv run ruff check tweetxvault tests`
+
 - Landed the LanceDB backend migration in the shipped package:
   - Replaced the SQLite fallback backend with `tweetxvault/storage/backend.py`
   - Removed `tweetxvault/storage/seekdb.py`

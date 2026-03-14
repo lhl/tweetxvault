@@ -377,10 +377,10 @@ class ArchiveStore:
         self._merge_records(buffer.records)
 
     def export_rows(self, collection: str) -> list[dict[str, Any]]:
-        rows = self.table.to_arrow().to_pylist()
-        tweet_rows = [row for row in rows if row["record_type"] == "tweet"]
+        filter_expr = "record_type = 'tweet'"
         if collection != "all":
-            tweet_rows = [row for row in tweet_rows if row["collection_type"] == collection]
+            filter_expr += f" AND collection_type = {_expr_quote(collection)}"
+        tweet_rows = self.table.search().where(filter_expr).to_list()
 
         def sort_key(row: dict[str, Any]) -> tuple[str, int]:
             sort_index = int(row["sort_index"]) if row["sort_index"] else -1
