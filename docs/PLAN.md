@@ -51,7 +51,10 @@ TweetHoarder is used as prior art and is vendored only under `reference/` for st
 - **Auth**: Cookie-based session auth (no username/password automation).
   - MVP: env vars + config file + Firefox cookie extraction (Linux).
 - **Chrome cookie extraction**: Defer until someone actually needs it (it adds keyring/decryption complexity).
-- **CLI framework**: Typer (keep it minimal; no sprawling command surface).
+- **CLI framework**: Typer + Rich (keep it minimal; no sprawling command surface).
+- **Data models**: Pydantic v2 for boundary types (config, parsed tweet records, sync state); raw JSON stored as-is in DB.
+- **Logging**: loguru.
+- **Project tooling**: uv (package management), ruff (lint + format), hatchling (build backend).
 - **Playwright**: Reserved as a future fallback adapter (debugging/CAPTCHA/JS challenge), not implemented in MVP.
 
 ## Prior Art We’re Adopting from TweetHoarder
@@ -297,17 +300,27 @@ These are the only “unknowns” we still need to answer before implementation 
 
 ## Dependencies (Planned)
 
+### Runtime
 ```
-httpx
-pyseekdb
+httpx              # async HTTP client
+pyseekdb           # embedded DB
+pydantic>=2        # data models, config validation
+typer              # CLI framework (built on Click)
+rich               # terminal formatting, progress bars
+loguru             # logging
+```
 
-typer
-rich
+### Dev
+```
+ruff               # lint + format
+pytest             # testing
+pytest-asyncio     # async test support
+mypy               # type checking (optional, can add later)
+```
 
-# Optional (only if we add Chrome support):
-cryptography
-secretstorage
-
-# Optional (future fallback adapter):
-playwright
+### Optional (deferred)
+```
+cryptography       # Chrome cookie decryption
+secretstorage      # Chrome cookie decryption (Linux keyring)
+playwright         # future fallback adapter
 ```
