@@ -29,7 +29,7 @@ Resolve the open questions from PLAN.md before building the storage layer. Timeb
 - [x] **API surface spike** (SQL tables vs Collection API)
   - Determine which SeekDB API to use for Phase 1: SQL-style tables or the Collection/document API.
   - **Exit criteria**: pick whichever supports upsert-by-key and basic queries without friction. Document choice in `WORKLOG.md` and update PLAN.md schema section.
-  - Result: embedded SeekDB failed initialization during the spike, so the working MVP uses SQLite while preserving the planned schema/transaction semantics.
+  - Result: the original sandboxed spike failed initialization, but a fresh full-permission re-spike showed embedded SeekDB only works reliably on non-tmpfs paths and still misses the MVP startup/footprint threshold (~3.23s cold benchmark, ~1.0GB RSS), so the working MVP still uses SQLite while preserving the planned schema/transaction semantics.
 
 ## Task 1: Project Bootstrap
 

@@ -13,6 +13,60 @@ tweetxvault needs an embedded database that handles:
 
 The DB is local-only, single-user, single-writer. Dataset size is modest (tens of thousands of tweets, not millions). The tool should be cronnable with fast startup.
 
+## Empirical Task 0 Results (2026-03-14)
+
+We now have a reproducible benchmark harness in [ANALYSIS-db.py](ANALYSIS-db.py) for the original Task 0 storage spike:
+
+- cold open
+- create schema
+- insert 1,000 rows
+- query 10 rows back
+- record `ru_maxrss`
+
+These are intentionally "storage floor" measurements, not end-to-end vector-index or hybrid-search benchmarks.
+
+Versioned test stack:
+
+- SQLite: `sqlite3` 3.49.1
+- SeekDB: `pyseekdb` 1.1.0.post3, `pylibseekdb` 1.1.0
+- LanceDB: `lancedb` 0.29.2
+
+Cold benchmark, 1,000 rows, ~2.2KB `raw_json` per row:
+
+| Backend | Open | Schema | Insert 1k | Query 10 | Total | Max RSS | Notes |
+|---------|------|--------|-----------|----------|-------|---------|-------|
+| SQLite | 0.0032s | 0.0190s | 0.0208s | 0.0002s | 0.0433s | 32MB | Easy baseline; trivially passes Task 0 exit criteria |
+| SeekDB (raw SQL) | 2.1601s | 0.9850s | 0.0742s | 0.0100s | 3.2295s | 1000MB | Functional on `/home`-backed paths, but misses both Task 0 thresholds |
+| LanceDB | 0.0166s | 0.0182s | 0.0127s | 0.0193s | 0.0668s | 161MB | Passes the same cold-start/RSS threshold comfortably |
+
+Large raw JSON probe, 1 row, ~200KB `raw_json`:
+
+| Backend | Result | Notes |
+|---------|--------|-------|
+| SQLite | OK | Plain `TEXT` handled the probe without issue |
+| SeekDB (raw SQL) | OK with `MEDIUMTEXT` | Plain `TEXT` failed in a separate probe with `Data too long for column 'raw_json'`; `MEDIUMTEXT` and `LONGTEXT` both worked |
+| LanceDB | OK | `pa.large_string()` handled the probe without issue |
+
+Important SeekDB runtime findings:
+
+- The original failure was not just POSIX permissions. In the current full-permission environment, embedded SeekDB does initialize successfully on normal writable paths under `/home`.
+- SeekDB does **not** support `tmpfs` for `db_dir`; `seekdb.open()` on `/tmp/...` failed with `not support tmpfs directory`.
+- `seekdb.open()` is process-global for one `db_dir`. Reopening a different path in the same process hit `The object is initialized twice`.
+- The public `pyseekdb.Client` proxy only exposes collection operations. Raw SQL works either through `pylibseekdb` directly or via the proxy's internal `_server._execute(...)`.
+- The Collection API is heavier than raw SQL for our workload. Default collection creation also triggered local embedding-model download and pushed RSS even higher in testing.
+
+What this means for tweetxvault:
+
+- **SeekDB is technically viable now**, but only if we accept a very heavy embedded runtime and use it on a non-tmpfs data directory.
+- **SeekDB is not viable for the current MVP constraints.** Task 0 explicitly said to evaluate alternatives if cold start exceeds 3s or RSS exceeds 200MB for an empty DB. The current raw-SQL benchmark came in at ~3.23s total and ~1.0GB RSS.
+- **LanceDB is the most plausible future vector sidecar** if we want a second empirical option beyond SQLite. It passes the cold-start test, but it still does not solve the "single engine for SQL + FTS + vectors + checkpoints" problem because it is not a relational SQL database.
+
+Current recommendation:
+
+1. Keep SQLite as the shipped MVP backend.
+2. If we want a phase-2 vector store spike, compare `SQLite + LanceDB` against the current SQLite-only baseline before revisiting SeekDB again.
+3. If we insist on SeekDB later, use raw SQL on an XDG data path under `/home`, keep `raw_json` columns at `MEDIUMTEXT` or larger, and avoid the Collection API for MVP-style sync storage.
+
 ## Candidates
 
 ### SQLite
@@ -75,7 +129,7 @@ Purpose-built for AI/ML workloads. Columnar (Lance format), native vector search
 - Would likely need a second DB (SQLite/DuckDB) for structured queries, sync state, checkpoint tracking
 - Documentation has gaps for edge cases
 
-**Verdict:** Best pure vector search option. But the lack of SQL means we'd need it paired with SQLite or DuckDB for structured operations — the "two databases" problem.
+**Verdict:** Best pure vector search option. The empirical Task 0 benchmark above also shows that its embedded footprint is modest enough to be operationally comfortable. But the lack of SQL means we'd still need it paired with SQLite or DuckDB for structured operations — the "two databases" problem.
 
 ### SeekDB
 
@@ -101,7 +155,7 @@ AI-native hybrid search database from OceanBase (Ant Group/Alibaba). Unifies rel
 - SeekDB-specific community is small (OceanBase community is large)
 - Some features marked "experimental" (e.g., FORK TABLE)
 
-**Verdict:** Does everything we want in one engine. The underlying OceanBase engine is proven at scale; the risk is around the newness of the embedded packaging and Python SDK. Eliminates the two-database problem entirely. Worth prototyping.
+**Verdict:** Does everything we want in one engine. The underlying OceanBase engine is proven at scale; the risk is around the newness of the embedded packaging and Python SDK. The fresh empirical spike shows that embedded SeekDB now initializes on supported filesystems here, but its cold-start and RSS are still far outside our MVP threshold. It remains interesting architecturally, but not justified as the default storage engine for the current cron-oriented MVP.
 
 ## Vector Indexing: IVF-PQ vs HNSW
 
@@ -235,7 +289,7 @@ Document filters: `$contains` (full-text), `$regex` (regex matching)
 | **Multimodal-ready** | No | No | No | Via Jina CLIP / custom |
 | **Maturity** | 20+ years | ~5 years | ~2 years | Engine: 15+ years (OceanBase); SDK: ~4 months |
 | **Tooling ecosystem** | Excellent | Good | Growing | Minimal |
-| **Footprint** | Tiny | Small | Small | Unknown |
+| **Footprint** | Tiny | Small | Small | Heavy in current embedded tests (~1GB RSS cold start) |
 | **Single-engine solution** | No (needs vector ext) | No (needs FTS) | No (needs SQL DB) | **Yes** |
 
 ## Schema Considerations

@@ -16,6 +16,7 @@
 ## Analysis
 
 - `ANALYSIS-db.md` — Database choice comparison (SQLite, DuckDB, LanceDB, SeekDB), schema design, vector indexing, embedding models
+- `ANALYSIS-db.py` — Reproducible Task 0 benchmark harness for SQLite, SeekDB, and LanceDB startup/footprint probes
 - `ANALYSIS-agents.md` — Survey of AGENTS.md patterns across repos; informs this project's conventions
 
 ## Work Tracking

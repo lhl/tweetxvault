@@ -2,6 +2,15 @@
 
 ## 2026-03-14
 
+- Re-ran the storage spike with full sandbox permissions and added a reproducible harness in [docs/ANALYSIS-db.py](docs/ANALYSIS-db.py):
+  - Verified embedded SeekDB now initializes successfully on writable `/home`-backed btrfs paths, so the original failure was not purely POSIX permissions
+  - Verified `seekdb.open()` still fails on `/tmp`/`tmpfs` with `not support tmpfs directory`, and behaves as a process-global singleton (`initialized twice` when reopening a different path in the same process)
+  - Benchmarked the original Task 0 cold path (`open -> create schema -> insert 1k rows -> query 10`) and recorded the results in `docs/ANALYSIS-db.md`
+  - `uv run python docs/ANALYSIS-db.py sqlite` -> total `0.0433s`, max RSS `32328 KB`
+  - `uv run python docs/ANALYSIS-db.py seekdb-sql` -> total `3.2295s`, max RSS `1024032 KB`
+  - `uv run --with lancedb python docs/ANALYSIS-db.py lancedb` -> total `0.0668s`, max RSS `164792 KB`
+  - Re-checked large raw JSON handling with the same harness (`--rows 1 --raw-bytes 200000`): SQLite OK, LanceDB OK, SeekDB OK with `MEDIUMTEXT`
+  - Conclusion: SeekDB is functional now on supported filesystems, but still fails the MVP Task 0 threshold badly; SQLite remains the shipped backend and LanceDB is the strongest sidecar candidate if we later want a separate vector store
 - Implemented the first end-to-end MVP codebase (`pyproject.toml`, `tweetxvault/`, `tests/`, `uv.lock`):
   - Built Typer CLI commands for `sync`, `auth check`, `auth refresh-ids`, and JSON export
   - Implemented XDG config loading, env/config/Firefox cookie resolution, query-id cache + scraper, async GraphQL client, per-page sync orchestration, and JSON export

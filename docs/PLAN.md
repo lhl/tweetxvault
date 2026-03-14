@@ -292,7 +292,7 @@ See [ANALYSIS-db.md](ANALYSIS-db.md) for the full DB comparison and schema thoug
 Current implementation status:
 - The MVP ships with SQLite storage in `tweetxvault/storage/seekdb.py`.
 - The schema below is still the source of truth for tables and sync semantics.
-- Revisit embedded SeekDB only after a fresh runtime spike shows reliable initialization and acceptable startup/footprint.
+- A fresh full-permission re-spike on 2026-03-14 showed embedded SeekDB now initializes on supported `/home`-backed paths, but it still missed the MVP threshold (~3.23s cold benchmark, ~1.0GB RSS; `/tmp`/`tmpfs` unsupported), so SQLite remains the default backend.
 
 ### Minimal Schema (Phase 1)
 
