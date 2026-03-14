@@ -189,7 +189,14 @@ This is the active follow-on migration. The goal is to switch the real archive b
   - Remove `pyseekdb`.
   - Add `lancedb` and `pyarrow`.
   - Refresh `uv.lock`.
-- [ ] Implement `tweetxvault/storage/lancedb.py` behind the existing `ArchiveStore` / `SyncState` API.
+- [ ] Rename the concrete storage module to `tweetxvault/storage/backend.py`.
+  - Stop using backend-specific filenames like `seekdb.py` / `lancedb.py` for the shipped implementation.
+  - Keep the public `ArchiveStore` / `SyncState` API in `tweetxvault/storage/__init__.py`.
+- [ ] Eliminate the current sync-loop cleanup items before or during the backend migration.
+  - Remove double-preflight in `sync_all`.
+  - Move the final `last_head_tweet_id` update into backend-managed state semantics instead of a bare outer `commit()`.
+  - Optionally return parsed payloads from `_fetch_and_parse_page(...)` to avoid the duplicate `response.json()` call.
+- [ ] Implement the LanceDB-backed archive in `tweetxvault/storage/backend.py`.
   - Use a single LanceDB table keyed by `row_key`.
   - Row types per `docs/PLAN.md`: `tweet`, `raw_capture`, `sync_state`, `metadata`.
   - Represent one persisted page as one `merge_insert` batch.
@@ -212,6 +219,7 @@ This is the active follow-on migration. The goal is to switch the real archive b
   - one table-version increment per successful page write
   - no partial state if failure occurs before the batch write
   - filtered export/search queries over `tweet` rows only
+  - `sync_all` does not reprobe collections after a successful shared preflight
 - [ ] Update docs after migration lands.
   - `docs/PLAN.md`
   - `docs/ANALYSIS-db.md`

@@ -2,6 +2,11 @@
 
 ## 2026-03-15
 
+- Queued follow-on cleanup work into the LanceDB migration plan after architecture review feedback:
+  - Use `tweetxvault/storage/backend.py` as the concrete backend module name instead of a backend-specific filename
+  - Remove the redundant `sync_all` double-preflight during the migration
+  - Fold the final `last_head_tweet_id` write into backend-owned state semantics instead of an outer `commit()`
+  - Remove stale `pyseekdb` runtime dependency as part of the backend switch
 - Locked the next backend plan to LanceDB:
   - Updated `docs/PLAN.md` to make LanceDB the planned backend, with a single-table `row_key` archive model and LanceDB-native FTS/vector search phases
   - Updated `docs/IMPLEMENTATION.md` with a new active migration task for replacing the shipped SQLite backend
