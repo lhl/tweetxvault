@@ -1,2 +1,26 @@
+# Local data / outputs (never commit)
 data/
+
+# Third-party snapshots are tracked but treated as read-only.
+# Ignore untracked files under reference/ (build artifacts, caches, etc.).
 reference/
+
+# Credentials / sessions (never commit)
+twitter_session.json
+tweetxvault_session.json
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
