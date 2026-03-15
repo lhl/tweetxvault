@@ -286,12 +286,15 @@ This is the next real implementation milestone after the LanceDB migration. The 
 ## Task 13: Articles
 
 - [x] Add a dedicated `--article-backfill` timeline rescan mode so existing collection pages can be refetched after article field toggles change, without resetting sync state.
-- [ ] Add an article probe fixture once we capture a real authenticated `UserArticlesTweets` or article-bearing timeline response.
+- [x] Add an article probe fixture once we capture a real authenticated `UserArticlesTweets` or article-bearing timeline response.
   - Working example URL: `https://x.com/dimitrispapail/status/2026531440414925307`
-- [ ] Verify whether full bodies are returned now that article field toggles are enabled on timeline requests.
-- [ ] Persist article rows keyed by source tweet id until a stable article-specific id is confirmed.
-- [ ] Export article metadata/body in JSON and HTML once extraction is stable.
-- [ ] Decide whether article-only fallback fetching is needed if GraphQL returns preview-only payloads.
+  - Captured as `tests/fixtures/dimitris_article_tweet_detail.json` from an authenticated `TweetDetail` response on 2026-03-16
+- [x] Verify whether full bodies are returned now that article field toggles are enabled on timeline requests.
+  - Result on 2026-03-16: authenticated `TweetDetail` returned full `plain_text`, `content_state`, `cover_media`, and `media_entities`
+- [x] Persist article rows keyed by source tweet id until a stable article-specific id is confirmed.
+- [x] Export article metadata/body in JSON and HTML once extraction is stable.
+- [x] Decide whether article-only fallback fetching is needed if GraphQL returns preview-only payloads.
+  - Current decision: no extra fallback is needed right now; `tweetxvault articles refresh` uses authenticated `TweetDetail`, which returned full bodies for the Dimitris validation tweet on 2026-03-16
 
 ## Task 14: X Archive Import Stub
 

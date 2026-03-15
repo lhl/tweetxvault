@@ -193,6 +193,7 @@ uv run tweetxvault export html --collection likes --out ~/exports/likes.html
 ```
 
 JSON exports now include normalized `media`, `urls`, and `article` sections alongside each exported tweet row.
+HTML exports now render tweet media, URL metadata, and full article bodies when those rows exist in the archive.
 
 ### Media + URL Enrichment
 
@@ -208,6 +209,20 @@ uv run tweetxvault unfurl
 
 # Retry previously failed URL unfurls
 uv run tweetxvault unfurl --retry-failed
+```
+
+### Article Refresh
+
+```bash
+# Refresh preview-only archived article rows via TweetDetail
+uv run tweetxvault articles refresh
+
+# Refresh every archived article row, not just preview-only ones
+uv run tweetxvault articles refresh --all
+
+# Refresh a specific article-bearing tweet by URL or ID
+uv run tweetxvault articles refresh https://x.com/dimitrispapail/status/2026531440414925307
+uv run tweetxvault articles refresh 2026531440414925307
 ```
 
 ### Maintenance

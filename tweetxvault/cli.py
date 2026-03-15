@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
 
+from tweetxvault.articles import refresh_articles
 from tweetxvault.auth import (
     BrowserCandidate,
     list_available_browser_candidates,
@@ -38,12 +39,14 @@ from tweetxvault.sync import run_preflight, sync_all, sync_collection
 from tweetxvault.unfurl import unfurl_urls
 
 app = typer.Typer(no_args_is_help=True)
+article_app = typer.Typer(no_args_is_help=True)
 auth_app = typer.Typer(no_args_is_help=True)
 export_app = typer.Typer(no_args_is_help=True)
 media_app = typer.Typer(no_args_is_help=True)
 sync_app = typer.Typer(no_args_is_help=True)
 view_app = typer.Typer(no_args_is_help=True)
 
+app.add_typer(article_app, name="articles")
 app.add_typer(auth_app, name="auth")
 app.add_typer(export_app, name="export")
 app.add_typer(media_app, name="media")
@@ -464,6 +467,66 @@ def auth_refresh_ids() -> None:
         raise typer.Exit(2) from exc
     cache = store.load()
     console.print(f"refreshed {len(cache.ids)} query IDs into {store.path}")
+
+
+@article_app.command("refresh")
+def refresh_archived_articles(
+    targets: Annotated[
+        list[str] | None,
+        typer.Argument(help="Tweet IDs or x.com status URLs to refresh."),
+    ] = None,
+    all_articles: Annotated[
+        bool,
+        typer.Option(
+            "--all", help="Refresh all archived article rows, not just preview-only ones."
+        ),
+    ] = False,
+    limit: int | None = None,
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+) -> None:
+    console = _configure_logging()
+    try:
+        if all_articles and targets:
+            raise ConfigError("--all cannot be combined with explicit article targets.")
+        config, paths = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
+        result = asyncio.run(
+            refresh_articles(
+                targets=targets,
+                preview_only=not all_articles,
+                limit=limit,
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(
+        "articles: "
+        f"{result.processed} processed, "
+        f"{result.updated} refreshed, "
+        f"{result.failed} failed"
+    )
 
 
 @view_app.command("bookmarks")

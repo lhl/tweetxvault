@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Landed the remaining article support:
+  - Added `tweetxvault/articles.py` plus `tweetxvault articles refresh`, which resolves explicit tweet URLs/IDs or auto-selects preview-only archived article rows and refreshes them through authenticated `TweetDetail`
+  - Added `build_tweet_detail_url(...)` / `parse_tweet_detail_response(...)` in `tweetxvault/client/timelines.py`
+  - Captured a trimmed real authenticated fixture for `https://x.com/dimitrispapail/status/2026531440414925307` at `tests/fixtures/dimitris_article_tweet_detail.json`
+  - Verified on 2026-03-16 that `TweetDetail` currently returns full article `plain_text`, `content_state`, `cover_media`, and `media_entities`, so no Playwright-only article fallback is needed right now
+  - Reworked HTML export so article bodies, article media, tweet media, and URL metadata render directly in the local viewer
+  - Validation:
+    - `uv run pytest tests/test_articles.py tests/test_client.py tests/test_cli.py tests/test_export.py`
+    - `uv run ruff check tweetxvault/articles.py tweetxvault/client/features.py tweetxvault/client/timelines.py tweetxvault/cli.py tweetxvault/export/html_export.py tests/test_articles.py tests/test_client.py tests/test_cli.py tests/test_export.py`
+
 - Landed Task 12 media downloads + URL unfurls:
   - Extended `tweetxvault/storage/backend.py` with per-media download state/local-path/hash fields plus URL unfurl/final-url/title/description metadata fields
   - Expanded `tweetxvault/extractor.py` so article cover/body media are captured into `media` rows and URL rows preserve payload-provided metadata before any remote fetches

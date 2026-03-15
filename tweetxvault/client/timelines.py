@@ -16,6 +16,7 @@ from tweetxvault.client.features import (
     build_bookmarks_features,
     build_field_toggles,
     build_likes_features,
+    build_tweet_detail_features,
 )
 from tweetxvault.config import API_BASE_URL, SyncConfig
 from tweetxvault.extractor import extract_author_fields, extract_canonical_text, unwrap_tweet_result
@@ -77,6 +78,18 @@ def build_likes_url(
         variables["cursor"] = cursor
     params = _timeline_params(variables, features=build_likes_features())
     return f"{API_BASE_URL}/{query_id}/Likes?{params}"
+
+
+def build_tweet_detail_url(query_id: str, tweet_id: str) -> str:
+    variables: dict[str, Any] = {
+        "focalTweetId": tweet_id,
+        "withCommunity": True,
+        "withVoice": True,
+        "withBirdwatchNotes": True,
+        "includePromotedContent": True,
+    }
+    params = _timeline_params(variables, features=build_tweet_detail_features())
+    return f"{API_BASE_URL}/{query_id}/TweetDetail?{params}"
 
 
 async def fetch_page(
@@ -176,3 +189,16 @@ def parse_timeline_response(
     if operation not in {"Bookmarks", "Likes"}:
         raise ValueError(f"Unsupported timeline operation: {operation}")
     return tweets, bottom_cursor
+
+
+def parse_tweet_detail_response(
+    data: dict[str, Any],
+    focal_tweet_id: str,
+) -> TimelineTweet | None:
+    for entry in _iter_entries(data):
+        sort_index = entry.get("sortIndex")
+        for result in _extract_tweet_results_from_content(entry.get("content", {})):
+            tweet = _tweet_from_result(result, sort_index=sort_index)
+            if tweet and tweet.tweet_id == focal_tweet_id:
+                return tweet
+    return None

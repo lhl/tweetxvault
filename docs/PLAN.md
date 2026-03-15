@@ -440,6 +440,15 @@ Current verification from the public X web client on 2026-03-15:
 - Article-related features still exist in the web client: `articles_preview_enabled`, `responsive_web_twitter_article_tweet_consumption_enabled`.
 - Working example tweet for article validation once we have an authenticated capture: `https://x.com/dimitrispapail/status/2026531440414925307`
 
+Authenticated verification on 2026-03-16:
+
+- `TweetDetail` for `https://x.com/dimitrispapail/status/2026531440414925307` returned:
+  - full article `plain_text` (17,308 chars)
+  - `content_state`
+  - `cover_media`
+  - `media_entities`
+- We captured a trimmed real fixture at `tests/fixtures/dimitris_article_tweet_detail.json`.
+
 Design implications:
 
 - Treat articles as first-class tweet-adjacent objects, not just another expanded URL.
@@ -447,8 +456,8 @@ Design implications:
   - article-bearing tweet payloads returned by bookmarks/likes when article field toggles are enabled
   - dedicated article timelines fetched through `UserArticlesTweets`
 - Older archives can be refreshed through a timeline rewalk mode (`tweetxvault sync ... --article-backfill`) before we add a narrower tweet-level article fetch path.
-- Until we inspect real authenticated article payloads, key `article` rows by source tweet id and preserve the full raw tweet/article block for later migration.
-- If `UserArticlesTweets` only returns previews, keep article pointer metadata and defer full-body capture to a targeted follow-up fetch path or Playwright-only article fallback.
+- Key `article` rows by source tweet id and preserve the full raw tweet/article block for later migration.
+- The current targeted refresh path is authenticated `TweetDetail` (`tweetxvault articles refresh`); no Playwright-only article fallback is needed unless `TweetDetail` regresses back to preview-only payloads later.
 
 ### Attachments, Media, and Attached Tweets
 
@@ -523,6 +532,7 @@ tweetxvault export json               # (phase 2+) export all collections
 tweetxvault export html               # export a local HTML viewer
 tweetxvault media download            # fetch archived media files
 tweetxvault unfurl                    # fetch final/canonical URL metadata
+tweetxvault articles refresh          # refresh article-bearing tweets via TweetDetail
 
 tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
@@ -600,7 +610,7 @@ Reserved for future (not implemented in MVP):
 1. **Embedding runtime**: which local embedding model/runtime do we standardize on for Phase 3 (quality, footprint, licensing)?
 2. **Search table shape**: do we keep embeddings/indexes directly on `tweet` rows, or split out a derived LanceDB search table later if indexing mixed record types becomes awkward?
 3. **Canonical tweet layer migration**: do we keep long-term duplication between collection-scoped `tweet` rows and global `tweet_object` rows, or eventually slim the membership rows down to just collection/order state once downstream consumers move over?
-4. **Articles endpoint shape**: Does `UserArticlesTweets` include the full article body once article field toggles are enabled on an authenticated request? If not, decide whether we implement a targeted article fetch or a Playwright-only article fallback.
+4. **Articles endpoint shape**: authenticated `TweetDetail` returned full article `plain_text` on 2026-03-16; remaining question is whether `UserArticlesTweets` adds anything we need beyond the current targeted refresh path.
 5. **URL snapshot runner**: inline CLI commands landed for the first pass (`tweetxvault media download`, `tweetxvault unfurl`); decide later whether ArchiveBox/snapshotting needs a queue table or can stay command-driven.
 6. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
 

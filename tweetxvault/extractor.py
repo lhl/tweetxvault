@@ -592,7 +592,10 @@ def _article_media_entries(
                 candidates.append(("article_media", base + offset, item))
     for source, position, item in candidates:
         media_info = item.get("media_info") or {}
-        media_key = item.get("media_key") or f"{source}:{article_id}:{position}"
+        if source == "article_cover":
+            media_key = f"article-cover:{tweet_id}"
+        else:
+            media_key = item.get("media_key") or f"{source}:{tweet_id}:{position}"
         width, height = _article_media_dimensions(item)
         media_url = _deep_first_string(
             media_info,

@@ -63,7 +63,7 @@ def test_extract_secondary_objects_captures_quote_media_urls_and_article() -> No
     assert len(graph.media) == 3
     video = graph.media[("200", "7_quoted")]
     assert video.media_url == "https://video.twimg.com/ext_tw_video/quoted-hd.mp4"
-    article_cover = graph.media[("100", "article_cover:article-1:0")]
+    article_cover = graph.media[("100", "article-cover:100")]
     assert article_cover.source == "article_cover"
     assert article_cover.article_id == "article-1"
     assert article_cover.media_url == "https://pbs.twimg.com/article-cover.jpg"

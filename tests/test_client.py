@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections import deque
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -17,8 +19,10 @@ from tweetxvault.client.base import (
 from tweetxvault.client.timelines import (
     build_bookmarks_url,
     build_likes_url,
+    build_tweet_detail_url,
     fetch_page,
     parse_timeline_response,
+    parse_tweet_detail_response,
 )
 from tweetxvault.config import SyncConfig
 
@@ -26,6 +30,7 @@ from tweetxvault.config import SyncConfig
 def test_build_timeline_urls() -> None:
     bookmarks_url = build_bookmarks_url("bookmark-qid", cursor="abc")
     likes_url = build_likes_url("likes-qid", "42", cursor="def")
+    detail_url = build_tweet_detail_url("detail-qid", "2026531440414925307")
     operation, variables = request_details(bookmarks_url)
     assert operation == "Bookmarks"
     assert variables["cursor"] == "abc"
@@ -36,6 +41,24 @@ def test_build_timeline_urls() -> None:
     assert operation == "Likes"
     assert variables["userId"] == "42"
     assert variables["cursor"] == "def"
+    operation, variables = request_details(detail_url)
+    assert operation == "TweetDetail"
+    assert variables["focalTweetId"] == "2026531440414925307"
+
+
+def test_parse_tweet_detail_response_real_article_fixture() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "dimitris_article_tweet_detail.json"
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+
+    tweet = parse_tweet_detail_response(payload, "2026531440414925307")
+
+    assert tweet is not None
+    assert tweet.tweet_id == "2026531440414925307"
+    article = ((tweet.raw_json.get("article") or {}).get("article_results") or {}).get(
+        "result"
+    ) or {}
+    assert article["title"] == "You Don't Need to Run Every Eval"
+    assert len(article["plain_text"]) == 17308
 
 
 def test_parse_timeline_response_bookmarks_shape() -> None:

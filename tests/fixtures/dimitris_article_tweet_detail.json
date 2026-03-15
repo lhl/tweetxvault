@@ -1,0 +1,2298 @@
+{
+  "captured_at": "2026-03-16",
+  "tweet_id": "2026531440414925307",
+  "data": {
+    "threaded_conversation_with_injections_v2": {
+      "instructions": [
+        {
+          "type": "TimelineClearCache"
+        },
+        {
+          "type": "TimelineAddEntries",
+          "entries": [
+            {
+              "content": {
+                "__typename": "TimelineTimelineItem",
+                "clientEventInfo": {
+                  "component": "tweet",
+                  "element": "tweet"
+                },
+                "entryType": "TimelineTimelineItem",
+                "itemContent": {
+                  "__typename": "TimelineTweet",
+                  "itemType": "TimelineTweet",
+                  "tweetDisplayType": "Tweet",
+                  "tweet_results": {
+                    "result": {
+                      "__typename": "Tweet",
+                      "article": {
+                        "article_results": {
+                          "result": {
+                            "content_state": {
+                              "blocks": [
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 28,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 25,
+                                      "offset": 166,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 84,
+                                      "offset": 208,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "85k46",
+                                  "text": "I used Claude Code to build BenchPress a $0 benchmark prediction system, Codex to audit it for bugs, and Claude Sonnet to try to beat it for $1. Here's what I found: LLM evals are so low-rank (in fact rank 2) that 5 benchmarks can predict the other 44 to within 5 points (and many times less). ",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "446i9",
+                                  "text": "Most evals are approximately... redundant.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "51akb",
+                                  "text": "Let me give you an example for why one should expect this.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "8c25r",
+                                  "text": "Here's a table with three frontier models and three benchmarks.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 0,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "bqbb5",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "2o6gu",
+                                  "text": "What would you guess the missing entry is?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "5k421",
+                                  "text": "Maybe around 92-94? ",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "27sg1",
+                                  "text": "Sounds about right, it's 93.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "96lbo",
+                                  "text": "You didn't need to evaluate GPT-5.2 on GPQA-D which would have a nontrivial $ cost. What made you guess reasonably well? I hope you won\u2019t find me presumptuous to assume that it\u2019s likely the fact that the rows are nearly identical. In fact, these models, on evals at least, are nearly identical.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 116,
+                                      "offset": 340,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "6n37h",
+                                  "text": "The point that I want to stress is that there's a ton of similarity that shows up everywhere, across models from the same generation, models of similar sizes, evals that test similar skills that correlate almost perfectly (e.g., AIME vs HMMT), and a benchmark that's hard for GPT-5.2 is hard for Claude Opus 4.6 (e.g., Terminal-Bench 2.0). There's redundancy in basically every direction you can think of measuring things about these models and benchmarks.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "dcqiv",
+                                  "text": "So, a simple question crept in my mind: can you exploit this \u2026 low-dimensional structure to predict evals?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 31,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "70m24",
+                                  "text": "Every atom in my brain said yes, and so I wanted to check.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 60,
+                                      "offset": 14,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "662rh",
+                                  "text": "So here goes, a few tens of millions of Claude Code and Codex tokens later...",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "b8ldp",
+                                  "text": "But a short history lesson first.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 47,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "98dej",
+                                  "text": "\nAn old trick to obtain a million dollar matrix",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {
+                                    "mentions": [
+                                      {
+                                        "fromIndex": 135,
+                                        "text": "beenwrekt",
+                                        "toIndex": 145
+                                      }
+                                    ]
+                                  },
+                                  "entityRanges": [
+                                    {
+                                      "key": 1,
+                                      "length": 17,
+                                      "offset": 113
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 17,
+                                      "offset": 113,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 33,
+                                      "offset": 184,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 9,
+                                      "offset": 283,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 25,
+                                      "offset": 294,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 29,
+                                      "offset": 418,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "4jfen",
+                                  "text": "When I was a grad student, I (and every other EE theory kid 15 years ago) was really into compressed sensing and matrix completion (hi @beenwrekt!). The whole point of that theory is: observe a few entries of a matrix, and if you're lucky and the ground truth matrix is approximately low rank, you can recover the rest from surprisingly few measurements by doing variants of the most classic linear algebra algorithm: Singular Value Decomposition.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 2,
+                                      "length": 13,
+                                      "offset": 28
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 164,
+                                      "offset": 299,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "ebj9t",
+                                  "text": "There was even a famous $1M Netflix Prize for this: in 2006, Netflix released a matrix of about 100 million (user, movie) ratings and offered $1M (so like 2.5 weeks of 1024 H100s on Lambda) to whoever could predict the missing ratings 10% better than Netflix's own algorithm, or something like this. The competition ran for three years, drew tens of thousands of teams, and even though a team did get the $1M, Netflix never actually deployed the winning solution! But if I'm not wrong, the competition basically invented modern recommender systems and launched a few thousand ML careers.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "afern",
+                                  "text": "Here's how matrix completion would work in our (model, eval) setting. ",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "1qa6a",
+                                  "text": "It's kind of simple. ",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 12,
+                                      "offset": 51,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 13,
+                                      "offset": 86,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 20,
+                                      "offset": 122,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 17,
+                                      "offset": 214,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 9,
+                                      "offset": 254,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "fr0dh",
+                                  "text": "Suppose each model can be described by a vector of two entries say, how good it is at general tasks and how good it is at hard novel reasoning. And each benchmark is described the same way, e.g., how much it tests general knowledge vs. how much it tests reasoning. The final model score is their dot product.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "gn7g",
+                                  "text": "Say GPT-4o has s = (8, 2): strong on general tasks, weak on reasoning. AIME 2025 has b = (1, 8), that is it's mostly testing reasoning. Then GPT-4o on AIME 2025 is 8\u00d71 + 2\u00d78 = 24. (Actually, I think that's close to its true score; didn't even plan this :D.) Now if MMLU has b = (9, 1), i.e., mostly general knowledge, then GPT-4o on MMLU is 8\u00d79 + 2\u00d71 = 74.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 92,
+                                      "offset": 40,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "flpm6",
+                                  "text": "The obvious in hindsight insight is that every (model, eval) entry can be produced by the inner product of two 2-dimensional vectors. We'll see later that these two dimensions actually tend to explain the data pretty well!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 16,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "8qfgo",
+                                  "text": "So the game is: observe a few real (model, eval) scores, solve for the hidden vectors, predict the rest.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 8,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "a6ksk",
+                                  "text": "\n83 x 49",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 8,
+                                      "offset": 19,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "d92i1",
+                                  "text": "But first, we need a matrix!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "hsga",
+                                  "text": "I asked Claude to search and verify all possible (model, eval) pairs it could find between January 2025 and now. It found 83 models across 49 benchmarks, every entry cited with a source URL. I asked Codex to audit the findings for hallucinations and to double-check every entry is valid by independently verifying them.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 48,
+                                      "offset": 48,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "5fkjb",
+                                  "text": "The final matrix is 34% filled, meaning roughly 1,4k out of ~4k cells have a ground truth number. The rest are missing because Claude couldn't find a reported score. This is what it looks like:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 3,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "76gu2",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "1mc5r",
+                                  "text": "The 83 models span 21 labs (the usual suspects), and 49 benchmarks (also the usual suspects).",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 32,
+                                      "offset": 5,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "fmkb4",
+                                  "text": "But, is this matrix actually low-rank? Easy to check: find a large fully-observed submatrix and just run SVD on it. The biggest complete block I found is 31 models \u00d7 10 benchmarks, and here's how the singular values look:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 4,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "v6gh",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 5,
+                                      "length": 1,
+                                      "offset": 186
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "73eeb",
+                                  "text": "The first component alone captures 71% of the spectrum. The first three capture >90%. So yeah, as with every single matrix I've ever seen in my whole life, this one is also kinda rank-3 \ud83d\ude0a",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 108,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "93eln",
+                                  "text": "If you've ever done matrix completion in your life, you already know exactly how the rest of this post goes.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "d5bh0",
+                                  "text": "But, I was still skeptical that matrix completion would work, as it typically operates on much larger matrices. But what's the cost of checking with Claude Code and Codex, right?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 88,
+                                      "offset": 18,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "755tj",
+                                  "text": "I wanted to know: how many benchmark scores do you need for a given model before you can predict the rest?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "ehquk",
+                                  "text": "Cute question. Let\u2019s find out!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 38,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "ed2cu",
+                                  "text": "\nDoes matrix completion work on 83x49?",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 89,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "eu36g",
+                                  "text": "It kind of does! And for good values of \"kind of\". The best method which I will now call BenchPress (details in the next section) predicts held-out scores with 7% median, absolute error. To make that concrete, some examples:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 6,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "73kh0",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "fmlc8",
+                                  "text": "Agentic, competition math, coding, small open-weight model are all within a couple points, and I will share all the results in the github repo. But we got some ugly ones too:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 7,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "e0gb4",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "1imuc",
+                                  "text": "Off by 45+ points. Ouch. We'll come back to why.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 50,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "40uu5",
+                                  "text": "\nBenchPress: A 0$ approximation to your eval suite",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "cf9mk",
+                                  "text": "The final prediction model has two dead simple ingredients.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 32,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "7rdji",
+                                  "text": "Ingredient 1: sparse regression. For each missing cell, find the 5 benchmarks that best predict the target. Concretely: to predict AIME 2025, take another benchmark like MMLU-Pro, plot every model that has scores on both as a point (x = its MMLU-Pro score, y = its AIME 2025 score), and fit a straight line through those points in logit space. The better the line fits, the more MMLU-Pro tells you about AIME 2025. Do this for all 48 other benchmarks, keep the 5 where the line fits best, and average their predictions weighted by fit quality.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 25,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "8iipd",
+                                  "text": "Ingredient 2: rank-2 SVD. Imagine every model is a point in 49-dimensional benchmarks space. Rank-2 SVD says: find the best 2D plane through these points such that the projections onto that plane are as close to the real scores as possible. Once you have the plane, every model gets a position on it (2 coordinates) and every benchmark gets a direction on it (2 coordinates) and their dot product gives the predicted score.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 11,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "ag5fp",
+                                  "text": "Why rank 2? Because we swept ranks 1 through 8 and rank 2 wins. Rank 3 is already worse by half a point, rank 8 blows up to 13% in absolute error. The third singular value looks real in the spectrum that I shared above, but it's below the noise floor for prediction.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 24,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "ciptc",
+                                  "text": "There's a small problem: 66% of the coordinates are missing for this to work out of the box. A standard algorithm in matrix completion says to start with zeros, or in our case with column averages, then do SVD, project things onto the singular vectors, replace only the missing entries with the projections while keeping observed scores pinned, and repeat until the projections stop changing.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 22,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "brr0v",
+                                  "text": "One important detail: Claude Code found that everything should happen in logit space: the logit transform, logit(p) = log(p/(1-p)), stretches scores near 0% and 100% and compresses the middle, so the gap between 88% and 92% gets the weight it deserves. This fix improved final accuracy by 10% or so. I\u2019m sure it\u2019s a standard trick in old school matrix completion.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 44,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "942l2",
+                                  "text": "A convex combination of the two ingredients: 60% of the entry comes from regression + 40% from the SVD. Why? Because Claude Code did a sweep of combinations and that was the best!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "7diof",
+                                  "text": "No neural networks or  metadata used. We (by we I mean Claude) tried KNN instead of SVD, but KNN and the regression are both local methods that make correlated mistakes. Swapping in SVD gave a 14% improvement.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 76,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "3k97c",
+                                  "text": "One thing Claude tried that I asked for and also expected to work: feeding  BenchPress model metadata e.g., parameter count, provider, reasoning mode, open-weight status. It made things worse. Everything in \"14B reasoning model distilled from DeepSeek\" is already captured by the model's pattern across scores. Cool!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "8n1lp",
+                                  "text": "Also, Claude tried NMF, PMF, nuclear norm, and ALS, and none was better than good old SVD. You love to see it!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 39,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "dde8t",
+                                  "text": "\nHow many benchmarks do you need? Five.",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 130,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "9vdmo",
+                                  "text": "Here's an experiment: take a model, hide all its scores, then reveal them one at a time in random order. After each reveal, build BenchPress and use it to predict the rest. How quickly does the error come down?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "det6u",
+                                  "text": "The answer is: fast. With just 1 known score, median error (across all models!) is about 12%. By 5 known scores it drops to 9%. After that at some point it\u2019s diminishing returns as the precision of individual predictions keeps improving but the median stabilizes because a few hard-to-predict benchmarks that stay noisy.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 94,
+                                      "offset": 31,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "bg8vt",
+                                  "text": "The practical takeaway is that 5 benchmarks are enough to get a good prediction of how the model performs on everything else.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "130hl",
+                                  "text": "Here are some example prediction error vs number of revealed tests for a few popular models from the past year.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 8,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "7g3t5",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "ameoo",
+                                  "text": "In fact, if you remove ARC-AGIs the error improves :D I'd say that's a good sign for SVD, bad sign for ARC-AGI.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 9,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "2qt54",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "1cvkv",
+                                  "text": "If you can only pick 5 to eval on, greedy forward selection gives you:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 61,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "fged9",
+                                  "text": "{HLE, AIME 2025, LiveCodeBench, SWE-bench Verified, SimpleQA}",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "5h5ud",
+                                  "text": "They span four categories and cover both principal components. Under proper holdout they get about 7.8% error, versus 7% for the full method. Not everything, but a practical minimum eval set.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 35,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "4v1nn",
+                                  "text": "This seems legitimately cool to me!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 32,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "fa6nt",
+                                  "text": "\nWhat does the 2 in rank-2 mean?",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "8op5p",
+                                  "text": "The SVD gives you two things: a weight for each benchmark and a score for each model, on each component. The benchmark weights tell you what the component measures. The model scores tell you where each model falls on that axis.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 133,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "1sflb",
+                                  "text": "When you extract the 2 top singular vectors (left and right) you get something interesting. I\u2019ll refer to these singular vectors as \u201ccomponents\u201d in the next two paragraphs.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 107,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "cmr4q",
+                                  "text": "The first pair of components (associated with the max singular value) seem to be about general capability: The benchmarks with the largest weights are GPQA-D, LiveCodeBench, MMLU-Pro, HumanEval, and MMLU. Every model gets a score on this axis: Gemini 3.1 Pro, GPT-5.2, Gemini 3 Pro, Opus 4.6, Kimi K2.5 score highest. At the other end: Qwen3-0.6B, OLMo 2 13B, Qwen3-1.7B, DeepSeek-R1-Distill-1.5B, Falcon3-10B. It's almost a classifier for frontier vs. small models and, interestingly, closed vs. open.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 160,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "4ijmp",
+                                  "text": "The second pair of components (associated with the second largest singular value) seems to be about harder, new reasoning tasks, and old vs new frontier models: The benchmarks with the largest weights are SimpleQA, ARC-AGI-2, HLE, ARC-AGI-1, and FrontierMath, these are the hard, novel stuff that frontier models do well on. Benchmarks like MATH-500 and MMLU max out in the opposite direction. On the model side, Gemini 3.1 Pro, Opus 4.6, Gemini 3 Pro, and GPT-5.2 score highest: these are the latest frontier models. At the other end: Claude 3.7 Sonnet, DeepSeek-R1, Gemini 2.5 Flash, o3-mini. These were interestingly frontier in early-mid 2025. Model component 2 is almost a \"recency of frontier\" measure!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "7qskm",
+                                  "text": "Very interesting!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 36,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "1qhku",
+                                  "text": "\nWhere does BenchPress do the worst?",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "bdil7",
+                                  "text": "The hardest benchmarks share two traits: either bimodal score distributions (ARC-AGI, IMO, USAMO) or weak correlation with other benchmarks (Terminal-Bench, Arena-Hard). The method relies on benchmark-to-benchmark structure and when it\u2019s not there, the \u201cfeature\u201d doesn\u2019t help prediction.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "3sb8m",
+                                  "text": "So benchmarks resisting prediction: SimpleBench, ARC-AGI-1 and Terminal-Bench  with high errors for predicting them. These are the interesting ones, because they measure something the rest of the matrix doesn't capture.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "dg1h5",
+                                  "text": "Competition math (IMO, USAMO) is bimodal: a model either solves olympiad problems or it doesn't. You can't interpolate a step function I guess!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 53,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "cfofp",
+                                  "text": "\nWait! Can Claude beat BenchPress at guessing scores?",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 10,
+                                      "length": 1,
+                                      "offset": 315
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "dpi3d",
+                                  "text": "OK, this next part isn't purely science because some of these models were released before Sonnet's training cutoff, so Claude might just \"know\" certain scores. But I was curious: what if you don't use SVD and regression-type predictors and instead use a one-gazillion-parameter model for that? In this case, Claude \ud83d\ude0a",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "4fc8m",
+                                  "text": "For $0.84, we gave Claude Sonnet the partially-filled matrix as a big CSV and asked it to predict the missing entries. Same holdout, same evaluation.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 48,
+                                      "offset": 12,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "88hqi",
+                                  "text": "The result: BenchPress edges out Claude on a fair comparison, 5.8% vs 6.1% median error. Linear algebra beats a trillion-parameter model at filling in a spreadsheet, for free, in under a second. I love it.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 11,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "grjp",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 126,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 10,
+                                      "offset": 212,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "nnm7",
+                                  "text": "At k=0. zero known scores, just the model's name  Claude already predicts Gemini 3.1 Pro's  benchmarks to within 2.5 points!! BenchPress at k=0 can only guess column averages, and is off by 17 points. But by k=5 BenchPress catches up.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 12,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "c97lv",
+                                  "text": "The takeaway: Claude's world knowledge is worth about 5 benchmark scores of  information.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 32,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "avipt",
+                                  "text": "After that, linear algebra wins!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "uj3i",
+                                  "text": "Here's the weird part: Claude actually gets worse as you give it more data. At k=0 it nails Gemini 3.1 Pro at 2.5% error but as you increase to 15 revealed data points the gap increases to 4.7%. Weird! Providing partial scores seems to create a conflict between Claude's prior knowledge and the prompt. Let\u2019s call it a kind of \"retrieval-augmented degradation\u201d.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 10,
+                                      "offset": 4,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "6g519",
+                                  "text": "For BenchPress almost always more data monotonically means better predictions, as you'd expect from any self-respecting early 2000s predictor.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 26,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "c41h5",
+                                  "text": "\nWhen should you use this?",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "252et",
+                                  "text": "Three options for getting a number on \"how does my model do on benchmark X\":",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 28,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "5hi39",
+                                  "text": "Option A: Run the benchmark. Cost: $5 to $100k? (I know for a fact TB 2.0 can be O(100k) for some models and harnesses). BUT! You get the true score.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 34,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "2mio6",
+                                  "text": "Option B: Predict from the matrix. Cost: ~$0. But with almost everything that is free, it has its issues, in this case your score is within about 5 points. Not great, not terrible.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 39,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "cmc4l",
+                                  "text": "Option C: Run a cheaper model as proxy? Cost: less than A. But you get the right answer about the wrong model. Hmm maybe not?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "2hbo8",
+                                  "text": "But to be serious, the decision is a function of cost and error tolerance. If SWE-bench costs $5,000, and 6% error is fine for a go/no-go, just predict it I suppose. If AIME 2026 costs $2, run it.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 22,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "12me8",
+                                  "text": "\nAm I convinced? Hmmm.",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "2kfv2",
+                                  "text": "For frontier labs, honestly probably not really. They'll run every eval regardless, I would assume. But for smaller groups trying to train a new model, having a quick sanity check could be helpful? I don't know.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "2i5t4",
+                                  "text": "But it doesn't matter, because this was fun to try!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "b83g9",
+                                  "text": "It's kind of hilarious that in pretty much any setting where you have an incomplete matrix to complete, it almost always turns out to rank 2 or 5. Matrix completion for the win!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "esn3f",
+                                  "text": "Perhaps the deeper meaning is that most of what we call \"evaluation\" is measuring the same two things (because we said rank 2, remember?) over and over, and the benchmarks that escape this pattern are the ones testing new capabilities (hello friends at Terminal-Bench!).",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "fc0t4",
+                                  "text": "But we've nevertheless just convinced ourselves we need to climb 100 evals for every model.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 66,
+                                      "offset": 17,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "bobnq",
+                                  "text": "So maybe there's a message here for folks trying to come up with new benchmarks too:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "9o4d5",
+                                  "text": "if your eval correlates with existing ones, it's not adding much. The valuable benchmarks are the ones that are nearly orthogonal to everything else. Here's how predictable each benchmark is from the rest of the matrix:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [
+                                    {
+                                      "key": 12,
+                                      "length": 1,
+                                      "offset": 0
+                                    }
+                                  ],
+                                  "inlineStyleRanges": [],
+                                  "key": "87tsv",
+                                  "text": " ",
+                                  "type": "atomic"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "9mjo1",
+                                  "text": "Want to try it on your own model?",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {
+                                    "urls": [
+                                      {
+                                        "fromIndex": 68,
+                                        "text": "predict.py",
+                                        "toIndex": 78
+                                      }
+                                    ]
+                                  },
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "apfol",
+                                  "text": "The full matrix, all 1,375 cited scores, the BenchPress code, and a predict.py CLI that takes 5 benchmark scores and predicts the other 44 are open-sourced at",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {
+                                    "urls": [
+                                      {
+                                        "fromIndex": 0,
+                                        "text": "https://github.com/anadim/llm-benchmark-matrix",
+                                        "toIndex": 46
+                                      }
+                                    ]
+                                  },
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "38rom",
+                                  "text": "https://github.com/anadim/llm-benchmark-matrix ",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "ctjkt",
+                                  "text": "",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 4,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "9fc17",
+                                  "text": "Coda",
+                                  "type": "header-two"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "emd6m",
+                                  "text": "I spent two days on this, mass-prompting Claude Code and Codex, spent 0$ on GPUs, and ended up with a result that would have been a decent workshop paper, If I was writing things more seriously.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 41,
+                                      "offset": 0,
+                                      "style": "Bold"
+                                    },
+                                    {
+                                      "length": 96,
+                                      "offset": 168,
+                                      "style": "Bold"
+                                    }
+                                  ],
+                                  "key": "aqpoa",
+                                  "text": "I still don't know what to make of that. Part of me thinks it's amazing, and enables more research. Part of me wonders what happens when everyone has that, and whether the thing that matters shifts from \"can you get the answer\" to \"did you ask the right question.\"",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "6ejl9",
+                                  "text": "Did I? I don't know! But I had fun finding out.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "56ja7",
+                                  "text": "Anyway. Matrix completion for the win.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "3bbqk",
+                                  "text": "Have fun!",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 451,
+                                      "offset": 0,
+                                      "style": "Italic"
+                                    }
+                                  ],
+                                  "key": "6hg9g",
+                                  "text": "___________________________________________________________\n\nThe (model,eval) matrix was assembled from official model announcements, technical reports, leaderboards, and evaluation platforms. Every entry has a source URL. The code was written by Claude Code, audited by Codex, with the audit rebutted by Claude Code and counter rebutted by Codex. They kind of had a bit of a fight about it, and I literally told them don\u2019t fight, be constructive lol.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [
+                                    {
+                                      "length": 46,
+                                      "offset": 0,
+                                      "style": "Italic"
+                                    }
+                                  ],
+                                  "key": "e63re",
+                                  "text": "What did I do? I mostly gave prompts. Sort of.",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "29ag0",
+                                  "text": "",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {},
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "fctq4",
+                                  "text": "If you use this work, please cite:",
+                                  "type": "unstyled"
+                                },
+                                {
+                                  "data": {
+                                    "mentions": [
+                                      {
+                                        "fromIndex": 0,
+                                        "text": "misc",
+                                        "toIndex": 5
+                                      }
+                                    ],
+                                    "urls": [
+                                      {
+                                        "fromIndex": 138,
+                                        "text": "https://github.com/anadim/llm-benchmark-matrix",
+                                        "toIndex": 184
+                                      }
+                                    ]
+                                  },
+                                  "entityRanges": [],
+                                  "inlineStyleRanges": [],
+                                  "key": "dp4tm",
+                                  "text": "@misc{papailiopoulos2026benchpress,\n  title={You Don't Need to Run Every Eval},\n  author={Dimitris Papailiopoulos},\n  year={2026},\n  url={https://github.com/anadim/llm-benchmark-matrix},\n}",
+                                  "type": "unstyled"
+                                }
+                              ],
+                              "entityMap": [
+                                {
+                                  "key": "12",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "11badff8-f63f-468d-beb6-1409b2d6098b",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "29",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026526692819283968"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "8",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "bee44af4-4315-4ebe-9ff3-bfa45793014c",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "23",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026526401189335041"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "4",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "3dd24897-bebb-4d7b-a73a-3f9239041114",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "8",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026525545924591616"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "11",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "c411ebf8-8009-4502-aa1a-6fb9e01348c5",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "27",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026526511881207808"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "9",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "54c97567-5077-4797-9e95-3009c625c77c",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "25",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026526434760568833"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "5",
+                                  "value": {
+                                    "data": {
+                                      "url": "https://abs-0.twimg.com/emoji/v2/svg/1f60a.svg"
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "TWEMOJI"
+                                  }
+                                },
+                                {
+                                  "key": "10",
+                                  "value": {
+                                    "data": {
+                                      "url": "https://abs-0.twimg.com/emoji/v2/svg/1f60a.svg"
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "TWEMOJI"
+                                  }
+                                },
+                                {
+                                  "key": "6",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "ee1b4e81-314a-47f7-b4aa-cf860478fad8",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "15",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026525845116825600"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "1",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "635a2a10-95dc-45c1-8992-2e616e188f10",
+                                      "url": "https://arxiv.org/abs/0805.4471"
+                                    },
+                                    "mutability": "Mutable",
+                                    "type": "LINK"
+                                  }
+                                },
+                                {
+                                  "key": "0",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "96d96fcd-3f7f-4d49-98fe-02900e1bc3be",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "4",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026524398883143680"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "2",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "bdce9a9b-734e-4ed6-af44-17d03eda103e",
+                                      "url": "https://en.wikipedia.org/wiki/Netflix_Prize"
+                                    },
+                                    "mutability": "Mutable",
+                                    "type": "LINK"
+                                  }
+                                },
+                                {
+                                  "key": "7",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "a2aef386-edc9-4426-88f7-ba9b35fc4d2d",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "17",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026525900653662208"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                },
+                                {
+                                  "key": "3",
+                                  "value": {
+                                    "data": {
+                                      "entityKey": "68f9dba7-3bd7-487e-90be-cdcf9764ba90",
+                                      "mediaItems": [
+                                        {
+                                          "localMediaId": "6",
+                                          "mediaCategory": "DraftTweetImage",
+                                          "mediaId": "2026525511392882688"
+                                        }
+                                      ]
+                                    },
+                                    "mutability": "Immutable",
+                                    "type": "MEDIA"
+                                  }
+                                }
+                              ]
+                            },
+                            "cover_media": {
+                              "id": "QXBpTWVkaWE6DAAFCgABHB+sUHUXYAAKAAIAAAAAIjPCZQAA",
+                              "media_id": "2026527818901839872",
+                              "media_info": {
+                                "__typename": "ApiImage",
+                                "color_info": {
+                                  "palette": [
+                                    {
+                                      "percentage": 56.65,
+                                      "rgb": {
+                                        "blue": 255,
+                                        "green": 255,
+                                        "red": 255
+                                      }
+                                    },
+                                    {
+                                      "percentage": 7.29,
+                                      "rgb": {
+                                        "blue": 247,
+                                        "green": 169,
+                                        "red": 41
+                                      }
+                                    },
+                                    {
+                                      "percentage": 7.26,
+                                      "rgb": {
+                                        "blue": 237,
+                                        "green": 220,
+                                        "red": 74
+                                      }
+                                    },
+                                    {
+                                      "percentage": 4.5,
+                                      "rgb": {
+                                        "blue": 196,
+                                        "green": 232,
+                                        "red": 91
+                                      }
+                                    },
+                                    {
+                                      "percentage": 2.94,
+                                      "rgb": {
+                                        "blue": 152,
+                                        "green": 236,
+                                        "red": 134
+                                      }
+                                    }
+                                  ]
+                                },
+                                "original_img_height": 808,
+                                "original_img_url": "https://pbs.twimg.com/media/HB-sUHUXYAA3O4X.jpg",
+                                "original_img_width": 2021
+                              },
+                              "media_key": "3_2026527818901839872"
+                            },
+                            "id": "QXJ0aWNsZUVudGl0eToyMDI2NTIzMDg1NTQ1ODU3MDI0",
+                            "is_grok_summary_eligible": true,
+                            "lifecycle_state": {
+                              "modified_at_secs": 1772038354
+                            },
+                            "media_entities": [
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+qNzLW8AAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026525511392882688",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 79.55,
+                                        "rgb": {
+                                          "blue": 253,
+                                          "green": 253,
+                                          "red": 253
+                                        }
+                                      },
+                                      {
+                                        "percentage": 20.45,
+                                        "rgb": {
+                                          "blue": 165,
+                                          "green": 122,
+                                          "red": 59
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 818,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-qNzLW8AAFPhO.jpg",
+                                  "original_img_width": 936
+                                },
+                                "media_key": "3_2026525511392882688"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+rDi/XsAEKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026526434760568833",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 93.62,
+                                        "rgb": {
+                                          "blue": 254,
+                                          "green": 254,
+                                          "red": 254
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.5,
+                                        "rgb": {
+                                          "blue": 248,
+                                          "green": 186,
+                                          "red": 207
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.17,
+                                        "rgb": {
+                                          "blue": 183,
+                                          "green": 221,
+                                          "red": 181
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.11,
+                                        "rgb": {
+                                          "blue": 220,
+                                          "green": 192,
+                                          "red": 152
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.11,
+                                        "rgb": {
+                                          "blue": 178,
+                                          "green": 182,
+                                          "red": 243
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 558,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-rDi_XsAEiYak.jpg",
+                                  "original_img_width": 936
+                                },
+                                "media_key": "3_2026526434760568833"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+rBl7XUAEKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026526401189335041",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 92.18,
+                                        "rgb": {
+                                          "blue": 254,
+                                          "green": 254,
+                                          "red": 254
+                                        }
+                                      },
+                                      {
+                                        "percentage": 3.09,
+                                        "rgb": {
+                                          "blue": 209,
+                                          "green": 234,
+                                          "red": 210
+                                        }
+                                      },
+                                      {
+                                        "percentage": 2.42,
+                                        "rgb": {
+                                          "blue": 250,
+                                          "green": 212,
+                                          "red": 223
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.11,
+                                        "rgb": {
+                                          "blue": 174,
+                                          "green": 181,
+                                          "red": 243
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.63,
+                                        "rgb": {
+                                          "blue": 216,
+                                          "green": 186,
+                                          "red": 142
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 762,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-rBl7XUAEw-cV.jpg",
+                                  "original_img_width": 936
+                                },
+                                "media_key": "3_2026526401189335041"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+rICSXQAAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026526511881207808",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 95.35,
+                                        "rgb": {
+                                          "blue": 253,
+                                          "green": 253,
+                                          "red": 253
+                                        }
+                                      },
+                                      {
+                                        "percentage": 2.03,
+                                        "rgb": {
+                                          "blue": 166,
+                                          "green": 215,
+                                          "red": 170
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.71,
+                                        "rgb": {
+                                          "blue": 155,
+                                          "green": 191,
+                                          "red": 240
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.36,
+                                        "rgb": {
+                                          "blue": 130,
+                                          "green": 130,
+                                          "red": 130
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.31,
+                                        "rgb": {
+                                          "blue": 190,
+                                          "green": 212,
+                                          "red": 244
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 440,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-rICSXQAAy_HJ.jpg",
+                                  "original_img_width": 936
+                                },
+                                "media_key": "3_2026526511881207808"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+qhOZWMAAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026525845116825600",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 68.65,
+                                        "rgb": {
+                                          "blue": 26,
+                                          "green": 26,
+                                          "red": 26
+                                        }
+                                      },
+                                      {
+                                        "percentage": 30.22,
+                                        "rgb": {
+                                          "blue": 37,
+                                          "green": 91,
+                                          "red": 50
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.88,
+                                        "rgb": {
+                                          "blue": 31,
+                                          "green": 61,
+                                          "red": 38
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.25,
+                                        "rgb": {
+                                          "blue": 45,
+                                          "green": 141,
+                                          "red": 69
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 464,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-qhOZWMAA84dp.jpg",
+                                  "original_img_width": 1942
+                                },
+                                "media_key": "3_2026525845116825600"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+pNCwXgAAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026524398883143680",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 78.35,
+                                        "rgb": {
+                                          "blue": 26,
+                                          "green": 26,
+                                          "red": 26
+                                        }
+                                      },
+                                      {
+                                        "percentage": 19.35,
+                                        "rgb": {
+                                          "blue": 39,
+                                          "green": 105,
+                                          "red": 55
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.92,
+                                        "rgb": {
+                                          "blue": 31,
+                                          "green": 61,
+                                          "red": 38
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.38,
+                                        "rgb": {
+                                          "blue": 45,
+                                          "green": 142,
+                                          "red": 69
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 402,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-pNCwXgAADg9X.jpg",
+                                  "original_img_width": 1666
+                                },
+                                "media_key": "3_2026524398883143680"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+qkdSXEAAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026525900653662208",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 63.36,
+                                        "rgb": {
+                                          "blue": 23,
+                                          "green": 23,
+                                          "red": 23
+                                        }
+                                      },
+                                      {
+                                        "percentage": 34.34,
+                                        "rgb": {
+                                          "blue": 31,
+                                          "green": 81,
+                                          "red": 43
+                                        }
+                                      },
+                                      {
+                                        "percentage": 2.15,
+                                        "rgb": {
+                                          "blue": 14,
+                                          "green": 46,
+                                          "red": 22
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.16,
+                                        "rgb": {
+                                          "blue": 44,
+                                          "green": 133,
+                                          "red": 65
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 312,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-qkdSXEAAGa5X.jpg",
+                                  "original_img_width": 1962
+                                },
+                                "media_key": "3_2026525900653662208"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+qPz0XAAAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026525545924591616",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 96.39,
+                                        "rgb": {
+                                          "blue": 255,
+                                          "green": 255,
+                                          "red": 255
+                                        }
+                                      },
+                                      {
+                                        "percentage": 2.79,
+                                        "rgb": {
+                                          "blue": 122,
+                                          "green": 73,
+                                          "red": 47
+                                        }
+                                      },
+                                      {
+                                        "percentage": 0.64,
+                                        "rgb": {
+                                          "blue": 155,
+                                          "green": 156,
+                                          "red": 229
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 522,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-qPz0XAAAh5GJ.jpg",
+                                  "original_img_width": 936
+                                },
+                                "media_key": "3_2026525545924591616"
+                              },
+                              {
+                                "id": "QXBpTWVkaWE6DAAFCgABHB+rSkVXMAAKAAIAAAAAIjPCZQAA",
+                                "media_id": "2026526692819283968",
+                                "media_info": {
+                                  "__typename": "ApiImage",
+                                  "color_info": {
+                                    "palette": [
+                                      {
+                                        "percentage": 82.41,
+                                        "rgb": {
+                                          "blue": 26,
+                                          "green": 32,
+                                          "red": 27
+                                        }
+                                      },
+                                      {
+                                        "percentage": 16.32,
+                                        "rgb": {
+                                          "blue": 32,
+                                          "green": 68,
+                                          "red": 40
+                                        }
+                                      },
+                                      {
+                                        "percentage": 1.25,
+                                        "rgb": {
+                                          "blue": 38,
+                                          "green": 117,
+                                          "red": 57
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "original_img_height": 1638,
+                                  "original_img_url": "https://pbs.twimg.com/media/HB-rSkVXMAADSIF.jpg",
+                                  "original_img_width": 2426
+                                },
+                                "media_key": "3_2026526692819283968"
+                              }
+                            ],
+                            "metadata": {
+                              "first_published_at_secs": 1771997721
+                            },
+                            "plain_text": "I used Claude Code to build BenchPress a $0 benchmark prediction system, Codex to audit it for bugs, and Claude Sonnet to try to beat it for $1. Here's what I found: LLM evals are so low-rank (in fact rank 2) that 5 benchmarks can predict the other 44 to within 5 points (and many times less). \nMost evals are approximately... redundant.\nLet me give you an example for why one should expect this.\nHere's a table with three frontier models and three benchmarks.\n \nWhat would you guess the missing entry is?\nMaybe around 92-94? \nSounds about right, it's 93.\nYou didn't need to evaluate GPT-5.2 on GPQA-D which would have a nontrivial $ cost. What made you guess reasonably well? I hope you won\u2019t find me presumptuous to assume that it\u2019s likely the fact that the rows are nearly identical. In fact, these models, on evals at least, are nearly identical.\nThe point that I want to stress is that there's a ton of similarity that shows up everywhere, across models from the same generation, models of similar sizes, evals that test similar skills that correlate almost perfectly (e.g., AIME vs HMMT), and a benchmark that's hard for GPT-5.2 is hard for Claude Opus 4.6 (e.g., Terminal-Bench 2.0). There's redundancy in basically every direction you can think of measuring things about these models and benchmarks.\nSo, a simple question crept in my mind: can you exploit this \u2026 low-dimensional structure to predict evals?\nEvery atom in my brain said yes, and so I wanted to check.\nSo here goes, a few tens of millions of Claude Code and Codex tokens later...\nBut a short history lesson first.\n\nAn old trick to obtain a million dollar matrix\nWhen I was a grad student, I (and every other EE theory kid 15 years ago) was really into compressed sensing and matrix completion (hi @beenwrekt!). The whole point of that theory is: observe a few entries of a matrix, and if you're lucky and the ground truth matrix is approximately low rank, you can recover the rest from surprisingly few measurements by doing variants of the most classic linear algebra algorithm: Singular Value Decomposition.\nThere was even a famous $1M Netflix Prize for this: in 2006, Netflix released a matrix of about 100 million (user, movie) ratings and offered $1M (so like 2.5 weeks of 1024 H100s on Lambda) to whoever could predict the missing ratings 10% better than Netflix's own algorithm, or something like this. The competition ran for three years, drew tens of thousands of teams, and even though a team did get the $1M, Netflix never actually deployed the winning solution! But if I'm not wrong, the competition basically invented modern recommender systems and launched a few thousand ML careers.\nHere's how matrix completion would work in our (model, eval) setting. \nIt's kind of simple. \nSuppose each model can be described by a vector of two entries say, how good it is at general tasks and how good it is at hard novel reasoning. And each benchmark is described the same way, e.g., how much it tests general knowledge vs. how much it tests reasoning. The final model score is their dot product.\nSay GPT-4o has s = (8, 2): strong on general tasks, weak on reasoning. AIME 2025 has b = (1, 8), that is it's mostly testing reasoning. Then GPT-4o on AIME 2025 is 8\u00d71 + 2\u00d78 = 24. (Actually, I think that's close to its true score; didn't even plan this :D.) Now if MMLU has b = (9, 1), i.e., mostly general knowledge, then GPT-4o on MMLU is 8\u00d79 + 2\u00d71 = 74.\nThe obvious in hindsight insight is that every (model, eval) entry can be produced by the inner product of two 2-dimensional vectors. We'll see later that these two dimensions actually tend to explain the data pretty well!\nSo the game is: observe a few real (model, eval) scores, solve for the hidden vectors, predict the rest.\n\n83 x 49\nBut first, we need a matrix!\nI asked Claude to search and verify all possible (model, eval) pairs it could find between January 2025 and now. It found 83 models across 49 benchmarks, every entry cited with a source URL. I asked Codex to audit the findings for hallucinations and to double-check every entry is valid by independently verifying them.\nThe final matrix is 34% filled, meaning roughly 1,4k out of ~4k cells have a ground truth number. The rest are missing because Claude couldn't find a reported score. This is what it looks like:\n \nThe 83 models span 21 labs (the usual suspects), and 49 benchmarks (also the usual suspects).\nBut, is this matrix actually low-rank? Easy to check: find a large fully-observed submatrix and just run SVD on it. The biggest complete block I found is 31 models \u00d7 10 benchmarks, and here's how the singular values look:\n \nThe first component alone captures 71% of the spectrum. The first three capture >90%. So yeah, as with every single matrix I've ever seen in my whole life, this one is also kinda rank-3 \ud83d\ude0a\nIf you've ever done matrix completion in your life, you already know exactly how the rest of this post goes.\nBut, I was still skeptical that matrix completion would work, as it typically operates on much larger matrices. But what's the cost of checking with Claude Code and Codex, right?\nI wanted to know: how many benchmark scores do you need for a given model before you can predict the rest?\nCute question. Let\u2019s find out!\n\nDoes matrix completion work on 83x49?\nIt kind of does! And for good values of \"kind of\". The best method which I will now call BenchPress (details in the next section) predicts held-out scores with 7% median, absolute error. To make that concrete, some examples:\n \nAgentic, competition math, coding, small open-weight model are all within a couple points, and I will share all the results in the github repo. But we got some ugly ones too:\n \nOff by 45+ points. Ouch. We'll come back to why.\n\nBenchPress: A 0$ approximation to your eval suite\nThe final prediction model has two dead simple ingredients.\nIngredient 1: sparse regression. For each missing cell, find the 5 benchmarks that best predict the target. Concretely: to predict AIME 2025, take another benchmark like MMLU-Pro, plot every model that has scores on both as a point (x = its MMLU-Pro score, y = its AIME 2025 score), and fit a straight line through those points in logit space. The better the line fits, the more MMLU-Pro tells you about AIME 2025. Do this for all 48 other benchmarks, keep the 5 where the line fits best, and average their predictions weighted by fit quality.\nIngredient 2: rank-2 SVD. Imagine every model is a point in 49-dimensional benchmarks space. Rank-2 SVD says: find the best 2D plane through these points such that the projections onto that plane are as close to the real scores as possible. Once you have the plane, every model gets a position on it (2 coordinates) and every benchmark gets a direction on it (2 coordinates) and their dot product gives the predicted score.\nWhy rank 2? Because we swept ranks 1 through 8 and rank 2 wins. Rank 3 is already worse by half a point, rank 8 blows up to 13% in absolute error. The third singular value looks real in the spectrum that I shared above, but it's below the noise floor for prediction.\nThere's a small problem: 66% of the coordinates are missing for this to work out of the box. A standard algorithm in matrix completion says to start with zeros, or in our case with column averages, then do SVD, project things onto the singular vectors, replace only the missing entries with the projections while keeping observed scores pinned, and repeat until the projections stop changing.\nOne important detail: Claude Code found that everything should happen in logit space: the logit transform, logit(p) = log(p/(1-p)), stretches scores near 0% and 100% and compresses the middle, so the gap between 88% and 92% gets the weight it deserves. This fix improved final accuracy by 10% or so. I\u2019m sure it\u2019s a standard trick in old school matrix completion.\nA convex combination of the two ingredients: 60% of the entry comes from regression + 40% from the SVD. Why? Because Claude Code did a sweep of combinations and that was the best!\nNo neural networks or  metadata used. We (by we I mean Claude) tried KNN instead of SVD, but KNN and the regression are both local methods that make correlated mistakes. Swapping in SVD gave a 14% improvement.\nOne thing Claude tried that I asked for and also expected to work: feeding  BenchPress model metadata e.g., parameter count, provider, reasoning mode, open-weight status. It made things worse. Everything in \"14B reasoning model distilled from DeepSeek\" is already captured by the model's pattern across scores. Cool!\nAlso, Claude tried NMF, PMF, nuclear norm, and ALS, and none was better than good old SVD. You love to see it!\n\nHow many benchmarks do you need? Five.\nHere's an experiment: take a model, hide all its scores, then reveal them one at a time in random order. After each reveal, build BenchPress and use it to predict the rest. How quickly does the error come down?\nThe answer is: fast. With just 1 known score, median error (across all models!) is about 12%. By 5 known scores it drops to 9%. After that at some point it\u2019s diminishing returns as the precision of individual predictions keeps improving but the median stabilizes because a few hard-to-predict benchmarks that stay noisy.\nThe practical takeaway is that 5 benchmarks are enough to get a good prediction of how the model performs on everything else.\nHere are some example prediction error vs number of revealed tests for a few popular models from the past year.\n \nIn fact, if you remove ARC-AGIs the error improves :D I'd say that's a good sign for SVD, bad sign for ARC-AGI.\n \nIf you can only pick 5 to eval on, greedy forward selection gives you:\n{HLE, AIME 2025, LiveCodeBench, SWE-bench Verified, SimpleQA}\nThey span four categories and cover both principal components. Under proper holdout they get about 7.8% error, versus 7% for the full method. Not everything, but a practical minimum eval set.\nThis seems legitimately cool to me!\n\nWhat does the 2 in rank-2 mean?\nThe SVD gives you two things: a weight for each benchmark and a score for each model, on each component. The benchmark weights tell you what the component measures. The model scores tell you where each model falls on that axis.\nWhen you extract the 2 top singular vectors (left and right) you get something interesting. I\u2019ll refer to these singular vectors as \u201ccomponents\u201d in the next two paragraphs.\nThe first pair of components (associated with the max singular value) seem to be about general capability: The benchmarks with the largest weights are GPQA-D, LiveCodeBench, MMLU-Pro, HumanEval, and MMLU. Every model gets a score on this axis: Gemini 3.1 Pro, GPT-5.2, Gemini 3 Pro, Opus 4.6, Kimi K2.5 score highest. At the other end: Qwen3-0.6B, OLMo 2 13B, Qwen3-1.7B, DeepSeek-R1-Distill-1.5B, Falcon3-10B. It's almost a classifier for frontier vs. small models and, interestingly, closed vs. open.\nThe second pair of components (associated with the second largest singular value) seems to be about harder, new reasoning tasks, and old vs new frontier models: The benchmarks with the largest weights are SimpleQA, ARC-AGI-2, HLE, ARC-AGI-1, and FrontierMath, these are the hard, novel stuff that frontier models do well on. Benchmarks like MATH-500 and MMLU max out in the opposite direction. On the model side, Gemini 3.1 Pro, Opus 4.6, Gemini 3 Pro, and GPT-5.2 score highest: these are the latest frontier models. At the other end: Claude 3.7 Sonnet, DeepSeek-R1, Gemini 2.5 Flash, o3-mini. These were interestingly frontier in early-mid 2025. Model component 2 is almost a \"recency of frontier\" measure!\nVery interesting!\n\nWhere does BenchPress do the worst?\nThe hardest benchmarks share two traits: either bimodal score distributions (ARC-AGI, IMO, USAMO) or weak correlation with other benchmarks (Terminal-Bench, Arena-Hard). The method relies on benchmark-to-benchmark structure and when it\u2019s not there, the \u201cfeature\u201d doesn\u2019t help prediction.\nSo benchmarks resisting prediction: SimpleBench, ARC-AGI-1 and Terminal-Bench  with high errors for predicting them. These are the interesting ones, because they measure something the rest of the matrix doesn't capture.\nCompetition math (IMO, USAMO) is bimodal: a model either solves olympiad problems or it doesn't. You can't interpolate a step function I guess!\n\nWait! Can Claude beat BenchPress at guessing scores?\nOK, this next part isn't purely science because some of these models were released before Sonnet's training cutoff, so Claude might just \"know\" certain scores. But I was curious: what if you don't use SVD and regression-type predictors and instead use a one-gazillion-parameter model for that? In this case, Claude \ud83d\ude0a\nFor $0.84, we gave Claude Sonnet the partially-filled matrix as a big CSV and asked it to predict the missing entries. Same holdout, same evaluation.\nThe result: BenchPress edges out Claude on a fair comparison, 5.8% vs 6.1% median error. Linear algebra beats a trillion-parameter model at filling in a spreadsheet, for free, in under a second. I love it.\n \nAt k=0. zero known scores, just the model's name  Claude already predicts Gemini 3.1 Pro's  benchmarks to within 2.5 points!! BenchPress at k=0 can only guess column averages, and is off by 17 points. But by k=5 BenchPress catches up.\nThe takeaway: Claude's world knowledge is worth about 5 benchmark scores of  information.\nAfter that, linear algebra wins!\nHere's the weird part: Claude actually gets worse as you give it more data. At k=0 it nails Gemini 3.1 Pro at 2.5% error but as you increase to 15 revealed data points the gap increases to 4.7%. Weird! Providing partial scores seems to create a conflict between Claude's prior knowledge and the prompt. Let\u2019s call it a kind of \"retrieval-augmented degradation\u201d.\nFor BenchPress almost always more data monotonically means better predictions, as you'd expect from any self-respecting early 2000s predictor.\n\nWhen should you use this?\nThree options for getting a number on \"how does my model do on benchmark X\":\nOption A: Run the benchmark. Cost: $5 to $100k? (I know for a fact TB 2.0 can be O(100k) for some models and harnesses). BUT! You get the true score.\nOption B: Predict from the matrix. Cost: ~$0. But with almost everything that is free, it has its issues, in this case your score is within about 5 points. Not great, not terrible.\nOption C: Run a cheaper model as proxy? Cost: less than A. But you get the right answer about the wrong model. Hmm maybe not?\nBut to be serious, the decision is a function of cost and error tolerance. If SWE-bench costs $5,000, and 6% error is fine for a go/no-go, just predict it I suppose. If AIME 2026 costs $2, run it.\n\nAm I convinced? Hmmm.\nFor frontier labs, honestly probably not really. They'll run every eval regardless, I would assume. But for smaller groups trying to train a new model, having a quick sanity check could be helpful? I don't know.\nBut it doesn't matter, because this was fun to try!\nIt's kind of hilarious that in pretty much any setting where you have an incomplete matrix to complete, it almost always turns out to rank 2 or 5. Matrix completion for the win!\nPerhaps the deeper meaning is that most of what we call \"evaluation\" is measuring the same two things (because we said rank 2, remember?) over and over, and the benchmarks that escape this pattern are the ones testing new capabilities (hello friends at Terminal-Bench!).\nBut we've nevertheless just convinced ourselves we need to climb 100 evals for every model.\nSo maybe there's a message here for folks trying to come up with new benchmarks too:\nif your eval correlates with existing ones, it's not adding much. The valuable benchmarks are the ones that are nearly orthogonal to everything else. Here's how predictable each benchmark is from the rest of the matrix:\n \nWant to try it on your own model?\nThe full matrix, all 1,375 cited scores, the BenchPress code, and a predict.py CLI that takes 5 benchmark scores and predicts the other 44 are open-sourced at\nhttps://github.com/anadim/llm-benchmark-matrix \n\nCoda\nI spent two days on this, mass-prompting Claude Code and Codex, spent 0$ on GPUs, and ended up with a result that would have been a decent workshop paper, If I was writing things more seriously.\nI still don't know what to make of that. Part of me thinks it's amazing, and enables more research. Part of me wonders what happens when everyone has that, and whether the thing that matters shifts from \"can you get the answer\" to \"did you ask the right question.\"\nDid I? I don't know! But I had fun finding out.\nAnyway. Matrix completion for the win.\nHave fun!\n___________________________________________________________\n\nThe (model,eval) matrix was assembled from official model announcements, technical reports, leaderboards, and evaluation platforms. Every entry has a source URL. The code was written by Claude Code, audited by Codex, with the audit rebutted by Claude Code and counter rebutted by Codex. They kind of had a bit of a fight about it, and I literally told them don\u2019t fight, be constructive lol.\nWhat did I do? I mostly gave prompts. Sort of.\n\nIf you use this work, please cite:\n@misc{papailiopoulos2026benchpress,\n  title={You Don't Need to Run Every Eval},\n  author={Dimitris Papailiopoulos},\n  year={2026},\n  url={https://github.com/anadim/llm-benchmark-matrix},\n}",
+                            "preview_text": "I used Claude Code to build BenchPress a $0 benchmark prediction system, Codex to audit it for bugs, and Claude Sonnet to try to beat it for $1. Here's what I found: LLM evals are so low-rank (in fact",
+                            "rest_id": "2026523085545857024",
+                            "title": "You Don't Need to Run Every Eval"
+                          }
+                        }
+                      },
+                      "core": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "affiliates_highlighted_label": {},
+                            "avatar": {
+                              "image_url": "https://pbs.twimg.com/profile_images/1733487310728024064/Ah_NBQlM_normal.jpg"
+                            },
+                            "core": {
+                              "created_at": "Mon May 07 17:26:48 +0000 2012",
+                              "name": "Dimitris Papailiopoulos",
+                              "screen_name": "DimitrisPapail"
+                            },
+                            "dm_permissions": {
+                              "can_dm": false
+                            },
+                            "follow_request_sent": false,
+                            "has_graduated_access": true,
+                            "id": "VXNlcjo1NzM4MTc0NDU=",
+                            "is_blue_verified": true,
+                            "legacy": {
+                              "default_profile": false,
+                              "default_profile_image": false,
+                              "description": "Researcher @MSFTResearch, AI Frontiers Lab; Prof @UWMadison (on leave); reasoning in context; learning to remember; agent of agents; babas of Inez Lily.",
+                              "entities": {
+                                "description": {
+                                  "urls": []
+                                },
+                                "url": {
+                                  "urls": [
+                                    {
+                                      "display_url": "papail.io",
+                                      "expanded_url": "http://papail.io",
+                                      "indices": [
+                                        0,
+                                        23
+                                      ],
+                                      "url": "https://t.co/lQR1OLEMvU"
+                                    }
+                                  ]
+                                }
+                              },
+                              "fast_followers_count": 0,
+                              "favourites_count": 12799,
+                              "follow_request_sent": false,
+                              "followers_count": 24970,
+                              "friends_count": 1337,
+                              "has_custom_timelines": true,
+                              "is_translator": false,
+                              "listed_count": 354,
+                              "media_count": 1047,
+                              "normal_followers_count": 24970,
+                              "notifications": false,
+                              "pinned_tweet_ids_str": [
+                                "2028669695344148946"
+                              ],
+                              "possibly_sensitive": false,
+                              "profile_banner_url": "https://pbs.twimg.com/profile_banners/573817445/1697212820",
+                              "profile_interstitial_type": "",
+                              "statuses_count": 9854,
+                              "translator_type": "none",
+                              "url": "https://t.co/lQR1OLEMvU",
+                              "want_retweets": false,
+                              "withheld_in_countries": []
+                            },
+                            "location": {
+                              "location": "Madison, WI"
+                            },
+                            "media_permissions": {
+                              "can_media_tag": true
+                            },
+                            "parody_commentary_fan_label": "None",
+                            "privacy": {
+                              "protected": false
+                            },
+                            "profile_bio": {
+                              "description": "Researcher @MSFTResearch, AI Frontiers Lab; Prof @UWMadison (on leave); reasoning in context; learning to remember; agent of agents; babas of Inez Lily."
+                            },
+                            "profile_description_language": "en",
+                            "profile_image_shape": "Circle",
+                            "relationship_perspectives": {
+                              "blocked_by": false,
+                              "blocking": false,
+                              "followed_by": false,
+                              "following": false,
+                              "muting": false
+                            },
+                            "rest_id": "573817445",
+                            "super_follow_eligible": false,
+                            "super_followed_by": false,
+                            "super_following": false,
+                            "verification": {
+                              "verified": false
+                            }
+                          }
+                        }
+                      },
+                      "edit_control": {
+                        "edit_tweet_ids": [
+                          "2026531440414925307"
+                        ],
+                        "editable_until_msecs": "1772001321000",
+                        "edits_remaining": "5",
+                        "is_edit_eligible": false
+                      },
+                      "grok_analysis_button": true,
+                      "grok_annotations": {
+                        "is_image_editable_by_grok": false
+                      },
+                      "has_birdwatch_notes": false,
+                      "is_translatable": false,
+                      "legacy": {
+                        "bookmark_count": 1078,
+                        "bookmarked": false,
+                        "conversation_id_str": "2026531440414925307",
+                        "created_at": "Wed Feb 25 05:35:21 +0000 2026",
+                        "display_text_range": [
+                          0,
+                          23
+                        ],
+                        "entities": {
+                          "hashtags": [],
+                          "symbols": [],
+                          "timestamps": [],
+                          "urls": [
+                            {
+                              "display_url": "x.com/i/article/2026\u2026",
+                              "expanded_url": "http://x.com/i/article/2026523085545857024",
+                              "indices": [
+                                0,
+                                23
+                              ],
+                              "url": "https://t.co/plZjz8c3nu"
+                            }
+                          ],
+                          "user_mentions": []
+                        },
+                        "favorite_count": 984,
+                        "favorited": true,
+                        "full_text": "https://t.co/plZjz8c3nu",
+                        "id_str": "2026531440414925307",
+                        "is_quote_status": false,
+                        "lang": "zxx",
+                        "possibly_sensitive": false,
+                        "possibly_sensitive_editable": true,
+                        "quote_count": 39,
+                        "reply_count": 38,
+                        "retweet_count": 84,
+                        "retweeted": false,
+                        "user_id_str": "573817445"
+                      },
+                      "rest_id": "2026531440414925307",
+                      "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                      "unmention_data": {},
+                      "views": {
+                        "count": "246782",
+                        "state": "EnabledWithCount"
+                      }
+                    }
+                  }
+                }
+              },
+              "entryId": "tweet-2026531440414925307",
+              "sortIndex": "2033222937678446592"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -63,5 +63,9 @@ def build_likes_features() -> dict[str, bool]:
     return dict(_TIMELINE_FEATURES)
 
 
+def build_tweet_detail_features() -> dict[str, bool]:
+    return dict(_TIMELINE_FEATURES)
+
+
 def build_field_toggles() -> dict[str, bool]:
     return dict(_TIMELINE_FIELD_TOGGLES)

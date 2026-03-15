@@ -242,3 +242,26 @@ def test_unfurl_archive_reports_runner_result(paths, monkeypatch) -> None:
 
     output = buffer.getvalue()
     assert "unfurl: 2 processed, 2 updated, 0 failed" in output
+
+
+def test_refresh_archived_articles_reports_runner_result(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="token", ct0="ct0")),
+    )
+
+    async def fake_refresh_articles(**kwargs):
+        assert kwargs["targets"] == ["https://x.com/example/status/2026531440414925307"]
+        assert kwargs["preview_only"] is True
+        return SimpleNamespace(processed=1, updated=1, failed=0)
+
+    monkeypatch.setattr(cli, "refresh_articles", fake_refresh_articles)
+
+    cli.refresh_archived_articles(["https://x.com/example/status/2026531440414925307"])
+
+    output = buffer.getvalue()
+    assert "articles: 1 processed, 1 refreshed, 0 failed" in output

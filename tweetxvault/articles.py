@@ -1,0 +1,133 @@
+"""Article refresh helpers."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+import httpx
+from rich.console import Console
+
+from tweetxvault.auth import ResolvedAuthBundle, resolve_auth_bundle
+from tweetxvault.client.base import build_async_client
+from tweetxvault.client.timelines import (
+    build_tweet_detail_url,
+    fetch_page,
+    parse_tweet_detail_response,
+)
+from tweetxvault.config import AppConfig, XDGPaths, ensure_paths, load_config
+from tweetxvault.exceptions import ConfigError
+from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
+from tweetxvault.storage import open_archive_store
+from tweetxvault.sync import ProcessLock, _resolve_query_ids
+
+_STATUS_URL_RE = re.compile(r"/status/(\d+)")
+
+
+@dataclass(slots=True)
+class ArticleRefreshResult:
+    processed: int = 0
+    updated: int = 0
+    failed: int = 0
+
+
+def normalize_article_target(value: str) -> str:
+    candidate = value.strip()
+    if candidate.isdigit():
+        return candidate
+    match = _STATUS_URL_RE.search(candidate)
+    if match:
+        return match.group(1)
+    raise ConfigError(f"Unsupported article target '{value}'. Use a tweet ID or x.com status URL.")
+
+
+async def refresh_articles(
+    *,
+    targets: list[str] | None = None,
+    preview_only: bool = True,
+    limit: int | None = None,
+    config: AppConfig | None = None,
+    paths: XDGPaths | None = None,
+    auth_bundle: ResolvedAuthBundle | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+    console: Console | None = None,
+) -> ArticleRefreshResult:
+    if config is None or paths is None:
+        loaded_config, loaded_paths = load_config()
+        config = config or loaded_config
+        paths = paths or loaded_paths
+    assert config is not None
+    assert paths is not None
+    paths = ensure_paths(paths)
+    auth_bundle = auth_bundle or resolve_auth_bundle(config)
+    console = console or Console(stderr=True)
+
+    lock = ProcessLock(paths.lock_file)
+    lock.acquire()
+    try:
+        store = open_archive_store(paths, create=False)
+        if store is None:
+            raise ConfigError("No local archive found.")
+        try:
+            if targets:
+                tweet_ids = [normalize_article_target(target) for target in targets]
+            else:
+                tweet_ids = store.get_article_tweet_ids(preview_only=preview_only, limit=limit)
+            result = ArticleRefreshResult()
+            if not tweet_ids:
+                return result
+
+            query_store = QueryIdStore(paths)
+            query_ids = await _resolve_query_ids(
+                query_store,
+                ["TweetDetail"],
+                force_refresh=not query_store.is_fresh(),
+                transport=transport,
+            )
+            client = build_async_client(
+                auth_bundle, timeout=config.sync.timeout, transport=transport
+            )
+            try:
+                for tweet_id in tweet_ids:
+                    result.processed += 1
+
+                    async def refresh_once(tweet_id: str = tweet_id) -> str:
+                        refreshed = await refresh_query_ids(
+                            query_store,
+                            operations=["TweetDetail"],
+                            client=client,
+                        )
+                        query_ids.update(refreshed)
+                        return build_tweet_detail_url(query_ids["TweetDetail"], tweet_id)
+
+                    try:
+                        response = await fetch_page(
+                            client,
+                            build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
+                            config.sync,
+                            refresh_once=refresh_once,
+                        )
+                        payload = response.json()
+                        tweet = parse_tweet_detail_response(payload, tweet_id)
+                        if tweet is None:
+                            raise ValueError(f"TweetDetail did not include focal tweet {tweet_id}.")
+                        store.persist_tweet_detail(
+                            tweet=tweet,
+                            raw_json=payload,
+                            http_status=response.status_code,
+                        )
+                        result.updated += 1
+                    except Exception as exc:
+                        result.failed += 1
+                        if console:
+                            console.print(f"article {tweet_id}: failed ({exc})", highlight=False)
+            finally:
+                await client.aclose()
+
+            if result.updated > 0:
+                store.optimize()
+            return result
+        finally:
+            store.close()
+    finally:
+        lock.release()
