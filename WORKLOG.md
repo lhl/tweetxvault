@@ -3,7 +3,7 @@
 ## 2026-03-15
 
 - Scrubbed a user-specific Firefox profile identifier from the repo before publication:
-  - Replaced `profile.default`, `profile.dev-edition-default`, and `profile.dev-edition-default-1` with generic `profile.*` placeholders in historical planning docs and Firefox profile test fixtures
+  - Replaced concrete Firefox profile IDs with generic `profile.*` placeholders in historical planning docs and Firefox profile test fixtures
   - Planned a `git filter-repo` rewrite so the old identifiers are removed from local git history before first public push
 
 - Added FTS search and ONNX-based embeddings:
