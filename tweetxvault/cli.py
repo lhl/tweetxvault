@@ -106,8 +106,8 @@ def _render_archive_view(
     shown = rows[:limit]
     table = Table(
         title=f"{label} archive",
-        box=box.SIMPLE_HEAD,
-        row_styles=["", "on grey11"],
+        box=box.HORIZONTALS,
+        show_lines=True,
     )
     table.add_column("Created", style="cyan", no_wrap=True)
     table.add_column("Author", style="green", no_wrap=True)
