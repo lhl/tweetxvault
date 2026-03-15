@@ -427,13 +427,12 @@ class ArchiveStore:
     def rehydrate_authors(self, *, progress: Callable[[int], None] | None = None) -> int:
         """Re-extract author fields from raw_json for tweets missing usernames."""
         rows = (
-            self.table.search()
-            .where("record_type = 'tweet' AND author_username IS NULL")
-            .select(["row_key", "raw_json"])
-            .to_list()
+            self.table.search().where("record_type = 'tweet' AND author_username IS NULL").to_list()
         )
         if not rows:
             return 0
+        batch: list[dict[str, Any]] = []
+        batch_size = 500
         updated = 0
         for row in rows:
             raw = json.loads(row["raw_json"])
@@ -445,21 +444,22 @@ class ArchiveStore:
             display_name = user_legacy.get("name") or user_core.get("name")
             author_id = user_result.get("rest_id")
             if not username and not display_name:
+                if progress:
+                    progress(1)
                 continue
-            updates: dict[str, str] = {}
-            if username:
-                updates["author_username"] = _expr_quote(username)
-            if display_name:
-                updates["author_display_name"] = _expr_quote(display_name)
+            row["author_username"] = username
+            row["author_display_name"] = display_name
             if author_id:
-                updates["author_id"] = _expr_quote(author_id)
-            self.table.update(
-                where=f"row_key = {_expr_quote(row['row_key'])}",
-                values_sql=updates,
-            )
+                row["author_id"] = author_id
+            batch.append(row)
             updated += 1
             if progress:
                 progress(1)
+            if len(batch) >= batch_size:
+                self._merge_records(batch)
+                batch = []
+        if batch:
+            self._merge_records(batch)
         return updated
 
     def version_count(self) -> int:
