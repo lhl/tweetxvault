@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -28,6 +29,9 @@ def test_build_timeline_urls() -> None:
     operation, variables = request_details(bookmarks_url)
     assert operation == "Bookmarks"
     assert variables["cursor"] == "abc"
+    bookmarks_query = parse_qs(urlparse(bookmarks_url).query)
+    assert '"withArticlePlainText":true' in bookmarks_query["fieldToggles"][0]
+    assert '"withArticleSummaryText":true' in bookmarks_query["fieldToggles"][0]
     operation, variables = request_details(likes_url)
     assert operation == "Likes"
     assert variables["userId"] == "42"

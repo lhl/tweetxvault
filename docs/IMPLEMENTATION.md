@@ -242,23 +242,23 @@ Completed on 2026-03-15. This replaced the temporary SQLite fallback before any 
 
 This is the next real implementation milestone after the LanceDB migration. The goal is to stop treating each collection-scoped tweet row as the only normalized object in the system.
 
-- [ ] Extend the archive schema in `tweetxvault/storage/backend.py` with new `record_type` values:
+- [x] Extend the archive schema in `tweetxvault/storage/backend.py` with new `record_type` values:
   - `tweet_object`
   - `tweet_relation`
   - `media`
   - `url`
   - `url_ref`
   - `article`
-- [ ] Add a parser/extractor layer that takes a raw tweet object and emits:
+- [x] Add a parser/extractor layer that takes a raw tweet object and emits:
   - canonical tweet-object fields
   - attached-tweet relations (`retweet_of`, `quote_of`)
   - media metadata (`extended_entities`, `video_info`)
   - URL refs / canonical URL candidates
   - article payloads when present
-- [ ] Keep collection-scoped `tweet` rows as the duplicate-detection and export-ordering layer during the transition.
-- [ ] Persist the new rows in the same page-sized LanceDB batch as the current raw capture + membership rows.
-- [ ] Extend rehydrate support so new normalized rows can be rebuilt from stored `raw_json` without refetching.
-- [ ] Tests:
+- [x] Keep collection-scoped `tweet` rows as the duplicate-detection and export-ordering layer during the transition.
+- [x] Persist the new rows in the same page-sized LanceDB batch as the current raw capture + membership rows.
+- [x] Extend rehydrate support so new normalized rows can be rebuilt from stored `raw_json` without refetching.
+- [x] Tests:
   - quote/retweet relation extraction
   - media extraction for photos/videos/GIFs
   - URL extraction from entity/card payloads
@@ -285,7 +285,8 @@ This is the next real implementation milestone after the LanceDB migration. The 
 ## Task 13: Articles
 
 - [ ] Add an article probe fixture once we capture a real authenticated `UserArticlesTweets` or article-bearing timeline response.
-- [ ] Enable article field toggles on a targeted probe path and verify whether full bodies are returned.
+  - Working example URL: `https://x.com/dimitrispapail/status/2026531440414925307`
+- [ ] Verify whether full bodies are returned now that article field toggles are enabled on timeline requests.
 - [ ] Persist article rows keyed by source tweet id until a stable article-specific id is confirmed.
 - [ ] Export article metadata/body in JSON and HTML once extraction is stable.
 - [ ] Decide whether article-only fallback fetching is needed if GraphQL returns preview-only payloads.

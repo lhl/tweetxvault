@@ -1,5 +1,24 @@
 # WORKLOG
 
+## 2026-03-16
+
+- Landed Task 11 secondary-object extraction on the LanceDB archive:
+  - Added `tweetxvault/extractor.py` to normalize raw tweet payloads into canonical `tweet_object`, `tweet_relation`, `media`, `url`, `url_ref`, and `article` records
+  - Expanded `tweetxvault/storage/backend.py` schema and page buffering so those secondary rows are written in the same page-atomic merge as `raw_capture`, collection-scoped `tweet`, and `sync_state`
+  - Kept collection-scoped `tweet` rows as the membership/export layer while also storing richer global tweet/media/url/article objects
+  - Added coalescing semantics on secondary rows so later thinner payloads do not overwrite richer previously captured fields with nulls
+  - Validation:
+    - `uv run pytest tests/test_extractor.py tests/test_storage.py tests/test_client.py`
+    - `uv run ruff check tweetxvault/storage/backend.py tweetxvault/extractor.py tweetxvault/client/timelines.py tweetxvault/client/features.py tweetxvault/cli.py tests/test_extractor.py tests/test_storage.py tests/test_client.py tests/conftest.py`
+
+- Expanded rehydrate to rebuild normalized rows from stored `tweet.raw_json`:
+  - Changed `tweetxvault rehydrate` to rescan all stored tweet rows, refresh canonical tweet fields (including note-tweet text), and rebuild secondary-object rows without refetching
+  - Preserved the existing archive-upgrade path for older archives by letting rehydrate backfill secondary rows after the schema migration
+
+- Enabled article field toggles on timeline requests and recorded a concrete article example URL:
+  - Switched `withArticleRichContentState`, `withArticlePlainText`, and `withArticleSummaryText` on in `tweetxvault/client/features.py`
+  - Added `https://x.com/dimitrispapail/status/2026531440414925307` to `docs/PLAN.md` / `docs/IMPLEMENTATION.md` as the working article validation target for the later article-capture task
+
 ## 2026-03-15
 
 - Expanded auth extraction from Firefox-only to browser-family support:

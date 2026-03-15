@@ -8,6 +8,7 @@ A Python CLI tool for archiving your Twitter/X bookmarks and likes into a local 
 
 - **Incremental sync** — fetches only new items by default; resumes interrupted backfills automatically
 - **Raw capture preservation** — every API response page is stored verbatim alongside parsed tweet records
+- **Secondary object extraction** — archives canonical tweet objects, attached-tweet relations, media metadata, URL refs, and article payloads alongside collection memberships
 - **Crash-safe checkpoints** — sync state advances atomically with data writes; safe to kill mid-run
 - **Full-text and semantic search** — built-in FTS (tantivy) and optional ONNX-based vector embeddings for hybrid search
 - **Automatic query ID discovery** — scrapes Twitter's JS bundles to stay current with GraphQL endpoint changes
@@ -193,7 +194,7 @@ uv run tweetxvault export html --collection likes --out ~/exports/likes.html
 # Compact the LanceDB archive (reduces file count after many syncs)
 uv run tweetxvault optimize
 
-# Re-extract author info from raw JSON for tweets with missing usernames
+# Rebuild normalized tweet fields and secondary objects from stored raw JSON
 uv run tweetxvault rehydrate
 
 # Force-refresh query IDs from Twitter's JS bundles
@@ -243,7 +244,7 @@ tweetxvault calls Twitter's internal GraphQL API — the same endpoints the web 
 1. Resolves session cookies (env/config/browser extraction)
 2. Discovers current GraphQL query IDs by parsing Twitter's JS bundles (with a 24h TTL cache and static fallbacks)
 3. Fetches timeline pages with the proper headers, feature flags, and cursor pagination
-4. Stores raw API responses + parsed tweet records + collection memberships in a single LanceDB table
+4. Stores raw API responses + collection tweet rows + normalized secondary objects in a single LanceDB table
 5. Tracks sync state per collection so the next run picks up where it left off
 
 ## Development

@@ -46,9 +46,9 @@ _TIMELINE_FEATURES = {
 _TIMELINE_FIELD_TOGGLES = {
     "withPayments": False,
     "withAuxiliaryUserLabels": True,
-    "withArticleRichContentState": False,
-    "withArticlePlainText": False,
-    "withArticleSummaryText": False,
+    "withArticleRichContentState": True,
+    "withArticlePlainText": True,
+    "withArticleSummaryText": True,
     "withArticleVoiceOver": False,
     "withGrokAnalyze": False,
     "withDisallowedReplyControls": False,

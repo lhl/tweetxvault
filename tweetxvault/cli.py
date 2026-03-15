@@ -526,22 +526,25 @@ def optimize_archive() -> None:
 
 @app.command("rehydrate")
 def rehydrate_archive() -> None:
-    """Re-extract author info from stored raw_json for tweets missing usernames."""
+    """Rebuild normalized tweet fields and secondary rows from stored raw_json."""
     from tqdm import tqdm
 
     console = _configure_logging()
     store, _ = _open_store_for_read(console)
     try:
-        total = store.table.count_rows("record_type = 'tweet' AND author_username IS NULL")
+        total = store.table.count_rows("record_type = 'tweet'")
         if total == 0:
-            console.print("all tweets already have author data")
+            console.print("archive has no tweet rows")
             return
         with tqdm(total=total, desc="rehydrating", unit="tweets") as pbar:
-            count = store.rehydrate_authors(progress=pbar.update)
-        if count:
+            result = store.rehydrate_from_raw_json(progress=pbar.update)
+        if result.tweets_updated or result.secondary_records:
             console.print("compacting archive...")
             store.optimize()
-        console.print(f"rehydrated author data for {count} tweets")
+        console.print(
+            f"rehydrated {result.tweets_updated} tweet rows and rebuilt "
+            f"{result.secondary_records} secondary rows"
+        )
     finally:
         store.close()
 

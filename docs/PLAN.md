@@ -438,6 +438,7 @@ Current verification from the public X web client on 2026-03-15:
 - `UserArticlesTweets` is still present as a GraphQL operation.
 - Article-related field toggles still exist in the web client: `withArticleRichContentState`, `withArticlePlainText`, `withArticleSummaryText`.
 - Article-related features still exist in the web client: `articles_preview_enabled`, `responsive_web_twitter_article_tweet_consumption_enabled`.
+- Working example tweet for article validation once we have an authenticated capture: `https://x.com/dimitrispapail/status/2026531440414925307`
 
 Design implications:
 

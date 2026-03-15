@@ -18,6 +18,7 @@ from tweetxvault.client.features import (
     build_likes_features,
 )
 from tweetxvault.config import API_BASE_URL, SyncConfig
+from tweetxvault.extractor import extract_author_fields, extract_canonical_text, unwrap_tweet_result
 
 
 @dataclass(slots=True)
@@ -95,24 +96,11 @@ async def fetch_page(
     )
 
 
-def _unwrap_tweet_result(result: Any) -> dict[str, Any] | None:
-    if not isinstance(result, dict):
-        return None
-    typename = result.get("__typename")
-    if typename == "TweetWithVisibilityResults":
-        return _unwrap_tweet_result(result.get("tweet"))
-    if typename == "TweetTombstone":
-        return None
-    if result.get("rest_id"):
-        return result
-    return None
-
-
 def _extract_tweet_results_from_content(content: dict[str, Any]) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     item_content = content.get("itemContent") or content.get("content", {}).get("itemContent")
     if isinstance(item_content, dict):
-        result = _unwrap_tweet_result(item_content.get("tweet_results", {}).get("result"))
+        result = unwrap_tweet_result(item_content.get("tweet_results", {}).get("result"))
         if result:
             results.append(result)
 
@@ -122,7 +110,7 @@ def _extract_tweet_results_from_content(content: dict[str, Any]) -> list[dict[st
         nested_item = item.get("item", {})
         nested_content = nested_item.get("itemContent")
         if isinstance(nested_content, dict):
-            result = _unwrap_tweet_result(nested_content.get("tweet_results", {}).get("result"))
+            result = unwrap_tweet_result(nested_content.get("tweet_results", {}).get("result"))
             if result:
                 results.append(result)
     return results
@@ -153,19 +141,16 @@ def _extract_cursor(entry: dict[str, Any]) -> str | None:
 
 def _tweet_from_result(result: dict[str, Any], *, sort_index: str | None) -> TimelineTweet | None:
     legacy = result.get("legacy") or {}
-    core = result.get("core") or {}
-    user_result = core.get("user_results", {}).get("result", {})
-    user_legacy = user_result.get("legacy") or {}
-    user_core = user_result.get("core") or {}
     tweet_id = result.get("rest_id")
     if not tweet_id:
         return None
+    author_id, author_username, author_display_name = extract_author_fields(result)
     return TimelineTweet(
         tweet_id=tweet_id,
-        text=legacy.get("full_text", ""),
-        author_id=user_result.get("rest_id"),
-        author_username=user_legacy.get("screen_name") or user_core.get("screen_name"),
-        author_display_name=user_legacy.get("name") or user_core.get("name"),
+        text=extract_canonical_text(result),
+        author_id=author_id,
+        author_username=author_username,
+        author_display_name=author_display_name,
         created_at=legacy.get("created_at"),
         sort_index=sort_index,
         raw_json=result,
