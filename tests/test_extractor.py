@@ -7,7 +7,7 @@ from tests.conftest import (
     make_url_entity,
     make_video_media,
 )
-from tweetxvault.extractor import extract_secondary_objects
+from tweetxvault.extractor import extract_secondary_objects, extract_thread_objects
 
 
 def test_extract_secondary_objects_captures_quote_media_urls_and_article() -> None:
@@ -93,3 +93,32 @@ def test_extract_secondary_objects_captures_retweet_relation() -> None:
     assert set(graph.tweet_objects) == {"300", "301"}
     assert relation.relation_type == "retweet_of"
     assert relation.target_tweet_id == "300"
+
+
+def test_extract_thread_objects_adds_reply_and_link_relations() -> None:
+    parent = make_tweet_result("200", "parent tweet", user_id="2000")
+    reply = make_tweet_result(
+        "100",
+        "reply tweet",
+        user_id="1000",
+        in_reply_to_status_id="200",
+        urls=[
+            make_url_entity(
+                "https://t.co/link",
+                "https://x.com/example/status/300?s=20",
+                display_url="x.com/example/status/300",
+            )
+        ],
+        conversation_id="200",
+    )
+
+    graph = extract_thread_objects([reply, parent])
+    relations = {
+        (item.source_tweet_id, item.relation_type, item.target_tweet_id)
+        for item in graph.relations.values()
+    }
+
+    assert ("100", "reply_to", "200") in relations
+    assert ("100", "thread_parent", "200") in relations
+    assert ("200", "thread_child", "100") in relations
+    assert ("100", "links_to_status", "300") in relations

@@ -535,6 +535,7 @@ tweetxvault export html               # export a local HTML viewer
 tweetxvault media download            # fetch archived media files
 tweetxvault unfurl                    # fetch final/canonical URL metadata
 tweetxvault articles refresh          # refresh article-bearing tweets via TweetDetail
+tweetxvault threads expand            # capture parent/context tweets + linked status URLs
 
 tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
@@ -600,9 +601,9 @@ Reserved for future (not implemented in MVP):
 
 - [ ] Bookmark folders
 - [x] Own tweet timeline sync (`UserTweets`)
-- [ ] Thread/context expansion (`TweetDetail`) for archived tweets
-- [ ] Linked X-status URL expansion
-- [ ] Articles capture / export (`UserArticlesTweets` + article-bearing tweet payloads)
+- [x] Thread/context expansion (`TweetDetail`) for archived tweets
+- [x] Linked X-status URL expansion
+- [x] Articles capture / export (`UserArticlesTweets` + article-bearing tweet payloads)
 - [ ] URL snapshot queue / ArchiveBox integration
 - [ ] Following/followers lists
 - [x] HTML export viewer

@@ -11,6 +11,8 @@ import pytest
 from tests.conftest import (
     make_bookmarks_response,
     make_likes_response,
+    make_tweet_detail_response,
+    make_tweet_result,
     make_user_tweets_response,
     request_details,
 )
@@ -29,6 +31,7 @@ from tweetxvault.client.timelines import (
     fetch_page,
     parse_timeline_response,
     parse_tweet_detail_response,
+    parse_tweet_detail_tweets,
 )
 from tweetxvault.config import SyncConfig
 
@@ -70,6 +73,26 @@ def test_parse_tweet_detail_response_real_article_fixture() -> None:
     ) or {}
     assert article["title"] == "You Don't Need to Run Every Eval"
     assert len(article["plain_text"]) == 17308
+
+
+def test_parse_tweet_detail_tweets_collects_all_context_tweets() -> None:
+    payload = make_tweet_detail_response(
+        [
+            make_tweet_result("100", "root", user_id="1000"),
+            make_tweet_result(
+                "200",
+                "parent",
+                user_id="2000",
+                in_reply_to_status_id="150",
+            ),
+        ],
+        module=True,
+    )
+
+    tweets = parse_tweet_detail_tweets(payload)
+
+    assert [tweet.tweet_id for tweet in tweets] == ["100", "200"]
+    assert parse_tweet_detail_response(payload, "200") is not None
 
 
 def test_parse_timeline_response_bookmarks_shape() -> None:

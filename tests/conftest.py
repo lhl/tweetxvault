@@ -136,6 +136,7 @@ def make_tweet_result(
     retweeted_tweet: dict[str, object] | None = None,
     article: dict[str, object] | None = None,
     conversation_id: str | None = None,
+    in_reply_to_status_id: str | None = None,
     lang: str = "en",
 ) -> dict[str, object]:
     legacy: dict[str, object] = {
@@ -144,6 +145,8 @@ def make_tweet_result(
         "conversation_id_str": conversation_id or tweet_id,
         "lang": lang,
     }
+    if in_reply_to_status_id is not None:
+        legacy["in_reply_to_status_id_str"] = in_reply_to_status_id
     if urls:
         legacy["entities"] = {"urls": urls}
     if media:
@@ -183,6 +186,63 @@ def make_tweet_result(
     if article is not None:
         payload["article"] = {"article_results": {"result": article}}
     return payload
+
+
+def make_tweet_detail_response(
+    results: list[dict[str, object]],
+    *,
+    module: bool = False,
+) -> dict[str, object]:
+    if module:
+        items = []
+        for index, result in enumerate(results):
+            tweet_id = result["rest_id"]
+            items.append(
+                {
+                    "entryId": f"tweet-{tweet_id}",
+                    "sortIndex": str(200 - index),
+                    "item": {
+                        "itemContent": {
+                            "itemType": "TimelineTweet",
+                            "tweet_results": {"result": result},
+                        }
+                    },
+                }
+            )
+        entries = [
+            {
+                "entryId": "module-1",
+                "sortIndex": "200",
+                "content": {
+                    "entryType": "TimelineTimelineModule",
+                    "items": items,
+                },
+            }
+        ]
+    else:
+        entries = []
+        for index, result in enumerate(results):
+            tweet_id = result["rest_id"]
+            entries.append(
+                {
+                    "entryId": f"tweet-{tweet_id}",
+                    "sortIndex": str(200 - index),
+                    "content": {
+                        "entryType": "TimelineTimelineItem",
+                        "itemContent": {
+                            "itemType": "TimelineTweet",
+                            "tweet_results": {"result": result},
+                        },
+                    },
+                }
+            )
+    return {
+        "data": {
+            "threaded_conversation_with_injections_v2": {
+                "instructions": [{"type": "TimelineAddEntries", "entries": entries}]
+            }
+        }
+    }
 
 
 def make_bookmarks_response(

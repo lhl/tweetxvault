@@ -2,6 +2,18 @@
 
 ## 2026-03-16
 
+- Landed Task 15 thread/context expansion:
+  - Added `tweetxvault/threads.py` plus `tweetxvault threads expand`, which fetches archived tweet context through authenticated `TweetDetail` and also follows linked `x.com/.../status/...` / `twitter.com/.../status/...` URLs found in archived `url_ref` rows
+  - Extended `tweetxvault/client/timelines.py` with `parse_tweet_detail_tweets(...)` so full detail payloads can be harvested, not just the focal tweet
+  - Extended `tweetxvault/extractor.py` with linked-status detection plus `reply_to`, `thread_parent`, and `thread_child` relation extraction for multi-tweet detail payloads
+  - Added `ArchiveStore.persist_thread_detail(...)` and discovery helpers in `tweetxvault/storage/backend.py`; thread/context tweets now persist as global `tweet_object` / `tweet_relation` rows without creating fake bookmark/like/tweet memberships
+  - Expanded `tweetxvault rehydrate` so stored `TweetDetail` and `ThreadExpandDetail` raw captures can rebuild thread/context rows later without another network fetch
+  - Added regression coverage for full-detail parsing, thread relation extraction, thread-detail storage, idempotent reruns, linked-status expansion, and CLI wiring
+  - Validation:
+    - `uv run pytest tests/test_client.py tests/test_extractor.py tests/test_storage.py tests/test_threads.py tests/test_cli.py`
+    - `uv run ruff check tweetxvault/client/timelines.py tweetxvault/extractor.py tweetxvault/storage/backend.py tweetxvault/threads.py tweetxvault/cli.py tests/conftest.py tests/test_client.py tests/test_extractor.py tests/test_storage.py tests/test_threads.py tests/test_cli.py`
+    - `uv run ruff format --check tweetxvault/client/timelines.py tweetxvault/extractor.py tweetxvault/storage/backend.py tweetxvault/threads.py tweetxvault/cli.py tests/conftest.py tests/test_client.py tests/test_extractor.py tests/test_storage.py tests/test_threads.py tests/test_cli.py`
+
 - Landed Task 14 own-tweet capture:
   - Added live `UserTweets` support with a fresh fallback query ID reverified from the public X web bundle on 2026-03-16 (`Y59DTUMfcKmUAATiT2SlTw`)
   - Added `tweetxvault sync tweets` and `tweetxvault view tweets`; generic export commands now accept `--collection tweets`

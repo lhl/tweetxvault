@@ -217,6 +217,17 @@ uv run tweetxvault unfurl
 uv run tweetxvault unfurl --retry-failed
 ```
 
+### Thread Expansion
+
+```bash
+# Expand archived tweets through TweetDetail to capture parents/context rows
+uv run tweetxvault threads expand
+
+# Expand a specific thread target by URL or ID
+uv run tweetxvault threads expand https://x.com/dimitrispapail/status/2026531440414925307
+uv run tweetxvault threads expand 2026531440414925307
+```
+
 ### Article Refresh
 
 ```bash
@@ -237,7 +248,8 @@ uv run tweetxvault articles refresh 2026531440414925307
 # Compact the LanceDB archive (reduces file count after many syncs)
 uv run tweetxvault optimize
 
-# Rebuild normalized tweet fields and secondary objects from stored raw JSON
+# Rebuild normalized tweet fields and secondary objects from stored raw JSON,
+# including any previously captured TweetDetail/thread-expansion payloads
 uv run tweetxvault rehydrate
 
 # Force-refresh query IDs from Twitter's JS bundles

@@ -209,14 +209,24 @@ def parse_timeline_response(
     return tweets, bottom_cursor
 
 
-def parse_tweet_detail_response(
-    data: dict[str, Any],
-    focal_tweet_id: str,
-) -> TimelineTweet | None:
+def parse_tweet_detail_tweets(data: dict[str, Any]) -> list[TimelineTweet]:
+    tweets: list[TimelineTweet] = []
+    seen_ids: set[str] = set()
     for entry in _iter_entries(data):
         sort_index = entry.get("sortIndex")
         for result in _extract_tweet_results_from_content(entry.get("content", {})):
             tweet = _tweet_from_result(result, sort_index=sort_index)
-            if tweet and tweet.tweet_id == focal_tweet_id:
-                return tweet
+            if tweet and tweet.tweet_id not in seen_ids:
+                seen_ids.add(tweet.tweet_id)
+                tweets.append(tweet)
+    return tweets
+
+
+def parse_tweet_detail_response(
+    data: dict[str, Any],
+    focal_tweet_id: str,
+) -> TimelineTweet | None:
+    for tweet in parse_tweet_detail_tweets(data):
+        if tweet.tweet_id == focal_tweet_id:
+            return tweet
     return None

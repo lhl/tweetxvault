@@ -136,6 +136,27 @@ def canonicalize_url(value: str | None) -> str | None:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
+def extract_status_id_from_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlsplit(value)
+    hostname = parsed.hostname.lower() if parsed.hostname else ""
+    if not (
+        hostname == "x.com"
+        or hostname.endswith(".x.com")
+        or hostname == "twitter.com"
+        or hostname.endswith(".twitter.com")
+    ):
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    for index, part in enumerate(parts):
+        if part == "status" and index + 1 < len(parts):
+            candidate = parts[index + 1]
+            if candidate.isdigit():
+                return candidate
+    return None
+
+
 def _article_result(tweet: dict[str, Any]) -> dict[str, Any] | None:
     article_result = (tweet.get("article") or {}).get("article_results", {}).get("result") or (
         tweet.get("article_results") or {}
@@ -702,6 +723,23 @@ def _visit_tweet(
     url_refs, urls = _url_entries(tweet)
     for item in url_refs:
         graph.add_url_ref(item)
+        linked_status_id = _coalesce(
+            extract_status_id_from_url(item.canonical_url),
+            extract_status_id_from_url(item.expanded_url),
+            extract_status_id_from_url(item.short_url),
+        )
+        if linked_status_id and linked_status_id != tweet_object.tweet_id:
+            graph.add_relation(
+                TweetRelationData(
+                    source_tweet_id=tweet_object.tweet_id,
+                    relation_type="links_to_status",
+                    target_tweet_id=linked_status_id,
+                    raw_json={
+                        "relation_type": "links_to_status",
+                        "target_tweet_id": linked_status_id,
+                    },
+                )
+            )
     for item in urls:
         graph.add_url(item)
     article_result = _article_result(tweet)
@@ -731,8 +769,62 @@ def _visit_tweet(
 
 
 def extract_secondary_objects(root_tweet: dict[str, Any]) -> ExtractedTweetGraph:
-    tweet = unwrap_tweet_result(root_tweet) or root_tweet
+    return extract_secondary_objects_from_tweets([root_tweet])
+
+
+def extract_secondary_objects_from_tweets(root_tweets: list[dict[str, Any]]) -> ExtractedTweetGraph:
     graph = ExtractedTweetGraph()
-    if isinstance(tweet, dict):
-        _visit_tweet(tweet, graph, expand_attached=True)
+    for root_tweet in root_tweets:
+        tweet = unwrap_tweet_result(root_tweet) or root_tweet
+        if isinstance(tweet, dict):
+            _visit_tweet(tweet, graph, expand_attached=True)
+    return graph
+
+
+def extract_thread_objects(root_tweets: list[dict[str, Any]]) -> ExtractedTweetGraph:
+    graph = extract_secondary_objects_from_tweets(root_tweets)
+    known_ids: set[str] = set()
+    for root_tweet in root_tweets:
+        tweet = unwrap_tweet_result(root_tweet) or root_tweet
+        if not isinstance(tweet, dict):
+            continue
+        tweet_id = tweet.get("rest_id")
+        if isinstance(tweet_id, str) and tweet_id:
+            known_ids.add(tweet_id)
+    for root_tweet in root_tweets:
+        tweet = unwrap_tweet_result(root_tweet) or root_tweet
+        if not isinstance(tweet, dict):
+            continue
+        tweet_id = tweet.get("rest_id")
+        legacy = tweet.get("legacy") or {}
+        parent_id = legacy.get("in_reply_to_status_id_str")
+        if not isinstance(tweet_id, str) or not tweet_id:
+            continue
+        if not isinstance(parent_id, str) or not parent_id or parent_id == tweet_id:
+            continue
+        graph.add_relation(
+            TweetRelationData(
+                source_tweet_id=tweet_id,
+                relation_type="reply_to",
+                target_tweet_id=parent_id,
+                raw_json={"relation_type": "reply_to", "target_tweet_id": parent_id},
+            )
+        )
+        if parent_id in known_ids:
+            graph.add_relation(
+                TweetRelationData(
+                    source_tweet_id=tweet_id,
+                    relation_type="thread_parent",
+                    target_tweet_id=parent_id,
+                    raw_json={"relation_type": "thread_parent", "target_tweet_id": parent_id},
+                )
+            )
+            graph.add_relation(
+                TweetRelationData(
+                    source_tweet_id=parent_id,
+                    relation_type="thread_child",
+                    target_tweet_id=tweet_id,
+                    raw_json={"relation_type": "thread_child", "target_tweet_id": tweet_id},
+                )
+            )
     return graph

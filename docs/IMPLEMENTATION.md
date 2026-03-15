@@ -321,21 +321,22 @@ This is materially smaller than archive import because it reuses the live GraphQ
 
 This is separate from attached-tweet extraction. The current extractor already stores one-level quote/retweet payloads when they are embedded in the timeline response, but it does not fetch missing parents, replies, or linked tweet URLs.
 
-- [ ] Add a follow-on `TweetDetail` expansion path for archived tweets.
-- [ ] Decide the initial trigger surface:
-  - explicit command (preferred first pass)
-  - later optional sync-time expansion flag if it proves stable
-- [ ] Reserve CLI shape for the first pass:
+- [x] Add a follow-on `TweetDetail` expansion path for archived tweets.
+- [x] Decide the initial trigger surface:
+  - explicit command landed first via `tweetxvault threads expand`
+  - optional sync-time expansion can be reconsidered later if the current runner stays stable
+- [x] Reserve CLI shape for the first pass:
   - `tweetxvault threads expand`
   - optional `tweetxvault threads expand <tweet-id-or-status-url> ...`
-- [ ] Persist thread/context tweets as global `tweet_object` rows plus `tweet_relation` edges without inventing bookmark/like/tweets memberships for them.
-- [ ] Add new relation types for thread context as needed (`reply_to`, `in_reply_to`, `thread_parent`, `thread_child`) once we lock the exact `TweetDetail` shape.
-- [ ] Expand linked X-status URLs found in `url_ref` rows:
+- [x] Persist thread/context tweets as global `tweet_object` rows plus `tweet_relation` edges without inventing bookmark/like/tweets memberships for them.
+- [x] Add new relation types for thread context as needed (`reply_to`, `in_reply_to`, `thread_parent`, `thread_child`) once we lock the exact `TweetDetail` shape.
+- [x] Expand linked X-status URLs found in `url_ref` rows:
   - detect `x.com/.../status/<id>` and `twitter.com/.../status/<id>`
   - fetch them through the same `TweetDetail` path
   - avoid duplicate fetches when the linked tweet is already present as a membership, attached tweet, or previously-expanded context tweet
-- [ ] Reuse rehydrate where possible for relation rebuilding, but document that remote thread expansion itself is not recoverable from local data unless the `TweetDetail` payload was already captured.
-- [ ] Add regression coverage for:
+- [x] Reuse rehydrate where possible for relation rebuilding, but document that remote thread expansion itself is not recoverable from local data unless the `TweetDetail` payload was already captured.
+  - Current behavior: `tweetxvault rehydrate` now also rescans stored `TweetDetail` / `ThreadExpandDetail` raw captures, so previously captured detail payloads can rebuild thread/context rows without another network fetch.
+- [x] Add regression coverage for:
   - parent-thread capture from `TweetDetail`
   - linked status-URL capture
   - idempotent repeated expansion runs

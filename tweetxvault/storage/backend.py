@@ -19,7 +19,7 @@ import lancedb
 import numpy as np
 import pyarrow as pa
 
-from tweetxvault.client.timelines import TimelineTweet
+from tweetxvault.client.timelines import TimelineTweet, parse_tweet_detail_tweets
 from tweetxvault.config import XDGPaths
 from tweetxvault.exceptions import ArchiveOwnerMismatchError
 from tweetxvault.extractor import (
@@ -28,6 +28,7 @@ from tweetxvault.extractor import (
     extract_canonical_text,
     extract_note_tweet_text,
     extract_secondary_objects,
+    extract_thread_objects,
 )
 
 
@@ -1003,6 +1004,15 @@ class ArchiveStore:
             updated["synced_at"] = now
             cursor.records[updated["row_key"]] = updated
 
+    def _refresh_tweet_records_for_details(
+        self,
+        tweets: list[TimelineTweet],
+        *,
+        cursor: _PageBuffer,
+    ) -> None:
+        for tweet in tweets:
+            self._refresh_tweet_records_for_detail(tweet, cursor=cursor)
+
     def persist_tweet_detail(
         self,
         *,
@@ -1019,9 +1029,77 @@ class ArchiveStore:
             raw_json,
             cursor=buffer,
         )
-        self._refresh_tweet_records_for_detail(tweet, cursor=buffer)
+        self._refresh_tweet_records_for_details([tweet], cursor=buffer)
         self._buffer_secondary_graph(extract_secondary_objects(tweet.raw_json), cursor=buffer)
         self._merge_records(list(buffer.records.values()))
+
+    def persist_thread_detail(
+        self,
+        *,
+        focal_tweet_id: str,
+        tweets: list[TimelineTweet],
+        raw_json: dict[str, Any],
+        http_status: int = 200,
+    ) -> None:
+        buffer = _PageBuffer()
+        self.append_raw_capture(
+            "ThreadExpandDetail",
+            focal_tweet_id,
+            None,
+            http_status,
+            raw_json,
+            cursor=buffer,
+        )
+        self._refresh_tweet_records_for_details(tweets, cursor=buffer)
+        self._buffer_secondary_graph(
+            extract_thread_objects([tweet.raw_json for tweet in tweets]),
+            cursor=buffer,
+        )
+        self._merge_records(list(buffer.records.values()))
+
+    def list_membership_tweet_ids(self, *, limit: int | None = None) -> list[str]:
+        rows = self.table.search().where("record_type = 'tweet'").to_list()
+        rows.sort(key=lambda row: (row.get("added_at") or "", row.get("tweet_id") or ""))
+        tweet_ids = [row["tweet_id"] for row in rows if row.get("tweet_id")]
+        unique = list(dict.fromkeys(tweet_ids))
+        return unique[:limit] if limit is not None else unique
+
+    def list_known_tweet_ids(self) -> set[str]:
+        tweet_rows = self.table.search().where("record_type = 'tweet'").to_list()
+        tweet_object_rows = self.table.search().where("record_type = 'tweet_object'").to_list()
+        tweet_ids = {
+            row["tweet_id"]
+            for row in tweet_rows + tweet_object_rows
+            if isinstance(row.get("tweet_id"), str) and row["tweet_id"]
+        }
+        return tweet_ids
+
+    def list_raw_capture_target_ids(
+        self,
+        operation: str,
+        *,
+        limit: int | None = None,
+    ) -> list[str]:
+        expr = (
+            "record_type = 'raw_capture' "
+            f"AND operation = {_expr_quote(operation)} "
+            "AND cursor_in IS NOT NULL"
+        )
+        rows = self.table.search().where(expr).to_list()
+        rows.sort(key=lambda row: (row.get("captured_at") or "", row.get("cursor_in") or ""))
+        targets = [row["cursor_in"] for row in rows if isinstance(row.get("cursor_in"), str)]
+        unique = list(dict.fromkeys(targets))
+        return unique[:limit] if limit is not None else unique
+
+    def list_url_ref_rows(self) -> list[dict[str, Any]]:
+        rows = self.table.search().where("record_type = 'url_ref'").to_list()
+        rows.sort(
+            key=lambda row: (
+                row.get("tweet_id") or "",
+                row.get("position") if row.get("position") is not None else 1_000_000,
+            )
+        )
+        return rows
 
     def _serialize_media_row(self, row: dict[str, Any]) -> dict[str, Any]:
         variants = json.loads(row["variants_json"]) if row.get("variants_json") else []
@@ -1249,6 +1327,29 @@ class ArchiveStore:
             self._buffer_secondary_graph(extract_secondary_objects(raw), cursor=buffer)
             if progress:
                 progress(1)
+            if len(buffer.records) >= batch_size:
+                result.secondary_records += self._flush_rehydrate_buffer(buffer)
+        detail_rows = (
+            self.table.search()
+            .where(
+                "record_type = 'raw_capture' "
+                "AND (operation = 'TweetDetail' OR operation = 'ThreadExpandDetail')"
+            )
+            .to_list()
+        )
+        detail_rows.sort(key=lambda row: (row.get("captured_at") or "", row.get("cursor_in") or ""))
+        for row in detail_rows:
+            raw_json = row.get("raw_json")
+            if not isinstance(raw_json, str) or not raw_json:
+                continue
+            detail_payload = json.loads(raw_json)
+            detail_tweets = parse_tweet_detail_tweets(detail_payload)
+            if not detail_tweets:
+                continue
+            self._buffer_secondary_graph(
+                extract_thread_objects([tweet.raw_json for tweet in detail_tweets]),
+                cursor=buffer,
+            )
             if len(buffer.records) >= batch_size:
                 result.secondary_records += self._flush_rehydrate_buffer(buffer)
         result.secondary_records += self._flush_rehydrate_buffer(buffer)

@@ -36,6 +36,7 @@ from tweetxvault.media import download_media
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import open_archive_store
 from tweetxvault.sync import ProcessLock, run_preflight, sync_all, sync_collection
+from tweetxvault.threads import expand_threads
 from tweetxvault.unfurl import unfurl_urls
 
 app = typer.Typer(no_args_is_help=True)
@@ -44,6 +45,7 @@ auth_app = typer.Typer(no_args_is_help=True)
 export_app = typer.Typer(no_args_is_help=True)
 media_app = typer.Typer(no_args_is_help=True)
 sync_app = typer.Typer(no_args_is_help=True)
+thread_app = typer.Typer(no_args_is_help=True)
 view_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(article_app, name="articles")
@@ -51,6 +53,7 @@ app.add_typer(auth_app, name="auth")
 app.add_typer(export_app, name="export")
 app.add_typer(media_app, name="media")
 app.add_typer(sync_app, name="sync")
+app.add_typer(thread_app, name="threads")
 app.add_typer(view_app, name="view")
 
 
@@ -600,6 +603,58 @@ def refresh_archived_articles(
         "articles: "
         f"{result.processed} processed, "
         f"{result.updated} refreshed, "
+        f"{result.failed} failed"
+    )
+
+
+@thread_app.command("expand")
+def expand_archive_threads(
+    targets: Annotated[
+        list[str] | None,
+        typer.Argument(help="Tweet IDs or x.com status URLs to expand."),
+    ] = None,
+    limit: int | None = None,
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+) -> None:
+    console = _configure_logging()
+    try:
+        config, paths = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
+        result = asyncio.run(
+            expand_threads(
+                targets=targets,
+                limit=limit,
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(
+        "threads: "
+        f"{result.processed} processed, "
+        f"{result.expanded} expanded, "
+        f"{result.skipped} skipped, "
         f"{result.failed} failed"
     )
 
