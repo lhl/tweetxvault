@@ -24,7 +24,7 @@ from tweetxvault.auth import (
     resolve_auth_bundle,
 )
 from tweetxvault.config import ensure_paths, load_config
-from tweetxvault.exceptions import ConfigError, TweetXVaultError
+from tweetxvault.exceptions import ConfigError, ProcessLockError, TweetXVaultError
 from tweetxvault.export import export_html_archive, export_json_archive
 from tweetxvault.export.common import (
     default_export_path,
@@ -35,7 +35,7 @@ from tweetxvault.export.common import (
 from tweetxvault.media import download_media
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import open_archive_store
-from tweetxvault.sync import run_preflight, sync_all, sync_collection
+from tweetxvault.sync import ProcessLock, run_preflight, sync_all, sync_collection
 from tweetxvault.unfurl import unfurl_urls
 
 app = typer.Typer(no_args_is_help=True)
@@ -166,15 +166,33 @@ def _open_store_for_read(console: Console):
     return store, paths
 
 
-def _with_auto_optimize(store, console: Console, fn):
+def _with_archive_write_lock(paths, fn):
+    lock = ProcessLock(paths.lock_file)
+    lock.acquire()
+    try:
+        return fn()
+    finally:
+        lock.release()
+
+
+def _with_auto_optimize(store, paths, console: Console, fn):
     """Run fn(store), auto-optimizing and retrying once on too-many-open-files."""
     try:
         return fn(store)
     except (RuntimeError, OSError) as exc:
         if "Too many open files" not in str(exc):
             raise
-        console.print("archive has too many versions, optimizing...")
-        store.optimize()
+        try:
+
+            def optimize_archive() -> None:
+                console.print("archive has too many versions, optimizing...")
+                store.optimize()
+
+            _with_archive_write_lock(paths, optimize_archive)
+        except ProcessLockError as lock_exc:
+            console.print(f"[red]{lock_exc}[/red]")
+            console.print("[red]Archive optimize is blocked while another job is writing.[/red]")
+            raise typer.Exit(2) from lock_exc
         return fn(store)
 
 
@@ -195,9 +213,14 @@ def _render_archive_view(
     console: Console, *, collection: str, limit: int, sort: str = "newest"
 ) -> None:
     normalized = _normalize_collection_or_exit(collection, console)
-    store, _ = _open_store_for_read(console)
+    store, paths = _open_store_for_read(console)
     try:
-        rows = _with_auto_optimize(store, console, lambda s: s.export_rows(normalized, sort=sort))
+        rows = _with_auto_optimize(
+            store,
+            paths,
+            console,
+            lambda s: s.export_rows(normalized, sort=sort),
+        )
     finally:
         store.close()
 
@@ -563,6 +586,7 @@ def export_json(
         )
         _with_auto_optimize(
             store,
+            paths,
             console,
             lambda s: export_json_archive(s, collection=normalized, out_path=out_path),
         )
@@ -587,6 +611,7 @@ def export_html(
         )
         _with_auto_optimize(
             store,
+            paths,
             console,
             lambda s: export_html_archive(s, collection=normalized, out_path=out_path),
         )
@@ -658,15 +683,27 @@ def unfurl_archive(limit: int | None = None, retry_failed: bool = False) -> None
 def optimize_archive() -> None:
     """Compact the LanceDB archive to reduce file count and reclaim space."""
     console = _configure_logging()
-    store, _ = _open_store_for_read(console)
+    _, paths = load_config()
+
+    def run() -> None:
+        store = open_archive_store(paths, create=False)
+        if store is None:
+            console.print("[red]No local archive found.[/red]")
+            raise typer.Exit(1)
+        try:
+            before = store.version_count()
+            console.print(f"compacting {before} versions...")
+            store.optimize()
+            after = store.version_count()
+            console.print(f"optimized archive: {before} versions -> {after} versions")
+        finally:
+            store.close()
+
     try:
-        before = store.version_count()
-        console.print(f"compacting {before} versions...")
-        store.optimize()
-        after = store.version_count()
-        console.print(f"optimized archive: {before} versions -> {after} versions")
-    finally:
-        store.close()
+        _with_archive_write_lock(paths, run)
+    except ProcessLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
 
 
 @app.command("rehydrate")
@@ -675,23 +712,35 @@ def rehydrate_archive() -> None:
     from tqdm import tqdm
 
     console = _configure_logging()
-    store, _ = _open_store_for_read(console)
+    _, paths = load_config()
+
+    def run() -> None:
+        store = open_archive_store(paths, create=False)
+        if store is None:
+            console.print("[red]No local archive found.[/red]")
+            raise typer.Exit(1)
+        try:
+            total = store.table.count_rows("record_type = 'tweet'")
+            if total == 0:
+                console.print("archive has no tweet rows")
+                return
+            with tqdm(total=total, desc="rehydrating", unit="tweets") as pbar:
+                result = store.rehydrate_from_raw_json(progress=pbar.update)
+            if result.tweets_updated or result.secondary_records:
+                console.print("compacting archive...")
+                store.optimize()
+            console.print(
+                f"rehydrated {result.tweets_updated} tweet rows and rebuilt "
+                f"{result.secondary_records} secondary rows"
+            )
+        finally:
+            store.close()
+
     try:
-        total = store.table.count_rows("record_type = 'tweet'")
-        if total == 0:
-            console.print("archive has no tweet rows")
-            return
-        with tqdm(total=total, desc="rehydrating", unit="tweets") as pbar:
-            result = store.rehydrate_from_raw_json(progress=pbar.update)
-        if result.tweets_updated or result.secondary_records:
-            console.print("compacting archive...")
-            store.optimize()
-        console.print(
-            f"rehydrated {result.tweets_updated} tweet rows and rebuilt "
-            f"{result.secondary_records} secondary rows"
-        )
-    finally:
-        store.close()
+        _with_archive_write_lock(paths, run)
+    except ProcessLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
 
 
 @app.command("embed")
@@ -702,30 +751,44 @@ def embed_archive(regen: bool = False) -> None:
     from tweetxvault.embed import EmbeddingEngine
 
     console = _configure_logging()
-    store, _ = _open_store_for_read(console)
+    _, paths = load_config()
+
+    def run() -> None:
+        store = open_archive_store(paths, create=False)
+        if store is None:
+            console.print("[red]No local archive found.[/red]")
+            raise typer.Exit(1)
+        try:
+            if regen:
+                console.print("clearing existing embeddings...")
+                store.clear_embeddings()
+            remaining = store.count_unembedded()
+            if remaining == 0:
+                console.print("all tweets already have embeddings")
+                return
+            console.print("loading embedding model...")
+            engine = EmbeddingEngine()
+            console.print(f"embedding {remaining} tweets...")
+            batches = store.get_unembedded_tweets(batch_size=100)
+            with tqdm(total=remaining, desc="embedding", unit="tweets") as pbar:
+                for batch in batches:
+                    texts = [
+                        f"@{row['author_username'] or ''}: {row['text'] or ''}" for row in batch
+                    ]
+                    vectors = engine.embed_batch(texts)
+                    store.write_embeddings(batch, vectors)
+                    pbar.update(len(batch))
+            console.print("compacting archive...")
+            store.optimize()
+            console.print(f"embedded {remaining} tweets")
+        finally:
+            store.close()
+
     try:
-        if regen:
-            console.print("clearing existing embeddings...")
-            store.clear_embeddings()
-        remaining = store.count_unembedded()
-        if remaining == 0:
-            console.print("all tweets already have embeddings")
-            return
-        console.print("loading embedding model...")
-        engine = EmbeddingEngine()
-        console.print(f"embedding {remaining} tweets...")
-        batches = store.get_unembedded_tweets(batch_size=100)
-        with tqdm(total=remaining, desc="embedding", unit="tweets") as pbar:
-            for batch in batches:
-                texts = [f"@{row['author_username'] or ''}: {row['text'] or ''}" for row in batch]
-                vectors = engine.embed_batch(texts)
-                store.write_embeddings(batch, vectors)
-                pbar.update(len(batch))
-        console.print("compacting archive...")
-        store.optimize()
-        console.print(f"embedded {remaining} tweets")
-    finally:
-        store.close()
+        _with_archive_write_lock(paths, run)
+    except ProcessLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
 
 
 @app.command("search")
@@ -736,7 +799,7 @@ def search_archive(
 ) -> None:
     """Search archived tweets. Modes: auto, fts, vector, hybrid."""
     console = _configure_logging()
-    store, _ = _open_store_for_read(console)
+    store, paths = _open_store_for_read(console)
     try:
         has_vec = store.has_embeddings()
         if mode == "auto":
@@ -748,7 +811,7 @@ def search_archive(
 
         if mode == "fts":
             results = _with_auto_optimize(
-                store, console, lambda s: s.search_fts(query, limit=limit)
+                store, paths, console, lambda s: s.search_fts(query, limit=limit)
             )
         elif mode == "vector":
             from tweetxvault.embed import EmbeddingEngine
@@ -762,7 +825,7 @@ def search_archive(
             engine = EmbeddingEngine()
             vec = engine.embed_batch([query])[0].tolist()
             results = _with_auto_optimize(
-                store, console, lambda s: s.search_hybrid(query, vec, limit=limit)
+                store, paths, console, lambda s: s.search_hybrid(query, vec, limit=limit)
             )
 
         if not results:

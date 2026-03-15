@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
+import sys
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+import typer
 from rich.console import Console
 
 import tweetxvault.cli as cli
 from tweetxvault.auth import BrowserCandidate
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig, AuthConfig
+from tweetxvault.exceptions import ProcessLockError
 from tweetxvault.storage import open_archive_store
 
 
@@ -265,3 +269,192 @@ def test_refresh_archived_articles_reports_runner_result(paths, monkeypatch) -> 
 
     output = buffer.getvalue()
     assert "articles: 1 processed, 1 refreshed, 0 failed" in output
+
+
+def test_with_auto_optimize_exits_when_lock_is_held(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=False, color_system=None)
+    attempts = {"count": 0}
+
+    class FakeStore:
+        def optimize(self) -> None:
+            raise AssertionError("optimize should not run when the lock is unavailable")
+
+    def fail(_store) -> None:
+        attempts["count"] += 1
+        raise OSError("Too many open files")
+
+    def blocked(_paths, _fn):
+        raise ProcessLockError("Another tweetxvault archive job is already running.")
+
+    monkeypatch.setattr(cli, "_with_archive_write_lock", blocked)
+
+    with pytest.raises(typer.Exit) as excinfo:
+        cli._with_auto_optimize(FakeStore(), paths, console, fail)
+
+    assert excinfo.value.exit_code == 2
+    assert attempts["count"] == 1
+    output = buffer.getvalue()
+    assert "Another tweetxvault archive job is already running." in output
+    assert "Archive optimize is blocked while another job is writing." in output
+
+
+def test_optimize_archive_uses_write_lock(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    lock_calls: list[Path] = []
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.optimized = False
+            self.closed = False
+
+        def version_count(self) -> int:
+            return 1 if self.optimized else 3
+
+        def optimize(self) -> None:
+            self.optimized = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    store = FakeStore()
+    monkeypatch.setattr(cli, "open_archive_store", lambda _paths, create=False: store)
+    monkeypatch.setattr(
+        cli,
+        "_with_archive_write_lock",
+        lambda lock_paths, fn: (lock_calls.append(lock_paths.lock_file), fn())[1],
+    )
+
+    cli.optimize_archive()
+
+    assert lock_calls == [paths.lock_file]
+    assert store.optimized is True
+    assert store.closed is True
+    assert "optimized archive: 3 versions -> 1 versions" in buffer.getvalue()
+
+
+def test_rehydrate_archive_uses_write_lock(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    lock_calls: list[Path] = []
+
+    class FakeTqdm:
+        def __init__(self, *args, **kwargs) -> None:
+            self.updates: list[int] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def update(self, count: int) -> None:
+            self.updates.append(count)
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.table = SimpleNamespace(count_rows=lambda expr: 2)
+            self.optimized = False
+            self.closed = False
+
+        def rehydrate_from_raw_json(self, *, progress=None):
+            if progress is not None:
+                progress(2)
+            return SimpleNamespace(tweets_updated=2, secondary_records=5)
+
+        def optimize(self) -> None:
+            self.optimized = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    store = FakeStore()
+    monkeypatch.setattr(cli, "open_archive_store", lambda _paths, create=False: store)
+    monkeypatch.setattr(
+        cli,
+        "_with_archive_write_lock",
+        lambda lock_paths, fn: (lock_calls.append(lock_paths.lock_file), fn())[1],
+    )
+    monkeypatch.setitem(sys.modules, "tqdm", SimpleNamespace(tqdm=FakeTqdm))
+
+    cli.rehydrate_archive()
+
+    assert lock_calls == [paths.lock_file]
+    assert store.optimized is True
+    assert store.closed is True
+    assert "rehydrated 2 tweet rows and rebuilt 5 secondary rows" in buffer.getvalue()
+
+
+def test_embed_archive_uses_write_lock(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    lock_calls: list[Path] = []
+
+    class FakeTqdm:
+        def __init__(self, *args, **kwargs) -> None:
+            self.updates: list[int] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def update(self, count: int) -> None:
+            self.updates.append(count)
+
+    class FakeEmbeddingEngine:
+        def embed_batch(self, texts):
+            return [[0.1, 0.2, 0.3] for _ in texts]
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.cleared = False
+            self.optimized = False
+            self.closed = False
+            self.writes: list[tuple[list[dict[str, object]], list[list[float]]]] = []
+
+        def clear_embeddings(self) -> None:
+            self.cleared = True
+
+        def count_unembedded(self) -> int:
+            return 1
+
+        def get_unembedded_tweets(self, *, batch_size: int = 100):
+            return [[{"author_username": "user1", "text": "bookmark tweet"}]]
+
+        def write_embeddings(self, batch, vectors) -> None:
+            self.writes.append((batch, vectors))
+
+        def optimize(self) -> None:
+            self.optimized = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    store = FakeStore()
+    monkeypatch.setattr(cli, "open_archive_store", lambda _paths, create=False: store)
+    monkeypatch.setattr(
+        cli,
+        "_with_archive_write_lock",
+        lambda lock_paths, fn: (lock_calls.append(lock_paths.lock_file), fn())[1],
+    )
+    monkeypatch.setitem(sys.modules, "tqdm", SimpleNamespace(tqdm=FakeTqdm))
+    monkeypatch.setitem(
+        sys.modules,
+        "tweetxvault.embed",
+        SimpleNamespace(EmbeddingEngine=FakeEmbeddingEngine),
+    )
+
+    cli.embed_archive(regen=True)
+
+    assert lock_calls == [paths.lock_file]
+    assert store.cleared is True
+    assert store.optimized is True
+    assert store.closed is True
+    assert len(store.writes) == 1
+    assert "embedded 1 tweets" in buffer.getvalue()

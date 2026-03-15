@@ -99,7 +99,7 @@ class ProcessLock:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             handle.close()
-            raise ProcessLockError("Another tweetxvault sync is already running.") from exc
+            raise ProcessLockError("Another tweetxvault archive job is already running.") from exc
         self._handle = handle
 
     def release(self) -> None:

@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Fixed a LanceDB commit-conflict path exposed by `sync --article-backfill`:
+  - Root cause: CLI overwrite-style archive operations (`optimize`, `rehydrate`, `embed`) and auto-optimize retries from read commands could call `store.optimize()` without taking the shared archive lock, which could race with `sync` merge writes and trigger `Commit conflict ... concurrent transaction Overwrite`
+  - Added shared lock coverage in `tweetxvault/cli.py` for `optimize`, `rehydrate`, `embed`, and auto-optimize fallbacks in `view` / `export` / `search`
+  - Generalized the lock error text in `tweetxvault/sync.py` from “sync” to “archive job” because the same lock now protects multiple archive-mutating commands
+  - Added CLI regressions covering locked optimize/rehydrate/embed paths plus the blocked auto-optimize failure path
+  - Validation:
+    - `uv run pytest`
+    - `uv run ruff check tweetxvault tests`
+    - `uv run ruff format --check tweetxvault tests`
+
 - Added a dedicated thread-expansion milestone ahead of archive import:
   - Inserted Task 15 in `docs/IMPLEMENTATION.md` for `TweetDetail`-based thread/context capture plus linked X-status URL expansion
   - Shifted archive import planning to Task 16
