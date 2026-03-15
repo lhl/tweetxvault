@@ -7,10 +7,11 @@ A Python CLI tool for archiving your Twitter/X bookmarks and likes into a local 
 - **Incremental sync** — fetches only new items by default; resumes interrupted backfills automatically
 - **Raw capture preservation** — every API response page is stored verbatim alongside parsed tweet records
 - **Crash-safe checkpoints** — sync state advances atomically with data writes; safe to kill mid-run
+- **Full-text and semantic search** — built-in FTS (tantivy) and optional ONNX-based vector embeddings for hybrid search
 - **Automatic query ID discovery** — scrapes Twitter's JS bundles to stay current with GraphQL endpoint changes
 - **Firefox cookie extraction** — reads session cookies directly from your Firefox profile (or set them via env vars / config)
 - **Rate limit handling** — exponential backoff, cooldown periods, and configurable retry limits
-- **JSON export** — export your archive to JSON for use in other tools
+- **Export** — export your archive to JSON or a self-contained HTML viewer
 
 ## Requirements
 
@@ -25,6 +26,14 @@ git clone https://github.com/lhl/tweetxvault.git
 cd tweetxvault
 uv sync
 ```
+
+To enable semantic search (vector embeddings):
+
+```bash
+uv sync --extra embed
+```
+
+This installs `onnxruntime`, `tokenizers`, and `huggingface-hub`. GPU acceleration (CUDA/ROCm) is used automatically when available; CPU works fine too (~150-200 tweets/s).
 
 ## Authentication
 
@@ -69,7 +78,7 @@ This probes the API without writing any data and reports credential status and e
 
 ## Usage
 
-### Sync bookmarks and likes
+### Syncing
 
 ```bash
 # Sync everything (incremental by default)
@@ -79,17 +88,68 @@ uv run tweetxvault sync all
 uv run tweetxvault sync bookmarks
 uv run tweetxvault sync likes
 
-# Full re-sync from scratch (does not delete existing data)
+# Full re-sync from scratch (resets sync state, does not delete existing data)
 uv run tweetxvault sync all --full
+
+# Continue past duplicates without resetting state
+uv run tweetxvault sync all --backfill
 
 # Limit to N pages per collection
 uv run tweetxvault sync all --limit 5
 ```
 
-### Export to JSON
+If the `[embed]` extra is installed, new tweets are automatically embedded after each sync.
+
+### Viewing your archive
 
 ```bash
-# Export all archived tweets
+# View recent bookmarks in a terminal table
+uv run tweetxvault view bookmarks
+
+# View likes, oldest first
+uv run tweetxvault view likes --sort oldest
+
+# View all archived tweets
+uv run tweetxvault view all --limit 50
+```
+
+### Searching
+
+```bash
+# Search tweets (auto-selects hybrid mode if embeddings exist, otherwise FTS)
+uv run tweetxvault search "machine learning"
+
+# Force a specific search mode
+uv run tweetxvault search "llama" --mode fts
+uv run tweetxvault search "llama" --mode vector
+uv run tweetxvault search "llama" --mode hybrid
+
+# Adjust result count
+uv run tweetxvault search "transformer architecture" --limit 50
+```
+
+Search modes:
+- **fts** — keyword matching via full-text search (always available)
+- **vector** — semantic similarity via embeddings (requires `uv sync --extra embed` + `tweetxvault embed`)
+- **hybrid** — combines FTS and vector results with reranking (best quality)
+- **auto** (default) — uses hybrid if embeddings exist, otherwise falls back to FTS
+
+### Embeddings
+
+```bash
+# Generate embeddings for all archived tweets (resumes if interrupted)
+uv run tweetxvault embed
+
+# Regenerate all embeddings from scratch
+uv run tweetxvault embed --regen
+```
+
+Uses the `all-MiniLM-L6-v2` model (384 dimensions) via ONNX Runtime. The model is downloaded automatically from Hugging Face Hub on first run.
+
+### Exporting
+
+```bash
+# Export all archived tweets to JSON
 uv run tweetxvault export json
 
 # Export a specific collection
@@ -97,11 +157,21 @@ uv run tweetxvault export json --collection bookmarks
 
 # Export to a specific path
 uv run tweetxvault export json --out ~/exports/my-bookmarks.json
+
+# Export as a self-contained HTML viewer
+uv run tweetxvault export html
+uv run tweetxvault export html --collection likes --out ~/exports/likes.html
 ```
 
-### Other commands
+### Maintenance
 
 ```bash
+# Compact the LanceDB archive (reduces file count after many syncs)
+uv run tweetxvault optimize
+
+# Re-extract author info from raw JSON for tweets with missing usernames
+uv run tweetxvault rehydrate
+
 # Force-refresh query IDs from Twitter's JS bundles
 uv run tweetxvault auth refresh-ids
 ```
@@ -155,7 +225,7 @@ tweetxvault calls Twitter's internal GraphQL API — the same endpoints the web 
 ## Development
 
 ```bash
-uv sync
+uv sync --extra embed
 
 # Run tests
 uv run pytest
