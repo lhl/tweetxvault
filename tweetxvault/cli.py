@@ -51,6 +51,10 @@ BROWSER_HELP = (
     "Browser to use for cookie extraction: firefox, chrome, chromium, brave, edge, "
     "opera, opera-gx, vivaldi, arc."
 )
+ARTICLE_BACKFILL_HELP = (
+    "Rewalk existing timeline pages without resetting sync state so older items can pick up "
+    "new article fields."
+)
 
 
 def _configure_logging() -> Console:
@@ -226,6 +230,10 @@ def _render_archive_view(
 def sync_bookmarks(
     full: bool = False,
     backfill: bool = False,
+    article_backfill: Annotated[
+        bool,
+        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
+    ] = False,
     limit: int | None = None,
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
@@ -252,6 +260,7 @@ def sync_bookmarks(
                 "bookmarks",
                 full=full,
                 backfill=backfill,
+                article_backfill=article_backfill,
                 limit=limit,
                 config=config,
                 auth_bundle=auth_bundle,
@@ -276,6 +285,10 @@ def sync_bookmarks(
 def sync_likes(
     full: bool = False,
     backfill: bool = False,
+    article_backfill: Annotated[
+        bool,
+        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
+    ] = False,
     limit: int | None = None,
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
@@ -302,6 +315,7 @@ def sync_likes(
                 "likes",
                 full=full,
                 backfill=backfill,
+                article_backfill=article_backfill,
                 limit=limit,
                 config=config,
                 auth_bundle=auth_bundle,
@@ -323,6 +337,10 @@ def sync_likes(
 def sync_everything(
     full: bool = False,
     backfill: bool = False,
+    article_backfill: Annotated[
+        bool,
+        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
+    ] = False,
     limit: int | None = None,
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
@@ -348,6 +366,7 @@ def sync_everything(
             sync_all(
                 full=full,
                 backfill=backfill,
+                article_backfill=article_backfill,
                 limit=limit,
                 config=config,
                 auth_bundle=auth_bundle,

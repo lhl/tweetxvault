@@ -10,7 +10,12 @@ import httpx
 import pytest
 from rich.console import Console
 
-from tests.conftest import make_bookmarks_response, make_likes_response
+from tests.conftest import (
+    make_article_result,
+    make_bookmarks_response,
+    make_likes_response,
+    make_tweet_result,
+)
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
 from tweetxvault.exceptions import ProcessLockError, TweetXVaultError
@@ -32,6 +37,45 @@ def _save_query_ids(paths) -> None:
 
 def _console() -> Console:
     return Console(file=StringIO(), force_terminal=False, color_system=None)
+
+
+def _bookmarks_response_from_results(
+    results: list[dict[str, object]],
+    *,
+    cursor: str | None = None,
+) -> dict[str, object]:
+    entries: list[dict[str, object]] = []
+    for index, result in enumerate(results):
+        tweet_id = result["rest_id"]
+        entries.append(
+            {
+                "entryId": f"tweet-{tweet_id}",
+                "sortIndex": str(500 - index),
+                "content": {
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                        "itemType": "TimelineTweet",
+                        "tweet_results": {"result": result},
+                    },
+                },
+            }
+        )
+    if cursor is not None:
+        entries.append(
+            {
+                "entryId": "cursor-bottom-1",
+                "content": {"cursorType": "Bottom", "value": cursor},
+            }
+        )
+    return {
+        "data": {
+            "bookmark_timeline_v2": {
+                "timeline": {
+                    "instructions": [{"type": "TimelineAddEntries", "entries": entries}],
+                }
+            }
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -418,6 +462,116 @@ async def test_backfill_flag_skips_duplicate_stop(paths, config: AppConfig, auth
     )
     assert result.pages_fetched == 2
     assert result.stop_reason != "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_article_backfill_refreshes_older_duplicate_pages(
+    paths, config: AppConfig, auth_bundle
+) -> None:
+    _save_query_ids(paths)
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"seed": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id="1",
+                text="existing one",
+                author_id="a1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="10",
+                raw_json=make_tweet_result("1", "existing one", user_id="101"),
+            ),
+            TimelineTweet(
+                tweet_id="2",
+                text="existing two",
+                author_id="a2",
+                author_username="user2",
+                author_display_name="User 2",
+                created_at="date",
+                sort_index="9",
+                raw_json=make_tweet_result("2", "existing two", user_id="102"),
+            ),
+        ],
+        last_head_tweet_id="1",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.close()
+
+    article_tweet = make_tweet_result(
+        "2",
+        "existing two",
+        user_id="102",
+        article=make_article_result(
+            "article-2",
+            title="Older article",
+            preview_text="Older article preview",
+            plain_text="Older article body",
+            url="https://x.com/i/article/2",
+        ),
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(
+                200,
+                json=_bookmarks_response_from_results([make_tweet_result("1", "existing one")]),
+                request=request,
+            )
+        if operation == "Bookmarks" and cursor is None:
+            return httpx.Response(
+                200,
+                json=_bookmarks_response_from_results(
+                    [make_tweet_result("1", "existing one")],
+                    cursor="c1",
+                ),
+                request=request,
+            )
+        if cursor == "c1":
+            return httpx.Response(
+                200,
+                json=_bookmarks_response_from_results([article_tweet]),
+                request=request,
+            )
+        raise AssertionError(f"unexpected cursor {cursor}")
+
+    result = await sync_collection(
+        "bookmarks",
+        full=False,
+        article_backfill=True,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+
+    assert result.pages_fetched == 2
+    assert result.stop_reason != "duplicate"
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        article_rows = store.table.search().where("record_type = 'article'").to_list()
+        assert len(article_rows) == 1
+        assert article_rows[0]["tweet_id"] == "2"
+        assert article_rows[0]["title"] == "Older article"
+    finally:
+        store.close()
 
 
 @pytest.mark.asyncio

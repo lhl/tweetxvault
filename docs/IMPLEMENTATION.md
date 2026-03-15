@@ -284,6 +284,7 @@ This is the next real implementation milestone after the LanceDB migration. The 
 
 ## Task 13: Articles
 
+- [x] Add a dedicated `--article-backfill` timeline rescan mode so existing collection pages can be refetched after article field toggles change, without resetting sync state.
 - [ ] Add an article probe fixture once we capture a real authenticated `UserArticlesTweets` or article-bearing timeline response.
   - Working example URL: `https://x.com/dimitrispapail/status/2026531440414925307`
 - [ ] Verify whether full bodies are returned now that article field toggles are enabled on timeline requests.

@@ -119,11 +119,15 @@ uv run tweetxvault sync all --full
 # Continue past duplicates without resetting state
 uv run tweetxvault sync all --backfill
 
+# Rewalk existing pages to refresh article-bearing tweets after article fields change
+uv run tweetxvault sync bookmarks --article-backfill
+
 # Limit to N pages per collection
 uv run tweetxvault sync all --limit 5
 ```
 
 If the `[embed]` extra is installed, new tweets are automatically embedded after each sync.
+`--article-backfill` updates stored `raw_json` and normalized secondary rows inline, so it does not require a follow-up `tweetxvault rehydrate`.
 
 ### Viewing your archive
 

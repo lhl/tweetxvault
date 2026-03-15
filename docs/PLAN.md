@@ -446,6 +446,7 @@ Design implications:
 - Add an article-specific parser path for:
   - article-bearing tweet payloads returned by bookmarks/likes when article field toggles are enabled
   - dedicated article timelines fetched through `UserArticlesTweets`
+- Older archives can be refreshed through a timeline rewalk mode (`tweetxvault sync ... --article-backfill`) before we add a narrower tweet-level article fetch path.
 - Until we inspect real authenticated article payloads, key `article` rows by source tweet id and preserve the full raw tweet/article block for later migration.
 - If `UserArticlesTweets` only returns previews, keep article pointer metadata and defer full-body capture to a targeted follow-up fetch path or Playwright-only article fallback.
 

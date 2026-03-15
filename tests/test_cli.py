@@ -163,3 +163,50 @@ def test_auth_check_interactive_uses_selected_browser(paths, monkeypatch) -> Non
     output = buffer.getvalue()
     assert "local auth: auth_token=chrome" in output
     assert "bookmarks: ready" in output
+
+
+def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_collection(
+        collection,
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        forwarded.update(
+            {
+                "collection": collection,
+                "full": full,
+                "backfill": backfill,
+                "article_backfill": article_backfill,
+                "limit": limit,
+            }
+        )
+        return SimpleNamespace(pages_fetched=2, tweets_seen=3, stop_reason="empty")
+
+    monkeypatch.setattr(cli, "sync_collection", fake_sync_collection)
+
+    cli.sync_bookmarks(article_backfill=True)
+
+    assert forwarded == {
+        "collection": "bookmarks",
+        "full": False,
+        "backfill": False,
+        "article_backfill": True,
+        "limit": None,
+    }
+    assert "bookmarks: 2 pages, 3 tweets, empty" in buffer.getvalue()

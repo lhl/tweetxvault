@@ -390,6 +390,7 @@ async def sync_collection(
     *,
     full: bool,
     backfill: bool = False,
+    article_backfill: bool = False,
     limit: int | None = None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -418,6 +419,7 @@ async def sync_collection(
         collection=collection,
         full=full,
         backfill=backfill,
+        article_backfill=article_backfill,
         limit=limit,
         config=config,
         paths=paths,
@@ -456,6 +458,7 @@ async def _sync_collection_ready(
     collection: str,
     full: bool,
     backfill: bool = False,
+    article_backfill: bool = False,
     limit: int | None,
     config: AppConfig,
     paths: XDGPaths,
@@ -490,7 +493,8 @@ async def _sync_collection_ready(
         )
         prior_backfill_incomplete = previous_state.backfill_incomplete
         seen_ids: set[str] = set()
-        stop_on_dup = not full and not backfill
+        effective_backfill = backfill or article_backfill
+        stop_on_dup = not full and not effective_backfill
         existing_tweet_ids: set[str] = set()
         if stop_on_dup:
             existing_tweet_ids = store.get_collection_tweet_ids(COLLECTION_TO_STORAGE[collection])
@@ -570,6 +574,7 @@ async def sync_all(
     *,
     full: bool,
     backfill: bool = False,
+    article_backfill: bool = False,
     limit: int | None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -605,6 +610,7 @@ async def sync_all(
                 collection=collection,
                 full=full,
                 backfill=backfill,
+                article_backfill=article_backfill,
                 limit=limit,
                 config=config,
                 paths=paths,

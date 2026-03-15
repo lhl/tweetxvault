@@ -2,6 +2,11 @@
 
 ## 2026-03-16
 
+- Added `--article-backfill` sync mode:
+  - Extended `tweetxvault sync bookmarks|likes|all` with `--article-backfill`, which rewalks existing timeline pages without resetting sync state so older tweets can pick up newly-enabled article fields
+  - Kept it on the normal sync persistence path, so refetched pages update `tweet.raw_json` plus normalized `article` / secondary rows directly; no follow-up `tweetxvault rehydrate` is required after the backfill itself
+  - Added coverage in `tests/test_sync.py` proving article backfill reaches older duplicate pages and persists article rows, plus a CLI forwarding test in `tests/test_cli.py`
+
 - Landed Task 11 secondary-object extraction on the LanceDB archive:
   - Added `tweetxvault/extractor.py` to normalize raw tweet payloads into canonical `tweet_object`, `tweet_relation`, `media`, `url`, `url_ref`, and `article` records
   - Expanded `tweetxvault/storage/backend.py` schema and page buffering so those secondary rows are written in the same page-atomic merge as `raw_capture`, collection-scoped `tweet`, and `sync_state`
