@@ -343,9 +343,8 @@ def embed_archive(regen: bool = False) -> None:
         with tqdm(total=remaining, desc="embedding", unit="tweets") as pbar:
             for batch in batches:
                 texts = [f"@{row['author_username'] or ''}: {row['text'] or ''}" for row in batch]
-                row_keys = [row["row_key"] for row in batch]
                 vectors = engine.embed_batch(texts)
-                store.write_embeddings(row_keys, vectors)
+                store.write_embeddings(batch, vectors)
                 pbar.update(len(batch))
         console.print("compacting archive...")
         store.optimize()

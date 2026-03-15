@@ -479,35 +479,18 @@ class ArchiveStore:
         return self.table.count_rows("record_type = 'tweet' AND embedding IS NULL")
 
     def get_unembedded_tweets(self, *, batch_size: int = 100) -> list[list[dict[str, Any]]]:
-        """Return unembedded tweet rows in batches."""
-        rows = (
-            self.table.search()
-            .where("record_type = 'tweet' AND embedding IS NULL")
-            .select(["row_key", "text", "author_username"])
-            .to_list()
-        )
+        """Return unembedded tweet rows (full rows) in batches."""
+        rows = self.table.search().where("record_type = 'tweet' AND embedding IS NULL").to_list()
         batches = []
         for i in range(0, len(rows), batch_size):
             batches.append(rows[i : i + batch_size])
         return batches
 
-    def write_embeddings(self, row_keys: list[str], embeddings: np.ndarray) -> None:
-        """Write embedding vectors for the given row_keys."""
-        updates = pa.table(
-            {
-                "row_key": row_keys,
-                "embedding": [emb.tolist() for emb in embeddings],
-            },
-            schema=pa.schema(
-                [
-                    pa.field("row_key", pa.string()),
-                    pa.field("embedding", pa.list_(pa.float32(), EMBEDDING_DIM)),
-                ]
-            ),
-        )
-        self.table.merge_insert("row_key").when_matched_update_all(
-            "target.embedding IS NULL"
-        ).execute(updates)
+    def write_embeddings(self, rows: list[dict[str, Any]], embeddings: np.ndarray) -> None:
+        """Write embedding vectors back into full rows via merge_insert."""
+        for row, emb in zip(rows, embeddings, strict=True):
+            row["embedding"] = emb.tolist()
+        self._merge_records(rows)
 
     def clear_embeddings(self) -> None:
         """Clear all embeddings so they can be regenerated."""
