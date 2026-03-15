@@ -117,7 +117,8 @@ def _render_archive_view(
     for row in shown:
         author = row["author"]
         username = author["username"] if author["username"] else author["id"] or "unknown"
-        text = (row["text"] or "").replace("\n", " ")
+        raw_text = (row["text"] or "").replace("\n", " ")
+        text = raw_text[:280] + "…" if len(raw_text) > 280 else raw_text
         table.add_row(
             _format_created_at(row["created_at"]),
             f"@{username}",
