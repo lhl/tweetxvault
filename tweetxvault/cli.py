@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import resource
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from loguru import logger
+from rich import box
 from rich.console import Console
 from rich.table import Table
 
@@ -73,6 +75,19 @@ def _with_auto_optimize(store, console: Console, fn):
         return fn(store)
 
 
+def _format_created_at(raw: str | None) -> str:
+    if not raw:
+        return ""
+    try:
+        dt = datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
+        local_dt = dt.astimezone()
+        date_part = local_dt.strftime("%b %-d, %Y")
+        time_part = local_dt.strftime("%-I:%M %p").lower()
+        return f"{date_part}\n{time_part}"
+    except (ValueError, TypeError):
+        return raw
+
+
 def _render_archive_view(
     console: Console, *, collection: str, limit: int, sort: str = "newest"
 ) -> None:
@@ -89,7 +104,11 @@ def _render_archive_view(
         return
 
     shown = rows[:limit]
-    table = Table(title=f"{label} archive")
+    table = Table(
+        title=f"{label} archive",
+        box=box.SIMPLE_HEAD,
+        row_styles=["", "on grey11"],
+    )
     table.add_column("Created", style="cyan", no_wrap=True)
     table.add_column("Author", style="green", no_wrap=True)
     table.add_column("Text", overflow="fold")
@@ -100,7 +119,7 @@ def _render_archive_view(
         username = author["username"] if author["username"] else author["id"] or "unknown"
         text = (row["text"] or "").replace("\n", " ")
         table.add_row(
-            row["created_at"] or "",
+            _format_created_at(row["created_at"]),
             f"@{username}",
             text,
             tweet_url(row),
