@@ -471,6 +471,7 @@ async def _sync_collection_ready(
         existing_tweet_ids: set[str] = set()
         if stop_on_dup:
             existing_tweet_ids = store.get_collection_tweet_ids(COLLECTION_TO_STORAGE[collection])
+        pages_total = 0
         client = build_async_client(
             preflight.auth, timeout=config.sync.timeout, transport=transport
         )
@@ -527,6 +528,8 @@ async def _sync_collection_ready(
                 stop_reason = backfill_reason
         finally:
             await client.aclose()
+            if pages_total > 0:
+                store.optimize()
             store.close()
     finally:
         lock.release()

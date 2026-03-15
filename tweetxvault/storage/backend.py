@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -426,6 +426,9 @@ class ArchiveStore:
 
     def version_count(self) -> int:
         return len(self.table.list_versions())
+
+    def optimize(self) -> None:
+        self.table.optimize(cleanup_older_than=timedelta(seconds=0))
 
 
 def open_archive_store(paths: XDGPaths, *, create: bool) -> ArchiveStore | None:

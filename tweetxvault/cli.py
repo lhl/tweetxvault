@@ -259,6 +259,20 @@ def export_html(
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
 
 
+@app.command("optimize")
+def optimize_archive() -> None:
+    """Compact the LanceDB archive to reduce file count and reclaim space."""
+    console = _configure_logging()
+    store, _ = _open_store_for_read(console)
+    try:
+        before = store.version_count()
+        store.optimize()
+        after = store.version_count()
+        console.print(f"optimized archive: {before} versions -> {after} versions")
+    finally:
+        store.close()
+
+
 @app.callback()
 def main() -> None:
     """tweetxvault CLI."""
