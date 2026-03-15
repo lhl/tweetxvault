@@ -63,6 +63,10 @@ def build_likes_features() -> dict[str, bool]:
     return dict(_TIMELINE_FEATURES)
 
 
+def build_user_tweets_features() -> dict[str, bool]:
+    return dict(_TIMELINE_FEATURES)
+
+
 def build_tweet_detail_features() -> dict[str, bool]:
     return dict(_TIMELINE_FEATURES)
 

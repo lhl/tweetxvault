@@ -300,17 +300,18 @@ This is the next real implementation milestone after the LanceDB migration. The 
 
 This is materially smaller than archive import because it reuses the live GraphQL sync path, the current extractor layer, and the existing media/unfurl/export follow-on jobs.
 
-- [ ] Add `UserTweets` query-id coverage and a dedicated request builder.
-- [ ] Reserve `UserTweetsAndReplies` for a later follow-on; start with authored tweets only.
-- [ ] Add CLI shape:
+- [x] Add `UserTweets` query-id coverage and a dedicated request builder.
+- [x] Reserve `UserTweetsAndReplies` for a later follow-on; start with authored tweets only.
+- [x] Add CLI shape:
   - `tweetxvault sync tweets`
   - `tweetxvault view tweets`
   - `tweetxvault export json --collection tweets`
   - `tweetxvault export html --collection tweets`
-- [ ] Add a collection/storage label for authored tweets that reuses the current `tweet` membership rows plus secondary-object extraction.
-- [ ] Reuse the existing duplicate-detection, sync-state, rehydrate, media-download, URL-unfurl, and article-refresh paths for own-tweet rows.
-- [ ] Decide whether `tweetxvault sync all` should include own tweets, or whether authored tweets stay an explicit opt-in collection.
-- [ ] Add regression coverage for:
+- [x] Add a collection/storage label for authored tweets that reuses the current `tweet` membership rows plus secondary-object extraction.
+- [x] Reuse the existing duplicate-detection, sync-state, rehydrate, media-download, URL-unfurl, and article-refresh paths for own-tweet rows.
+- [x] Decide whether `tweetxvault sync all` should include own tweets, or whether authored tweets stay an explicit opt-in collection.
+  - Current decision: keep authored tweets as an explicit opt-in collection via `tweetxvault sync tweets` so `sync all` does not unexpectedly expand archive size.
+- [x] Add regression coverage for:
   - incremental `UserTweets` pagination
   - collection-scoped duplicate detection on authored tweets
   - export/view support for the new collection

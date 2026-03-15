@@ -18,6 +18,7 @@ from tweetxvault.client.timelines import (
     TimelineTweet,
     build_bookmarks_url,
     build_likes_url,
+    build_user_tweets_url,
     fetch_page,
     parse_timeline_response,
 )
@@ -34,8 +35,16 @@ from tweetxvault.exceptions import (
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore, SyncState, open_archive_store
 
-COLLECTION_TO_OPERATION = {"bookmarks": "Bookmarks", "likes": "Likes"}
-COLLECTION_TO_STORAGE = {"bookmarks": "bookmark", "likes": "like"}
+COLLECTION_TO_OPERATION = {
+    "bookmarks": "Bookmarks",
+    "likes": "Likes",
+    "tweets": "UserTweets",
+}
+COLLECTION_TO_STORAGE = {
+    "bookmarks": "bookmark",
+    "likes": "like",
+    "tweets": "tweet",
+}
 
 
 class LocalPreflightError(ConfigError):
@@ -143,7 +152,9 @@ def _build_url(
 ) -> str:
     if collection == "bookmarks":
         return build_bookmarks_url(query_id, cursor=cursor, count=count)
-    return build_likes_url(query_id, auth.user_id or "", cursor=cursor, count=count)
+    if collection == "likes":
+        return build_likes_url(query_id, auth.user_id or "", cursor=cursor, count=count)
+    return build_user_tweets_url(query_id, auth.user_id or "", cursor=cursor, count=count)
 
 
 async def run_preflight(

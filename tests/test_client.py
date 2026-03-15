@@ -8,7 +8,12 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from tests.conftest import make_bookmarks_response, make_likes_response, request_details
+from tests.conftest import (
+    make_bookmarks_response,
+    make_likes_response,
+    make_user_tweets_response,
+    request_details,
+)
 from tweetxvault.client.base import (
     RateLimitExhaustedError,
     is_auth_error,
@@ -20,6 +25,7 @@ from tweetxvault.client.timelines import (
     build_bookmarks_url,
     build_likes_url,
     build_tweet_detail_url,
+    build_user_tweets_url,
     fetch_page,
     parse_timeline_response,
     parse_tweet_detail_response,
@@ -30,6 +36,7 @@ from tweetxvault.config import SyncConfig
 def test_build_timeline_urls() -> None:
     bookmarks_url = build_bookmarks_url("bookmark-qid", cursor="abc")
     likes_url = build_likes_url("likes-qid", "42", cursor="def")
+    tweets_url = build_user_tweets_url("tweets-qid", "42", cursor="ghi")
     detail_url = build_tweet_detail_url("detail-qid", "2026531440414925307")
     operation, variables = request_details(bookmarks_url)
     assert operation == "Bookmarks"
@@ -41,6 +48,10 @@ def test_build_timeline_urls() -> None:
     assert operation == "Likes"
     assert variables["userId"] == "42"
     assert variables["cursor"] == "def"
+    operation, variables = request_details(tweets_url)
+    assert operation == "UserTweets"
+    assert variables["userId"] == "42"
+    assert variables["cursor"] == "ghi"
     operation, variables = request_details(detail_url)
     assert operation == "TweetDetail"
     assert variables["focalTweetId"] == "2026531440414925307"
@@ -76,6 +87,15 @@ def test_parse_timeline_response_likes_module_shape() -> None:
     )
     assert [tweet.tweet_id for tweet in tweets] == ["10", "11"]
     assert cursor == "older"
+
+
+def test_parse_timeline_response_user_tweets_shape() -> None:
+    tweets, cursor = parse_timeline_response(
+        make_user_tweets_response(["20", "21"], cursor="later"),
+        "UserTweets",
+    )
+    assert [tweet.tweet_id for tweet in tweets] == ["20", "21"]
+    assert cursor == "later"
 
 
 def test_response_classification_helpers() -> None:

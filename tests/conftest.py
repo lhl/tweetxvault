@@ -293,6 +293,50 @@ def make_likes_response(
     }
 
 
+def make_user_tweets_response(
+    tweet_ids: list[str],
+    *,
+    cursor: str | None = None,
+) -> dict[str, object]:
+    entries: list[dict[str, object]] = []
+    for index, tweet_id in enumerate(tweet_ids):
+        entries.append(
+            {
+                "entryId": f"tweet-{tweet_id}",
+                "sortIndex": str(300 - index),
+                "content": {
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                        "itemType": "TimelineTweet",
+                        "tweet_results": {
+                            "result": make_tweet_result(tweet_id, f"tweet {tweet_id}")
+                        },
+                    },
+                },
+            }
+        )
+    if cursor is not None:
+        entries.append(
+            {
+                "entryId": "cursor-bottom-1",
+                "content": {"cursorType": "Bottom", "value": cursor},
+            }
+        )
+    return {
+        "data": {
+            "user": {
+                "result": {
+                    "timeline": {
+                        "timeline": {
+                            "instructions": [{"type": "TimelineAddEntries", "entries": entries}],
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
 def request_details(url: str) -> tuple[str, dict[str, object]]:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)

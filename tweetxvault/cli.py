@@ -363,6 +363,58 @@ def sync_likes(
     )
 
 
+@sync_app.command("tweets")
+def sync_tweets(
+    full: bool = False,
+    backfill: bool = False,
+    article_backfill: Annotated[
+        bool,
+        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
+    ] = False,
+    limit: int | None = None,
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+) -> None:
+    console = _configure_logging()
+    try:
+        config, _ = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
+        result = asyncio.run(
+            sync_collection(
+                "tweets",
+                full=full,
+                backfill=backfill,
+                article_backfill=article_backfill,
+                limit=limit,
+                config=config,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(
+        f"tweets: {result.pages_fetched} pages, {result.tweets_seen} tweets, {result.stop_reason}"
+    )
+
+
 @sync_app.command("all")
 def sync_everything(
     full: bool = False,
@@ -449,7 +501,7 @@ def auth_check(
             run_preflight(
                 config=config,
                 paths=paths,
-                collections=["bookmarks", "likes"],
+                collections=["bookmarks", "likes", "tweets"],
                 auth_bundle=auth_bundle,
             )
         )
@@ -568,6 +620,12 @@ def view_likes(limit: int = 20, sort: str = "newest") -> None:
 def view_all(limit: int = 20, sort: str = "newest") -> None:
     console = _configure_logging()
     _render_archive_view(console, collection="all", limit=limit, sort=sort)
+
+
+@view_app.command("tweets")
+def view_tweets(limit: int = 20, sort: str = "newest") -> None:
+    console = _configure_logging()
+    _render_archive_view(console, collection="tweets", limit=limit, sort=sort)
 
 
 @export_app.command("json")

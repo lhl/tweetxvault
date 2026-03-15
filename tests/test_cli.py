@@ -58,6 +58,18 @@ def _seed_archive(paths) -> None:
         backfill_cursor=None,
         backfill_incomplete=False,
     )
+    store.persist_page(
+        operation="UserTweets",
+        collection_type="tweet",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[_tweet("3", text="authored tweet")],
+        last_head_tweet_id="3",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
     store.close()
 
 
@@ -83,6 +95,20 @@ def test_view_bookmarks_prints_rows(paths, monkeypatch) -> None:
     assert "like tweet" not in output
 
 
+def test_view_tweets_prints_rows(paths, monkeypatch) -> None:
+    _seed_archive(paths)
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+
+    cli.view_tweets(limit=5)
+
+    output = buffer.getvalue()
+    assert "authored tweet" in output
+    assert "tweets archive" in output
+    assert "bookmark tweet" not in output
+
+
 def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path: Path) -> None:
     _seed_archive(paths)
     buffer = StringIO()
@@ -95,6 +121,20 @@ def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert [row["tweet_id"] for row in payload] == ["1"]
     assert "exported bookmarks archive" in buffer.getvalue()
+
+
+def test_export_json_accepts_tweets_collection_name(paths, monkeypatch, tmp_path: Path) -> None:
+    _seed_archive(paths)
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    out_path = tmp_path / "tweets.json"
+
+    cli.export_json(collection="tweets", out=out_path)
+
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert [row["tweet_id"] for row in payload] == ["3"]
+    assert "exported tweets archive" in buffer.getvalue()
 
 
 def test_export_html_creates_viewer(paths, monkeypatch, tmp_path: Path) -> None:
@@ -154,6 +194,7 @@ def test_auth_check_interactive_uses_selected_browser(paths, monkeypatch) -> Non
             probes={
                 "bookmarks": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
                 "likes": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
+                "tweets": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
             },
             has_local_error=False,
             has_remote_error=False,
@@ -167,6 +208,7 @@ def test_auth_check_interactive_uses_selected_browser(paths, monkeypatch) -> Non
     output = buffer.getvalue()
     assert "local auth: auth_token=chrome" in output
     assert "bookmarks: ready" in output
+    assert "tweets: ready" in output
 
 
 def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
@@ -214,6 +256,53 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
         "limit": None,
     }
     assert "bookmarks: 2 pages, 3 tweets, empty" in buffer.getvalue()
+
+
+def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_collection(
+        collection,
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        forwarded.update(
+            {
+                "collection": collection,
+                "full": full,
+                "backfill": backfill,
+                "article_backfill": article_backfill,
+                "limit": limit,
+            }
+        )
+        return SimpleNamespace(pages_fetched=2, tweets_seen=3, stop_reason="empty")
+
+    monkeypatch.setattr(cli, "sync_collection", fake_sync_collection)
+
+    cli.sync_tweets(article_backfill=True)
+
+    assert forwarded == {
+        "collection": "tweets",
+        "full": False,
+        "backfill": False,
+        "article_backfill": True,
+        "limit": None,
+    }
+    assert "tweets: 2 pages, 3 tweets, empty" in buffer.getvalue()
 
 
 def test_media_download_reports_runner_result(paths, monkeypatch) -> None:

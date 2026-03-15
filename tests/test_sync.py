@@ -15,6 +15,7 @@ from tests.conftest import (
     make_bookmarks_response,
     make_likes_response,
     make_tweet_result,
+    make_user_tweets_response,
 )
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
@@ -32,7 +33,13 @@ def _op_and_variables(request: httpx.Request) -> tuple[str, dict[str, object]]:
 
 
 def _save_query_ids(paths) -> None:
-    QueryIdStore(paths).save({"Bookmarks": "qid-bookmarks", "Likes": "qid-likes"})
+    QueryIdStore(paths).save(
+        {
+            "Bookmarks": "qid-bookmarks",
+            "Likes": "qid-likes",
+            "UserTweets": "qid-user-tweets",
+        }
+    )
 
 
 def _console() -> Console:
@@ -179,6 +186,126 @@ async def test_sync_collection_end_to_end_and_resume(paths, config: AppConfig, a
         assert counts["tweets"] == 4
         assert counts["collections"] == 4
         state = store.get_sync_state("bookmark")
+        assert state.backfill_incomplete is False
+        assert state.last_head_tweet_id == "new"
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_sync_user_tweets_end_to_end_and_resume(
+    paths, config: AppConfig, auth_bundle
+) -> None:
+    _save_query_ids(paths)
+    seen: list[tuple[str, str | None, int]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        seen.append((operation, cursor if isinstance(cursor, str) else None, count))
+
+        if count == 1:
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["10"], cursor="probe-cursor"),
+                request=request,
+            )
+        if cursor is None:
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["10"], cursor="c1"),
+                request=request,
+            )
+        if cursor == "c1":
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["11"], cursor="c2"),
+                request=request,
+            )
+        if cursor == "c2":
+            return httpx.Response(200, json=make_user_tweets_response(["12"]), request=request)
+        raise AssertionError(f"unexpected request cursor {cursor}")
+
+    first = await sync_collection(
+        "tweets",
+        full=False,
+        limit=1,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"UserTweets": "qid-user-tweets"},
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+    assert first.pages_fetched == 1
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        state = store.get_sync_state("tweet")
+        assert state.backfill_incomplete is True
+        assert state.backfill_cursor == "c1"
+    finally:
+        store.close()
+
+    seen.clear()
+
+    async def second_handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        seen.append((operation, cursor if isinstance(cursor, str) else None, count))
+        if count == 1:
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["new"], cursor="probe-cursor"),
+                request=request,
+            )
+        if cursor is None:
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["new", "10"], cursor="ignored"),
+                request=request,
+            )
+        if cursor == "c1":
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["11"], cursor="c2"),
+                request=request,
+            )
+        if cursor == "c2":
+            return httpx.Response(200, json=make_user_tweets_response(["12"]), request=request)
+        raise AssertionError(f"unexpected request cursor {cursor}")
+
+    second = await sync_collection(
+        "tweets",
+        full=False,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"UserTweets": "qid-user-tweets"},
+        transport=httpx.MockTransport(second_handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+
+    assert second.pages_fetched == 3
+    assert [item for item in seen if item[2] == 20][:2] == [
+        ("UserTweets", None, 20),
+        ("UserTweets", "c1", 20),
+    ]
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        counts = store.counts()
+        assert counts["raw_captures"] == 4
+        assert counts["tweets"] == 4
+        assert counts["collections"] == 4
+        state = store.get_sync_state("tweet")
         assert state.backfill_incomplete is False
         assert state.last_head_tweet_id == "new"
     finally:
@@ -393,6 +520,82 @@ async def test_duplicate_detection_stops_sync(paths, config: AppConfig, auth_bun
         paths=paths,
         auth_bundle=auth_bundle,
         query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+    assert result.stop_reason == "duplicate"
+    assert result.pages_fetched == 1
+    assert pages_requested == [None]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_detection_stops_user_tweets_sync(
+    paths, config: AppConfig, auth_bundle
+) -> None:
+    _save_query_ids(paths)
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.persist_page(
+        operation="UserTweets",
+        collection_type="tweet",
+        cursor_in=None,
+        cursor_out="c1",
+        http_status=200,
+        raw_json={"seed": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id="10",
+                text="already stored",
+                author_id="a1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="10",
+                raw_json={"tweet": "10"},
+            ),
+            TimelineTweet(
+                tweet_id="11",
+                text="also stored",
+                author_id="a1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="9",
+                raw_json={"tweet": "11"},
+            ),
+        ],
+        last_head_tweet_id="10",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.close()
+
+    pages_requested: list[str | None] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(200, json=make_user_tweets_response(["10"]), request=request)
+        pages_requested.append(cursor if isinstance(cursor, str) else None)
+        if cursor is None:
+            return httpx.Response(
+                200,
+                json=make_user_tweets_response(["10", "11"], cursor="c1"),
+                request=request,
+            )
+        raise AssertionError(f"should have stopped before cursor {cursor} for {operation}")
+
+    result = await sync_collection(
+        "tweets",
+        full=False,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"UserTweets": "qid-user-tweets"},
         transport=httpx.MockTransport(handler),
         console=_console(),
         sleep=lambda _: asyncio.sleep(0),

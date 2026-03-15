@@ -24,11 +24,13 @@ def test_extract_query_ids_supports_multiple_patterns() -> None:
     snippet = """
     queryId:"abc1234567890123456789",operationName:"Bookmarks"
     {"queryId":"def1234567890123456789","operationName":"Likes"}
+    {"queryId":"jkl1234567890123456789","operationName":"UserTweets"}
     operationName:"TweetDetail",queryId:"ghi1234567890123456789"
     """
     extracted = extract_query_ids(snippet)
     assert extracted["Bookmarks"] == "abc1234567890123456789"
     assert extracted["Likes"] == "def1234567890123456789"
+    assert extracted["UserTweets"] == "jkl1234567890123456789"
     assert extracted["TweetDetail"] == "ghi1234567890123456789"
 
 
@@ -59,3 +61,4 @@ def test_query_id_store_freshness_and_fallback(paths) -> None:
     )
     assert not store.is_fresh(stale)
     assert store.get("TweetDetail") is not None
+    assert store.get("UserTweets") is not None

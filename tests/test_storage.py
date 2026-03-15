@@ -317,6 +317,56 @@ def test_persist_page_extracts_secondary_objects_once_across_collections(paths) 
     store.close()
 
 
+def test_persist_page_extracts_secondary_objects_once_for_authored_tweets(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    tweet = _complex_tweet()
+    store.persist_page(
+        operation="UserTweets",
+        collection_type="tweet",
+        cursor_in=None,
+        cursor_out="cursor-1",
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[tweet],
+        last_head_tweet_id=tweet.tweet_id,
+        backfill_cursor="cursor-1",
+        backfill_incomplete=True,
+    )
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[tweet],
+        last_head_tweet_id=tweet.tweet_id,
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    counts = store.counts()
+    assert counts == _counts(
+        raw_captures=2,
+        tweets=2,
+        collections=2,
+        tweet_objects=2,
+        tweet_relations=1,
+        media=3,
+        urls=2,
+        url_refs=2,
+        articles=1,
+        sync_state=2,
+    )
+
+    exported = store.export_rows("tweet")
+    assert [row["tweet_id"] for row in exported] == [tweet.tweet_id]
+    assert exported[0]["collection"]["type"] == "tweet"
+    store.close()
+
+
 def test_rehydrate_from_raw_json_rebuilds_secondary_rows(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

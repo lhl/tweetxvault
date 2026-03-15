@@ -17,6 +17,7 @@ from tweetxvault.client.features import (
     build_field_toggles,
     build_likes_features,
     build_tweet_detail_features,
+    build_user_tweets_features,
 )
 from tweetxvault.config import API_BASE_URL, SyncConfig
 from tweetxvault.extractor import extract_author_fields, extract_canonical_text, unwrap_tweet_result
@@ -78,6 +79,23 @@ def build_likes_url(
         variables["cursor"] = cursor
     params = _timeline_params(variables, features=build_likes_features())
     return f"{API_BASE_URL}/{query_id}/Likes?{params}"
+
+
+def build_user_tweets_url(
+    query_id: str, user_id: str, cursor: str | None = None, *, count: int = 20
+) -> str:
+    variables: dict[str, Any] = {
+        "count": count,
+        "includePromotedContent": True,
+        "userId": user_id,
+        "withQuickPromoteEligibilityTweetFields": True,
+        "withVoice": True,
+        "withV2Timeline": True,
+    }
+    if cursor:
+        variables["cursor"] = cursor
+    params = _timeline_params(variables, features=build_user_tweets_features())
+    return f"{API_BASE_URL}/{query_id}/UserTweets?{params}"
 
 
 def build_tweet_detail_url(query_id: str, tweet_id: str) -> str:
@@ -186,7 +204,7 @@ def parse_timeline_response(
                 seen_ids.add(tweet.tweet_id)
                 tweets.append(tweet)
 
-    if operation not in {"Bookmarks", "Likes"}:
+    if operation not in {"Bookmarks", "Likes", "UserTweets"}:
         raise ValueError(f"Unsupported timeline operation: {operation}")
     return tweets, bottom_cursor
 

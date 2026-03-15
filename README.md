@@ -1,6 +1,6 @@
 # tweetxvault
 
-A Python CLI tool for archiving your Twitter/X bookmarks and likes into a local [LanceDB](https://lancedb.github.io/lancedb/) database. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
+A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tweets into a local [LanceDB](https://lancedb.github.io/lancedb/) database. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
 
 <img src="docs/screenshot.png" alt="tweetxvault view all" width="800">
 
@@ -47,7 +47,7 @@ tweetxvault needs your `auth_token` and `ct0` session cookies from Twitter/X. Th
 ```bash
 export TWEETXVAULT_AUTH_TOKEN="your_auth_token"
 export TWEETXVAULT_CT0="your_ct0_token"
-export TWEETXVAULT_USER_ID="your_numeric_user_id"  # required for likes sync
+export TWEETXVAULT_USER_ID="your_numeric_user_id"  # required for likes and own-tweet sync
 ```
 
 ### 2. Config file
@@ -106,9 +106,10 @@ This probes the API without writing any data and reports credential status and e
 # Sync everything (incremental by default)
 uv run tweetxvault sync all
 
-# Sync just bookmarks or likes
+# Sync just bookmarks, likes, or your own authored tweets
 uv run tweetxvault sync bookmarks
 uv run tweetxvault sync likes
+uv run tweetxvault sync tweets
 
 # Force a specific browser profile for this run
 uv run tweetxvault sync all --browser chrome --profile "Profile 2"
@@ -128,6 +129,7 @@ uv run tweetxvault sync all --limit 5
 
 If the `[embed]` extra is installed, new tweets are automatically embedded after each sync.
 `--article-backfill` updates stored `raw_json` and normalized secondary rows inline, so it does not require a follow-up `tweetxvault rehydrate`.
+`tweetxvault sync all` still covers bookmarks + likes only; authored tweets stay opt-in via `tweetxvault sync tweets`.
 
 ### Viewing your archive
 
@@ -137,6 +139,9 @@ uv run tweetxvault view bookmarks
 
 # View likes, oldest first
 uv run tweetxvault view likes --sort oldest
+
+# View your authored tweets
+uv run tweetxvault view tweets
 
 # View all archived tweets
 uv run tweetxvault view all --limit 50
@@ -183,6 +188,7 @@ uv run tweetxvault export json
 
 # Export a specific collection
 uv run tweetxvault export json --collection bookmarks
+uv run tweetxvault export json --collection tweets
 
 # Export to a specific path
 uv run tweetxvault export json --out ~/exports/my-bookmarks.json

@@ -11,12 +11,15 @@ COLLECTION_ALIASES = {
     "bookmarks": "bookmark",
     "like": "like",
     "likes": "like",
+    "tweet": "tweet",
+    "tweets": "tweet",
 }
 
 COLLECTION_LABELS = {
     "all": "all",
     "bookmark": "bookmarks",
     "like": "likes",
+    "tweet": "tweets",
 }
 
 

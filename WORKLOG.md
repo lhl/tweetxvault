@@ -2,6 +2,17 @@
 
 ## 2026-03-16
 
+- Landed Task 14 own-tweet capture:
+  - Added live `UserTweets` support with a fresh fallback query ID reverified from the public X web bundle on 2026-03-16 (`Y59DTUMfcKmUAATiT2SlTw`)
+  - Added `tweetxvault sync tweets` and `tweetxvault view tweets`; generic export commands now accept `--collection tweets`
+  - Reused the existing LanceDB membership rows (`collection_type='tweet'`), duplicate detection, rehydrate, article backfill, media download, URL unfurl, and article refresh paths for authored tweets
+  - Kept `tweetxvault sync all` limited to bookmarks + likes for now so authored-tweet capture stays explicit and does not surprise users with larger archive growth
+  - Added regression coverage for `UserTweets` URL building/parsing, authored-tweet sync pagination + duplicate detection, CLI view/export/sync support, and secondary-object deduplication when the same authored tweet later appears in another collection
+  - Validation:
+    - `uv run pytest tests/test_client.py tests/test_query_ids.py tests/test_cli.py tests/test_sync.py tests/test_storage.py`
+    - `uv run ruff check tweetxvault/auth/cookies.py tweetxvault/client/features.py tweetxvault/client/timelines.py tweetxvault/cli.py tweetxvault/export/common.py tweetxvault/query_ids/constants.py tweetxvault/sync.py tests/conftest.py tests/test_client.py tests/test_query_ids.py tests/test_cli.py tests/test_sync.py tests/test_storage.py`
+    - `uv run ruff format --check tweetxvault/auth/cookies.py tweetxvault/client/features.py tweetxvault/client/timelines.py tweetxvault/cli.py tweetxvault/export/common.py tweetxvault/query_ids/constants.py tweetxvault/sync.py tests/conftest.py tests/test_client.py tests/test_query_ids.py tests/test_cli.py tests/test_sync.py tests/test_storage.py`
+
 - Fixed a LanceDB commit-conflict path exposed by `sync --article-backfill`:
   - Root cause: CLI overwrite-style archive operations (`optimize`, `rehydrate`, `embed`) and auto-optimize retries from read commands could call `store.optimize()` without taking the shared archive lock, which could race with `sync` merge writes and trigger `Commit conflict ... concurrent transaction Overwrite`
   - Added shared lock coverage in `tweetxvault/cli.py` for `optimize`, `rehydrate`, `embed`, and auto-optimize fallbacks in `view` / `export` / `search`

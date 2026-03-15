@@ -59,6 +59,11 @@ class ResolvedAuthBundle(BaseModel):
                 "Likes sync requires a numeric user_id. Set TWEETXVAULT_USER_ID or allow "
                 "browser cookie extraction to read the twid cookie."
             )
+        if collection == "tweets" and not self.user_id:
+            raise AuthResolutionError(
+                "Own-tweet sync requires a numeric user_id. Set TWEETXVAULT_USER_ID or allow "
+                "browser cookie extraction to read the twid cookie."
+            )
 
 
 def list_available_browser_candidates(
