@@ -289,6 +289,7 @@ def optimize_archive() -> None:
     store, _ = _open_store_for_read(console)
     try:
         before = store.version_count()
+        console.print(f"compacting {before} versions...")
         store.optimize()
         after = store.version_count()
         console.print(f"optimized archive: {before} versions -> {after} versions")
@@ -299,11 +300,19 @@ def optimize_archive() -> None:
 @app.command("rehydrate")
 def rehydrate_archive() -> None:
     """Re-extract author info from stored raw_json for tweets missing usernames."""
+    from tqdm import tqdm
+
     console = _configure_logging()
     store, _ = _open_store_for_read(console)
     try:
-        count = _with_auto_optimize(store, console, lambda s: s.rehydrate_authors())
+        total = store.table.count_rows("record_type = 'tweet' AND author_username IS NULL")
+        if total == 0:
+            console.print("all tweets already have author data")
+            return
+        with tqdm(total=total, desc="rehydrating", unit="tweets") as pbar:
+            count = store.rehydrate_authors(progress=pbar.update)
         if count:
+            console.print("compacting archive...")
             store.optimize()
         console.print(f"rehydrated author data for {count} tweets")
     finally:

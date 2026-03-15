@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -423,7 +424,7 @@ class ArchiveStore:
             "sync_state": self.table.count_rows("record_type = 'sync_state'"),
         }
 
-    def rehydrate_authors(self) -> int:
+    def rehydrate_authors(self, *, progress: Callable[[int], None] | None = None) -> int:
         """Re-extract author fields from raw_json for tweets missing usernames."""
         rows = (
             self.table.search()
@@ -457,6 +458,8 @@ class ArchiveStore:
                 values_sql=updates,
             )
             updated += 1
+            if progress:
+                progress(1)
         return updated
 
     def version_count(self) -> int:

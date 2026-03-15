@@ -15,6 +15,7 @@ dependencies = [
   "pydantic>=2,<3",
   "pyarrow>=20,<23",
   "rich>=13,<14",
+  "tqdm>=4.66,<5",
   "typer>=0.12,<1",
 ]
 
