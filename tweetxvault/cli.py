@@ -60,11 +60,23 @@ def _open_store_for_read(console: Console):
     return store, paths
 
 
+def _with_auto_optimize(store, console: Console, fn):
+    """Run fn(store), auto-optimizing and retrying once on too-many-open-files."""
+    try:
+        return fn(store)
+    except (RuntimeError, OSError) as exc:
+        if "Too many open files" not in str(exc):
+            raise
+        console.print("archive has too many versions, optimizing...")
+        store.optimize()
+        return fn(store)
+
+
 def _render_archive_view(console: Console, *, collection: str, limit: int) -> None:
     normalized = _normalize_collection_or_exit(collection, console)
     store, _ = _open_store_for_read(console)
     try:
-        rows = store.export_rows(normalized)
+        rows = _with_auto_optimize(store, console, lambda s: s.export_rows(normalized))
     finally:
         store.close()
 
@@ -233,7 +245,11 @@ def export_json(
             normalized,
             extension="json",
         )
-        export_json_archive(store, collection=normalized, out_path=out_path)
+        _with_auto_optimize(
+            store,
+            console,
+            lambda s: export_json_archive(s, collection=normalized, out_path=out_path),
+        )
     finally:
         store.close()
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
@@ -253,7 +269,11 @@ def export_html(
             normalized,
             extension="html",
         )
-        export_html_archive(store, collection=normalized, out_path=out_path)
+        _with_auto_optimize(
+            store,
+            console,
+            lambda s: export_html_archive(s, collection=normalized, out_path=out_path),
+        )
     finally:
         store.close()
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
