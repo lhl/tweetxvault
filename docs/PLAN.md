@@ -7,6 +7,7 @@ Build a Python tool for regular, unattended export of Twitter/X bookmarks and li
 - incremental sync with checkpoint/resume
 - local search (full-text + semantic) and eventually hybrid search
 - first-class media archival (images + video + GIF) as a later phase
+- a future offline ingest path for downloaded X account archives
 
 Implementation note (2026-03-15):
 - Task 0 ruled out embedded SeekDB for the MVP on runtime/footprint grounds.
@@ -35,6 +36,7 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 - HTML export UI
 - Extended collections (tweets/reposts/replies/feed) beyond likes/bookmarks
 - Multi-account support
+- Archive-import parsing beyond a requirements stub (we need a fresh real archive sample first)
 
 ## Why Build From Scratch
 
@@ -201,6 +203,7 @@ Recommended additional operations to include in query-id targets even if we don�
   - If an API call returns `404`, treat it as “stale query id”, refresh once, retry.
   - Fail only when neither cache nor fallback can satisfy the requested operation, or when the post-refresh retry still returns `404`.
   - Provide `tweetxvault auth refresh-ids` to force refresh.
+- Verification note (2026-03-15): the public anonymous web bundle still exposed live `Likes`, `TweetDetail`, and `UserArticlesTweets` query IDs plus article field toggles, but not `Bookmarks` / `BookmarkFolderTimeline`. Keep fallback IDs for auth-only operations even if anonymous bundle scraping misses them.
 
 ### Feature Flags
 
@@ -367,6 +370,127 @@ The backend migration also closed the main storage/sync cleanup items identified
 - Prefer LanceDB hybrid search (FTS + vector + metadata filters, with reranking as needed).
 - Lock the embedding model during the Phase 3 spike; the backend no longer depends on a database-provided built-in model.
 
+## Content Expansion (Post-MVP)
+
+The current archive preserves raw page captures and collection-scoped tweet rows, which is enough to avoid data loss. The next layer is to normalize secondary objects so exports, search, and later download jobs can reason about media, attached tweets, article bodies, and URLs without reparsing every raw payload.
+
+### Capture Principles
+
+- Keep raw GraphQL payloads as the source of truth. If extraction is incomplete or Twitter changes shape again, we can rehydrate from stored `raw_json`.
+- Preserve the current collection-scoped `tweet` rows for duplicate detection, ordering, and export compatibility.
+- Add global secondary-object rows keyed by stable tweet/media/url identifiers so the same tweet bookmarked and liked does not duplicate downstream media/unfurl metadata.
+- Keep sync page persistence page-atomic. Media downloads, URL fetches, and snapshots should run as follow-on jobs, not inline in the GraphQL request transaction.
+
+### Proposed Extended Archive Model
+
+Extend the single-table LanceDB archive with additional `record_type` values:
+
+- `tweet_object`
+  - `row_key = tweet_object:{tweet_id}`
+  - Canonical snapshot for the underlying tweet object across collections.
+  - Stores the latest raw tweet object plus normalized text fields that are global to the tweet (`text`, `created_at`, author fields, later `conversation_id`, `lang`, note-tweet text if present).
+  - Consumers should prefer this row over collection-scoped `tweet.raw_json` once it exists, but the existing `tweet` row remains the membership/projection layer.
+
+- `tweet_relation`
+  - `row_key = tweet_relation:{source_tweet_id}:{relation_type}:{target_tweet_id}`
+  - `relation_type` initially: `retweet_of`, `quote_of`.
+  - Lets us archive attached tweets without pretending they are independent bookmark/like memberships.
+
+- `media`
+  - `row_key = media:{owner_tweet_id}:{media_key_or_index}`
+  - Holds media metadata extracted from the tweet object or attached tweet object:
+    - `media_type` (`photo`, `video`, `animated_gif`)
+    - image/video URLs, poster URL, width/height, duration, variant list
+    - download state (`pending`, `done`, `failed`), local path, SHA-256, byte size, content type
+
+- `url`
+  - `row_key = url:{canonical_url_hash}`
+  - Global canonical URL metadata:
+    - canonical URL, final expanded URL, host/domain
+    - title/description/site-name when known
+    - snapshot status for future ArchiveBox integration
+
+- `url_ref`
+  - `row_key = url_ref:{tweet_id}:{position}`
+  - Per-tweet URL occurrence:
+    - original `t.co` URL, display URL, expanded/unwound URL
+    - resolved canonical URL hash pointing at the global `url` row
+
+- `article`
+  - `row_key = article:{source_tweet_id}` until a stable article-level ID is confirmed
+  - Stores article-specific content when available:
+    - title, summary, plain text, rich-content JSON, article URL/permalink
+    - extraction status (`body_present`, `preview_only`, `shape_unverified`)
+
+### Articles
+
+Current verification from the public X web client on 2026-03-15:
+
+- `UserArticlesTweets` is still present as a GraphQL operation.
+- Article-related field toggles still exist in the web client: `withArticleRichContentState`, `withArticlePlainText`, `withArticleSummaryText`.
+- Article-related features still exist in the web client: `articles_preview_enabled`, `responsive_web_twitter_article_tweet_consumption_enabled`.
+
+Design implications:
+
+- Treat articles as first-class tweet-adjacent objects, not just another expanded URL.
+- Add an article-specific parser path for:
+  - article-bearing tweet payloads returned by bookmarks/likes when article field toggles are enabled
+  - dedicated article timelines fetched through `UserArticlesTweets`
+- Until we inspect real authenticated article payloads, key `article` rows by source tweet id and preserve the full raw tweet/article block for later migration.
+- If `UserArticlesTweets` only returns previews, keep article pointer metadata and defer full-body capture to a targeted follow-up fetch path or Playwright-only article fallback.
+
+### Attachments, Media, and Attached Tweets
+
+Parse and persist the following from the tweet object and one level of attached tweet objects:
+
+- `legacy.extended_entities.media`
+- `video_info` variants and poster/thumb URLs
+- `note_tweet` long-text payloads
+- `retweeted_status_result`
+- `quoted_status_result`
+
+Rules:
+
+- A bookmarked/liked retweet remains a membership on the wrapper tweet. The original tweet becomes a related `tweet_object` linked by `tweet_relation`.
+- Download policy should be staged:
+  - Phase 1: extract metadata only
+  - Phase 2: download photo originals
+  - Phase 3: download best video/GIF variant plus poster image
+- Media found on quoted/retweeted tweets should be attributable to the attached tweet object, not flattened onto the wrapper tweet without a relation.
+
+### URL Unfurls and Snapshots
+
+Unfurling should use GraphQL payloads first and network fetches second.
+
+- Extract URL candidates from `legacy.entities.urls`, card/unwound URL fields, and other explicit expanded-URL fields present in the tweet object.
+- Store both:
+  - per-tweet URL mentions (`url_ref`)
+  - canonical URL metadata (`url`)
+- Canonicalization should normalize host casing, strip default ports, and remove obvious tracking parameters (`utm_*`, etc.) while preserving semantically meaningful query strings.
+- Future follow-on jobs can:
+  - fetch page metadata when GraphQL does not already provide it
+  - enqueue/snapshot canonical URLs in ArchiveBox or an equivalent archiver
+  - index URL/domain/title fields for search and filtering
+
+### Archive Import Requirements
+
+We want a second ingestion path for downloaded X account archives, but we do not yet have a fresh archive fixture to lock the exact file mapping. Stub the requirements now:
+
+- Reserve a future CLI surface:
+  - `tweetxvault import x-archive <zip-or-dir>`
+- Treat archive import as an ingestion path parallel to live GraphQL sync, not as a one-off converter.
+- Imported rows must preserve provenance (`live_graphql` vs `x_archive`) and be idempotent/resumable.
+- Archive import should map into the same `tweet_object`, collection-scoped `tweet`, `media`, `url`, and `article` rows so search/export code does not care where data came from.
+- Never delete or downgrade richer live-captured data when importing thinner archive data later.
+- Record one manifest row per imported archive (path/hash, imported-at, warnings, source export timestamp) so repeated imports can short-circuit safely.
+
+### Parser Boundary
+
+Do not add a generic fetcher abstraction just to support archive import. The current sync loop can stay GraphQL-specific. Instead:
+
+- keep one parser/extractor layer that turns a raw tweet object into normalized `tweet_object` / relation / media / URL / article records
+- let both live sync and future archive import call that extractor layer
+
 ## CLI Design
 
 Primary commands:
@@ -386,6 +510,9 @@ tweetxvault export html               # export a local HTML viewer
 
 tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
+
+# reserved for a later ingest path
+tweetxvault import x-archive ARCHIVE  # zip or extracted directory
 ```
 
 `--limit N` limits persisted sync pagination to N pages per collection (useful for testing or cautious first runs).
@@ -427,7 +554,10 @@ Reserved for future (not implemented in MVP):
 - [x] Terminal view command
 - [x] HTML export viewer
 - [ ] Export: CSV / Markdown
-- [ ] Media metadata extraction to DB (URLs, types, dimensions, variants)
+- [ ] Add canonical `tweet_object` rows alongside collection-scoped membership rows
+- [ ] Extract media metadata to DB (types, dimensions, variants, note-tweet text)
+- [ ] Extract attached tweet relations (retweets, quotes)
+- [ ] Extract URL metadata / per-tweet URL refs
 - [ ] Media download (photos first; video later)
 
 ### Phase 3: Search + Embeddings
@@ -436,21 +566,27 @@ Reserved for future (not implemented in MVP):
 - [ ] Semantic search CLI
 - [ ] Hybrid search (LanceDB FTS + vector + metadata)
 - [ ] Similar tweet lookup
+- [ ] Search/filter by URL/domain/media/article metadata
 
 ### Phase 4: Extended Collections + Polish
 
 - [ ] Bookmark folders
 - [ ] Thread expansion (TweetDetail)
-- [ ] Articles export (`UserArticlesTweets`)
+- [ ] Articles capture / export (`UserArticlesTweets` + article-bearing tweet payloads)
+- [ ] URL snapshot queue / ArchiveBox integration
 - [ ] Following/followers lists
 - [x] HTML export viewer
+- [ ] X archive import (`tweetxvault import x-archive ...`)
 - [ ] attention-export integration
 
 ## Open Questions (Remaining)
 
 1. **Embedding runtime**: which local embedding model/runtime do we standardize on for Phase 3 (quality, footprint, licensing)?
 2. **Search table shape**: do we keep embeddings/indexes directly on `tweet` rows, or split out a derived LanceDB search table later if indexing mixed record types becomes awkward?
-3. **Articles endpoint shape**: Does `UserArticlesTweets` include full body? If not, decide whether we will implement a targeted Playwright scrape for articles only.
+3. **Canonical tweet layer migration**: do we keep long-term duplication between collection-scoped `tweet` rows and global `tweet_object` rows, or eventually slim the membership rows down to just collection/order state once downstream consumers move over?
+4. **Articles endpoint shape**: Does `UserArticlesTweets` include the full article body once article field toggles are enabled on an authenticated request? If not, decide whether we implement a targeted article fetch or a Playwright-only article fallback.
+5. **URL snapshot runner**: do we want inline CLI commands (`tweetxvault unfurl`, `tweetxvault snapshot`) or a small job queue table plus worker-style commands?
+6. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
 
 ## Dependencies (Planned)
 

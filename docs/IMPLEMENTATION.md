@@ -13,7 +13,8 @@ Definition of done: passes `uv run ruff format --check`, `uv run ruff check`, an
 
 Planning note (2026-03-15):
 - The sections below describe the completed SQLite-backed MVP.
-- The active next milestone is replacing that backend with LanceDB before real archive data is loaded.
+- The SQLite -> LanceDB migration landed on 2026-03-15.
+- The active next milestone is capture expansion: canonical tweet objects, media/attached-tweet extraction, URL unfurls, article support, and a stubbed X-archive import path.
 
 ---
 
@@ -232,3 +233,68 @@ Completed on 2026-03-15. This replaced the temporary SQLite fallback before any 
   - `docs/ANALYSIS-db.md`
   - `docs/README.md`
   - `WORKLOG.md`
+
+## Task 11: Secondary Object Extraction Foundation
+
+This is the next real implementation milestone after the LanceDB migration. The goal is to stop treating each collection-scoped tweet row as the only normalized object in the system.
+
+- [ ] Extend the archive schema in `tweetxvault/storage/backend.py` with new `record_type` values:
+  - `tweet_object`
+  - `tweet_relation`
+  - `media`
+  - `url`
+  - `url_ref`
+  - `article`
+- [ ] Add a parser/extractor layer that takes a raw tweet object and emits:
+  - canonical tweet-object fields
+  - attached-tweet relations (`retweet_of`, `quote_of`)
+  - media metadata (`extended_entities`, `video_info`)
+  - URL refs / canonical URL candidates
+  - article payloads when present
+- [ ] Keep collection-scoped `tweet` rows as the duplicate-detection and export-ordering layer during the transition.
+- [ ] Persist the new rows in the same page-sized LanceDB batch as the current raw capture + membership rows.
+- [ ] Extend rehydrate support so new normalized rows can be rebuilt from stored `raw_json` without refetching.
+- [ ] Tests:
+  - quote/retweet relation extraction
+  - media extraction for photos/videos/GIFs
+  - URL extraction from entity/card payloads
+  - one-page atomicity across the expanded record set
+  - same tweet appearing in bookmarks and likes does not duplicate global secondary objects
+
+## Task 12: Media Downloads + URL Unfurls
+
+- [ ] Add per-media download state fields and local-path metadata.
+- [ ] Implement photo download first:
+  - deterministic on-disk layout under the XDG data dir
+  - SHA-256 + byte-size verification
+  - idempotent retries
+- [ ] Implement video/GIF download later:
+  - variant selection policy (prefer highest-bitrate MP4 when present)
+  - poster image capture
+- [ ] Implement URL canonicalization and unfurl persistence:
+  - preserve original `t.co` URL
+  - store expanded/final/canonical URL values
+  - store metadata already present in GraphQL payloads before doing network fetches
+- [ ] Add a follow-on command or job-runner surface for remote unfurl fetches / snapshots without coupling them to the sync transaction.
+- [ ] Leave ArchiveBox integration as optional queue/runner plumbing until the metadata model is stable.
+
+## Task 13: Articles
+
+- [ ] Add an article probe fixture once we capture a real authenticated `UserArticlesTweets` or article-bearing timeline response.
+- [ ] Enable article field toggles on a targeted probe path and verify whether full bodies are returned.
+- [ ] Persist article rows keyed by source tweet id until a stable article-specific id is confirmed.
+- [ ] Export article metadata/body in JSON and HTML once extraction is stable.
+- [ ] Decide whether article-only fallback fetching is needed if GraphQL returns preview-only payloads.
+
+## Task 14: X Archive Import Stub
+
+We do not have a fresh archive fixture yet, so this task starts as interface + provenance planning only.
+
+- [ ] Reserve CLI shape:
+  - `tweetxvault import x-archive <zip-or-dir>`
+- [ ] Add an import manifest record type or equivalent metadata row so archive imports are resumable/idempotent.
+- [ ] Define source-provenance semantics (`live_graphql` vs `x_archive`) for normalized rows.
+- [ ] Once a real archive is available:
+  - identify the bookmark/like/media files
+  - map them into the existing extractor layer instead of building a second data model
+  - add regression fixtures/tests for repeated imports and live+archive merges

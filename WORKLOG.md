@@ -2,6 +2,15 @@
 
 ## 2026-03-15
 
+- Scoped the next capture-expansion milestone in `docs/PLAN.md` / `docs/IMPLEMENTATION.md`:
+  - Added a post-MVP design for canonical `tweet_object` rows plus `tweet_relation`, `media`, `url`, `url_ref`, and `article` record types on the existing single-table LanceDB archive
+  - Split future work into concrete follow-on tasks for secondary-object extraction, media downloads, URL unfurls/snapshots, article capture, and X-archive import
+  - Reserved a future `tweetxvault import x-archive <zip-or-dir>` ingest path with provenance/idempotency requirements
+  - Verified current public X web-bundle signals before locking the spec:
+    - `curl -L -sS --max-time 20 https://x.com/?lang=en`
+    - `curl -L -sS --max-time 20 https://abs.twimg.com/responsive-web/client-web/main.8575d0ba.js`
+    - Result: anonymous bundle still exposed `Likes`, `TweetDetail`, `UserArticlesTweets`, plus article field toggles/features (`withArticleRichContentState`, `withArticlePlainText`, `withArticleSummaryText`, `articles_preview_enabled`)
+
 - Scrubbed a user-specific Firefox profile identifier from the repo before publication:
   - Replaced concrete Firefox profile IDs with generic `profile.*` placeholders in historical planning docs and Firefox profile test fixtures
   - Planned a `git filter-repo` rewrite so the old identifiers are removed from local git history before first public push
