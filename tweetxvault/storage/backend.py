@@ -507,7 +507,9 @@ class ArchiveStore:
         """Create FTS index on text column if it doesn't exist."""
         indices = self.table.list_indices()
         fts_exists = any(
-            idx.get("index_type") == "FTS" or idx.get("columns") == ["text"] for idx in indices
+            getattr(idx, "index_type", None) == "FTS"
+            or getattr(idx, "columns", None) == ["text"]
+            for idx in indices
         )
         if not fts_exists:
             self.table.create_fts_index("text", replace=True)
@@ -537,8 +539,9 @@ class ArchiveStore:
         """Hybrid FTS + vector search with reranking."""
         self.ensure_fts_index()
         return (
-            self.table.search(query, query_type="hybrid")
+            self.table.search(query_type="hybrid")
             .vector(vector)
+            .text(query)
             .where("record_type = 'tweet'")
             .limit(limit)
             .to_list()
