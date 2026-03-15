@@ -109,44 +109,67 @@ def _discover_profiles_ini(env: Mapping[str, str]) -> Path:
     return Path(env.get("TWEETXVAULT_FIREFOX_PROFILES_INI", FIREFOX_PROFILES_INI)).expanduser()
 
 
-def discover_default_profile(
-    explicit_path: str | None = None,
-    env: Mapping[str, str] | None = None,
-) -> Path:
+def list_firefox_profiles(env: Mapping[str, str] | None = None) -> list[FirefoxProfile]:
     env = env or os.environ
-    if explicit_path:
-        path = Path(explicit_path).expanduser()
-        if not path.exists():
-            raise AuthResolutionError(f"Configured Firefox profile does not exist: {path}")
-        return path
-
     profiles_ini = _discover_profiles_ini(env)
     if not profiles_ini.exists():
         raise AuthResolutionError(
             "Firefox profiles.ini not found; set cookies via env/config instead."
         )
-
     profiles = _load_profiles(profiles_ini)
     if not profiles:
         raise AuthResolutionError("No Firefox profile entries found in profiles.ini.")
+    return sorted(profiles, key=_profile_sort_key)
 
-    matches: list[FirefoxProfile] = []
+
+def _profile_sort_key(profile: FirefoxProfile) -> tuple[int, int, str, str]:
+    return (
+        0 if profile.install_defaults else 1,
+        0 if profile.is_default else 1,
+        profile.name.lower(),
+        str(profile.path).lower(),
+    )
+
+
+def resolve_firefox_profile(
+    explicit_path: str | None = None,
+    explicit_profile: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> FirefoxProfile:
+    env = env or os.environ
+    if explicit_path:
+        path = Path(explicit_path).expanduser()
+        if not path.exists():
+            raise AuthResolutionError(f"Configured Firefox profile does not exist: {path}")
+        return FirefoxProfile(name=path.name, path=path)
+
+    profiles = list_firefox_profiles(env)
+    if explicit_profile:
+        matches = [
+            profile
+            for profile in profiles
+            if profile.name == explicit_profile or profile.path.name == explicit_profile
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise AuthResolutionError(
+                "Multiple Firefox profiles matched that name. Use "
+                "TWEETXVAULT_FIREFOX_PROFILE_PATH / --profile-path instead:\n"
+                f"{_profile_summary(matches)}"
+            )
+        raise AuthResolutionError(
+            f"No Firefox profile matched '{explicit_profile}'. Available profiles:\n"
+            f"{_profile_summary(profiles)}"
+        )
+
     for profile in profiles:
         try:
             bundle = extract_firefox_cookies(profile.path)
         except AuthResolutionError:
             continue
         if bundle.auth_token and bundle.ct0:
-            matches.append(profile)
-
-    if len(matches) == 1:
-        return matches[0].path
-    if len(matches) > 1:
-        raise AuthResolutionError(
-            "Multiple Firefox profiles contain X session cookies. Set "
-            "TWEETXVAULT_FIREFOX_PROFILE_PATH or auth.firefox_profile_path to one of:\n"
-            f"{_profile_summary(matches)}"
-        )
+            return profile
 
     raise AuthResolutionError(
         "Discovered Firefox profiles, but none contained X session cookies. "
@@ -154,6 +177,13 @@ def discover_default_profile(
         "TWEETXVAULT_FIREFOX_PROFILE_PATH / auth.firefox_profile_path explicitly:\n"
         f"{_profile_summary(profiles)}"
     )
+
+
+def discover_default_profile(
+    explicit_path: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    return resolve_firefox_profile(explicit_path=explicit_path, env=env).path
 
 
 def _copy_sqlite_bundle(cookies_db: Path) -> Path:

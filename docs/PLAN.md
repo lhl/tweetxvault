@@ -58,8 +58,8 @@ These are our architectural choices, made to serve tweetxvault's goals (unattend
 - **Query IDs**: Auto-discover query IDs from Twitter web JS bundles with an on-disk TTL cache + fallback static IDs (avoid manual weekly updates).
 - **Rate limiting/backoff**: Exponential backoff and cooldown on repeated `429` (parameters adjustable).
 - **Auth**: Cookie-based session auth (no username/password automation).
-  - MVP: env vars + config file + Firefox cookie extraction (Linux).
-- **Chrome cookie extraction**: Defer until someone actually needs it (it adds keyring/decryption complexity).
+  - Shipped: env vars + config file + Firefox extraction + Chromium-family extraction (Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, Arc).
+  - Auto mode tries browsers in a fixed order and stops after the first valid X session; CLI flags and `auth check --interactive` provide explicit profile selection.
 - **CLI framework**: Typer + Rich (keep it minimal; no sprawling command surface).
 - **Data models**: Pydantic v2 for boundary types (config, parsed tweet records, sync state); raw JSON stored as-is in DB.
 - **Logging**: loguru.
@@ -94,7 +94,8 @@ tweetxvault/
 │   ├── auth/
 │   │   ├── __init__.py
 │   │   ├── firefox.py         # Firefox cookies.sqlite reader (copy-to-temp)
-│   │   └── cookies.py         # Resolution chain (env -> config -> firefox)
+│   │   ├── chromium.py        # Chromium-family extraction + profile discovery
+│   │   └── cookies.py         # Resolution chain (env -> config -> browsers)
 │   ├── query_ids/
 │   │   ├── __init__.py
 │   │   ├── constants.py       # fallback query IDs + target ops
@@ -123,7 +124,7 @@ The MVP sync loop calls the GraphQL client directly — no abstraction layer nee
 ### Data Flow
 
 ```
-cookies (env/config/firefox)
+cookies (env/config/browser extraction)
   -> auth (auth_token + ct0 + twid)
       -> query_ids (cache -> refresh -> fallback)
           -> client (httpx)
@@ -155,7 +156,11 @@ We rely on browser session cookies:
 Cookie resolution chain (in priority order):
 1. **Env vars**: `TWEETXVAULT_AUTH_TOKEN`, `TWEETXVAULT_CT0`, `TWEETXVAULT_USER_ID` (numeric)
 2. **Config file**: `~/.config/tweetxvault/config.toml` (`[auth]` section)
-3. **Firefox extraction**: inspect discovered Firefox profiles, prefer the only profile that actually contains `x.com` cookies, and require an explicit override if multiple viable profiles exist; copy `cookies.sqlite` to temp before reading
+3. **Browser extraction**:
+   - Firefox: inspect discovered Firefox profiles, prefer install-default/default profiles, and copy `cookies.sqlite` to temp before reading
+   - Chromium-family browsers: use `browser-cookie3` for cookie decryption/keyring access across Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, and Arc
+   - Auto mode tries browsers in this order: Firefox -> Chrome -> Chromium -> Brave -> Edge -> Opera -> Opera GX -> Vivaldi -> Arc
+   - Explicit selection is available via config/env (`auth.browser`, `auth.browser_profile`, `auth.browser_profile_path`) and CLI flags (`--browser`, `--profile`, `--profile-path`)
 
 User ID resolution (needed for Likes only):
 - Parsed from `twid` cookie (`u%3D<numeric_id>` → `<numeric_id>`)
@@ -166,6 +171,10 @@ Firefox cookie extraction rules (Linux):
 - Always copy `cookies.sqlite` to a temp file before reading (Firefox often holds WAL locks on the live DB)
 - Open the copied DB in read-only mode (`mode=ro`) via sqlite URI
 - Never log raw cookie values; treat them as secrets
+
+Chromium-family extraction rules:
+- Delegate cookie decryption and OS keyring handling to `browser-cookie3` instead of carrying our own per-OS crypto implementation
+- Keep browser ordering and profile-selection UX inside tweetxvault so `auth check --interactive` and sync flags stay consistent across browsers
 
 Required request headers:
 - `Authorization: Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA` (public web bearer token — same static constant for all users, hardcode it)
@@ -215,7 +224,7 @@ Keep per-operation builders, not a single shared dict. Implementation plan:
 ### Preflight + Validation
 
 Before any sync writes data:
-- Resolve local auth inputs (env → config → Firefox).
+- Resolve local auth inputs (env → config → browser extraction).
 - Resolve query IDs (cache → refresh → fallback).
 - Resolve the current archive owner identity (numeric user id from `twid` / config / env when available).
 - Run a lightweight authenticated probe for each requested collection (`count=1`, no checkpoint updates, no `raw_captures` write) so we distinguish missing credentials from expired sessions, stale query IDs, or feature-flag drift.
@@ -521,14 +530,14 @@ tweetxvault import x-archive ARCHIVE  # zip or extracted directory
 
 On first invocation, tweetxvault:
 1. Auto-creates XDG directories (`~/.config/tweetxvault/`, `~/.local/share/tweetxvault/`, `~/.cache/tweetxvault/`)
-2. Attempts cookie resolution (env vars → config file → Firefox)
-3. If no cookies found: prints clear error with setup instructions (which env vars to set, or ensure Firefox is logged into x.com)
+2. Attempts cookie resolution (env vars → config file → browser extraction)
+3. If no cookies found: prints clear error with setup instructions (which env vars to set, or ensure a supported browser is logged into x.com)
 4. If cookies found: resolves query IDs (first run has no cache, so fetches from JS bundles and falls back to static IDs if refresh fails)
 5. Runs a lightweight API probe for the requested collection(s); on failure, exits with actionable error before any checkpoint or DB writes
 6. Acquires the local process lock so overlapping cron/manual runs cannot race
 7. Auto-creates DB on first write, records archive owner metadata, and begins sync
 
-No `init` command needed — everything auto-creates on demand. Config file is optional; the tool works with just Firefox cookies or env vars. `tweetxvault auth check` uses the same preflight path as `sync`, so the first-run experience is testable before any data is written.
+No `init` command needed — everything auto-creates on demand. Config file is optional; the tool works with browser cookies or env vars. `tweetxvault auth check` uses the same preflight path as `sync`, and `tweetxvault auth check --interactive` gives a manual browser/profile picker before any data is written.
 
 Reserved for future (not implemented in MVP):
 - `tweetxvault sync ... --playwright` (adapter fallback)
@@ -537,7 +546,7 @@ Reserved for future (not implemented in MVP):
 
 ### Phase 1: Core Sync (MVP)
 
-- [ ] Auth extraction (env vars, config file, Firefox)
+- [ ] Auth extraction (env vars, config file, Firefox + Chromium-family browsers)
 - [ ] Query ID auto-discovery + fallback + TTL cache
 - [ ] GraphQL client (httpx async) + per-operation feature flags
 - [ ] Bookmarks sync
@@ -592,6 +601,7 @@ Reserved for future (not implemented in MVP):
 
 ### Runtime
 ```
+browser-cookie3    # Chromium-family cookie extraction + keyring integration
 httpx              # async HTTP client
 lancedb            # embedded archive + search engine
 pyarrow            # LanceDB schemas / table payloads
@@ -611,8 +621,6 @@ mypy               # type checking (optional, can add later)
 
 ### Optional (deferred)
 ```
-cryptography       # Chrome cookie decryption
-secretstorage      # Chrome cookie decryption (Linux keyring)
 sentence-transformers  # future local embedding pipeline
 onnxruntime            # possible lighter local embedding runtime
 playwright         # future fallback adapter

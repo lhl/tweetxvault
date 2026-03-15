@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import resource
 import sys
 from datetime import datetime
@@ -13,8 +14,14 @@ import typer
 from loguru import logger
 from rich import box
 from rich.console import Console
+from rich.prompt import Prompt
 from rich.table import Table
 
+from tweetxvault.auth import (
+    BrowserCandidate,
+    list_available_browser_candidates,
+    resolve_auth_bundle,
+)
 from tweetxvault.config import ensure_paths, load_config
 from tweetxvault.exceptions import ConfigError, TweetXVaultError
 from tweetxvault.export import export_html_archive, export_json_archive
@@ -40,10 +47,95 @@ app.add_typer(sync_app, name="sync")
 app.add_typer(view_app, name="view")
 
 
+BROWSER_HELP = (
+    "Browser to use for cookie extraction: firefox, chrome, chromium, brave, edge, "
+    "opera, opera-gx, vivaldi, arc."
+)
+
+
 def _configure_logging() -> Console:
     logger.remove()
     logger.add(sys.stderr, level="INFO")
     return Console(stderr=True)
+
+
+def _browser_only_env() -> dict[str, str]:
+    env = dict(os.environ)
+    for key in ("TWEETXVAULT_AUTH_TOKEN", "TWEETXVAULT_CT0", "TWEETXVAULT_USER_ID"):
+        env.pop(key, None)
+    return env
+
+
+def _pick_browser_candidate_interactively(
+    console: Console,
+    *,
+    browser: str | None,
+) -> BrowserCandidate:
+    candidates = list_available_browser_candidates(browser=browser)
+    if not candidates:
+        scope = f" for {browser}" if browser else ""
+        raise ConfigError(f"No browser profiles with X session cookies were found{scope}.")
+
+    table = Table(title="Browser profiles with X cookies", box=box.HORIZONTALS)
+    table.add_column("#", no_wrap=True, style="cyan")
+    table.add_column("Browser", style="green", no_wrap=True)
+    table.add_column("Profile", no_wrap=True)
+    table.add_column("Path", overflow="fold")
+    table.add_column("Tags", no_wrap=True)
+    for index, candidate in enumerate(candidates, start=1):
+        table.add_row(
+            str(index),
+            candidate.browser_name,
+            candidate.profile_name,
+            str(candidate.profile_path),
+            candidate.tags,
+        )
+    console.print(table)
+    choice = Prompt.ask(
+        "Choose browser profile",
+        choices=[str(index) for index in range(1, len(candidates) + 1)],
+        default="1",
+        console=console,
+    )
+    return candidates[int(choice) - 1]
+
+
+def _prepare_auth_override(
+    config,
+    console: Console,
+    *,
+    browser: str | None,
+    profile: str | None,
+    profile_path: Path | None,
+    interactive: bool = False,
+):
+    if interactive and (profile or profile_path is not None):
+        raise ConfigError("--interactive cannot be combined with --profile or --profile-path.")
+    if interactive:
+        candidate = _pick_browser_candidate_interactively(console, browser=browser)
+        browser = candidate.browser_id
+        profile = None
+        profile_path = candidate.profile_path
+
+    if (profile or profile_path is not None) and not browser:
+        raise ConfigError("--profile and --profile-path require --browser.")
+    if not browser:
+        return config, None
+
+    auth = config.auth.model_copy(
+        update={
+            "auth_token": None,
+            "ct0": None,
+            "user_id": None,
+            "browser": browser,
+            "browser_profile": profile,
+            "browser_profile_path": str(profile_path) if profile_path is not None else None,
+            "firefox_profile_path": None,
+        }
+    )
+    forced_config = config.model_copy(update={"auth": auth})
+    auth_bundle = resolve_auth_bundle(forced_config, env=_browser_only_env())
+    return forced_config, auth_bundle
 
 
 def _normalize_collection_or_exit(collection: str, console: Console) -> str:
@@ -131,11 +223,40 @@ def _render_archive_view(
 
 
 @sync_app.command("bookmarks")
-def sync_bookmarks(full: bool = False, backfill: bool = False, limit: int | None = None) -> None:
+def sync_bookmarks(
+    full: bool = False,
+    backfill: bool = False,
+    limit: int | None = None,
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+) -> None:
     console = _configure_logging()
     try:
+        config, _ = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
         result = asyncio.run(
-            sync_collection("bookmarks", full=full, backfill=backfill, limit=limit, console=console)
+            sync_collection(
+                "bookmarks",
+                full=full,
+                backfill=backfill,
+                limit=limit,
+                config=config,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
         )
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -152,11 +273,40 @@ def sync_bookmarks(full: bool = False, backfill: bool = False, limit: int | None
 
 
 @sync_app.command("likes")
-def sync_likes(full: bool = False, backfill: bool = False, limit: int | None = None) -> None:
+def sync_likes(
+    full: bool = False,
+    backfill: bool = False,
+    limit: int | None = None,
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+) -> None:
     console = _configure_logging()
     try:
+        config, _ = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
         result = asyncio.run(
-            sync_collection("likes", full=full, backfill=backfill, limit=limit, console=console)
+            sync_collection(
+                "likes",
+                full=full,
+                backfill=backfill,
+                limit=limit,
+                config=config,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
         )
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -170,10 +320,40 @@ def sync_likes(full: bool = False, backfill: bool = False, limit: int | None = N
 
 
 @sync_app.command("all")
-def sync_everything(full: bool = False, backfill: bool = False, limit: int | None = None) -> None:
+def sync_everything(
+    full: bool = False,
+    backfill: bool = False,
+    limit: int | None = None,
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+) -> None:
     console = _configure_logging()
     try:
-        outcome = asyncio.run(sync_all(full=full, backfill=backfill, limit=limit, console=console))
+        config, _ = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
+        outcome = asyncio.run(
+            sync_all(
+                full=full,
+                backfill=backfill,
+                limit=limit,
+                config=config,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
+        )
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
@@ -190,12 +370,39 @@ def sync_everything(full: bool = False, backfill: bool = False, limit: int | Non
 
 
 @auth_app.command("check")
-def auth_check() -> None:
+def auth_check(
+    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Browser profile name or directory name."),
+    ] = None,
+    profile_path: Annotated[
+        Path | None,
+        typer.Option("--profile-path", help="Explicit browser profile directory path."),
+    ] = None,
+    interactive: Annotated[
+        bool,
+        typer.Option("--interactive", help="Interactively choose a browser profile."),
+    ] = False,
+) -> None:
     console = _configure_logging()
     config, paths = load_config()
     try:
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+            interactive=interactive,
+        )
         result = asyncio.run(
-            run_preflight(config=config, paths=paths, collections=["bookmarks", "likes"])
+            run_preflight(
+                config=config,
+                paths=paths,
+                collections=["bookmarks", "likes"],
+                auth_bundle=auth_bundle,
+            )
         )
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")

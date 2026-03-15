@@ -10,6 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
+  "browser-cookie3>=0.20,<1",
   "httpx>=0.27,<1",
   "lancedb>=0.29,<1",
   "numpy>=1.26,<3",

@@ -573,6 +573,7 @@ async def sync_all(
     limit: int | None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
+    auth_bundle: ResolvedAuthBundle | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -587,6 +588,7 @@ async def sync_all(
         config=config,
         paths=paths,
         collections=["bookmarks", "likes"],
+        auth_bundle=auth_bundle,
         transport=transport,
     )
     if not preflight.is_ready_for(["bookmarks", "likes"]):

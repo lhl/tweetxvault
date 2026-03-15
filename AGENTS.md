@@ -83,7 +83,7 @@ Do not use destructive commands unless explicitly instructed:
 ### Credential Safety
 
 - **NEVER** commit cookies, auth tokens, session files, or any credential material
-- Firefox profile paths should be auto-detected or passed as CLI args, never hardcoded with user-specific paths
+- Browser profile paths should be auto-detected or passed as CLI args, never hardcoded with user-specific paths
 - `.gitignore` must exclude: `*.sqlite`, `*.db`, `twitter_session.json`, any `data/` output directories
 
 ### Reference Directory
@@ -132,7 +132,7 @@ type: short summary (imperative mood)
 
 | Situation | Action |
 |-----------|--------|
-| Cookie extraction fails | Check Firefox installed, profile exists, user logged into x.com |
+| Cookie extraction fails | Check the selected browser is installed, the profile exists, and the user is logged into x.com |
 | Playwright detected as bot | Try `--headful` mode; check for new bot detection |
 | GraphQL schema changes | Storage unaffected (raw JSON); parsing/extraction may need updates |
 | Rate limiting | Increase scroll delays; reduce export frequency |

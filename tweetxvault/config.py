@@ -35,6 +35,9 @@ class AuthConfig(BaseModel):
     auth_token: str | None = None
     ct0: str | None = None
     user_id: str | None = None
+    browser: str | None = None
+    browser_profile: str | None = None
+    browser_profile_path: str | None = None
     firefox_profile_path: str | None = None
 
 
@@ -149,6 +152,9 @@ def load_config(env: Mapping[str, str] | None = None) -> tuple[AppConfig, XDGPat
         "auth_token": env.get("TWEETXVAULT_AUTH_TOKEN"),
         "ct0": env.get("TWEETXVAULT_CT0"),
         "user_id": env.get("TWEETXVAULT_USER_ID"),
+        "browser": env.get("TWEETXVAULT_BROWSER"),
+        "browser_profile": env.get("TWEETXVAULT_BROWSER_PROFILE"),
+        "browser_profile_path": env.get("TWEETXVAULT_BROWSER_PROFILE_PATH"),
         "firefox_profile_path": env.get("TWEETXVAULT_FIREFOX_PROFILE_PATH"),
     }
     auth_updates = {key: value for key, value in auth_updates.items() if value is not None}

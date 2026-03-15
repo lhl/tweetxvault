@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 from rich.console import Console
 
 import tweetxvault.cli as cli
+from tweetxvault.auth import BrowserCandidate
 from tweetxvault.client.timelines import TimelineTweet
-from tweetxvault.config import AppConfig
+from tweetxvault.config import AppConfig, AuthConfig
 from tweetxvault.storage import open_archive_store
 
 
@@ -106,3 +108,58 @@ def test_export_html_creates_viewer(paths, monkeypatch, tmp_path: Path) -> None:
     assert "like tweet" not in html
     assert "open on X" in html
     assert "exported bookmarks archive" in buffer.getvalue()
+
+
+def test_auth_check_interactive_uses_selected_browser(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda: (AppConfig(auth=AuthConfig(auth_token="config-token", ct0="config-ct0")), paths),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_pick_browser_candidate_interactively",
+        lambda console, browser=None: BrowserCandidate(
+            browser_id="chrome",
+            browser_name="Chrome",
+            profile_name="Default",
+            profile_path=Path("/profiles/chrome/Default"),
+            is_default=True,
+        ),
+    )
+    selected = {}
+    monkeypatch.setattr(
+        cli,
+        "resolve_auth_bundle",
+        lambda config, env=None: SimpleNamespace(
+            auth_token="chrome-token",
+            ct0="chrome-ct0",
+            user_id="42",
+            auth_token_source="chrome",
+            ct0_source="chrome",
+            user_id_source="chrome",
+        ),
+    )
+
+    async def fake_run_preflight(*, config, paths, collections, auth_bundle=None):
+        selected["auth_bundle"] = auth_bundle
+        return SimpleNamespace(
+            auth=auth_bundle,
+            probes={
+                "bookmarks": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
+                "likes": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
+            },
+            has_local_error=False,
+            has_remote_error=False,
+        )
+
+    monkeypatch.setattr(cli, "run_preflight", fake_run_preflight)
+
+    cli.auth_check(interactive=True)
+
+    assert selected["auth_bundle"].auth_token == "chrome-token"
+    output = buffer.getvalue()
+    assert "local auth: auth_token=chrome" in output
+    assert "bookmarks: ready" in output

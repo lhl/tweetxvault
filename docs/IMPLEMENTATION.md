@@ -60,18 +60,22 @@ Config and auth are tightly coupled — build them together.
   - Sync: `page_delay` (default 2s), `max_retries` (default 3), `backoff_base` (default 2s), `cooldown_threshold` (default 3), `cooldown_duration` (default 300s).
 - [x] Implement config loading: read `config.toml` from XDG config dir (optional — tool works without it). Env var overrides with `TWEETXVAULT_` prefix.
 - [x] Implement `tweetxvault/auth/cookies.py` — cookie resolution chain:
-  - Priority: env vars (`TWEETXVAULT_AUTH_TOKEN`, `TWEETXVAULT_CT0`, `TWEETXVAULT_USER_ID`) → config file → Firefox extraction.
+  - Priority: env vars (`TWEETXVAULT_AUTH_TOKEN`, `TWEETXVAULT_CT0`, `TWEETXVAULT_USER_ID`) → config file → browser extraction.
   - Return a resolved auth bundle: `auth_token`, `ct0`, `user_id` (optional — only needed for Likes).
   - If nothing found: raise clear error with setup instructions.
 - [x] Add archive-owner guardrails:
   - Persist local archive owner id in DB metadata on first successful sync.
   - Refuse later syncs if resolved owner id differs from stored owner id.
 - [x] Implement `tweetxvault/auth/firefox.py`
-  - Discover candidate profiles from `profiles.ini`, prefer the only profile that actually contains `x.com` cookies, and allow explicit path override via config/env when multiple profiles are viable.
+  - Discover candidate profiles from `profiles.ini`, rank install-default/default profiles first, and allow explicit path/name override via config/env when a different profile is needed.
   - Copy `cookies.sqlite` to temp file; open read-only; query `moz_cookies` for `.x.com` / `.twitter.com`.
   - Extract `auth_token`, `ct0`, `twid`.
   - Parse `twid` (`u%3D<numeric_id>`) into numeric user_id.
-- [x] Unit tests: cookie resolution chain (mock each source), Firefox extraction with synthetic sqlite fixture, twid parsing.
+- [x] Extend auth extraction to Chromium-family browsers
+  - Added `tweetxvault/auth/chromium.py` using `browser-cookie3` for Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, and Arc.
+  - Added generic `auth.browser`, `auth.browser_profile`, and `auth.browser_profile_path` config/env overrides.
+  - Added `--browser`, `--profile`, and `--profile-path` flags to sync/auth-check commands plus `tweetxvault auth check --interactive`.
+- [x] Unit tests: cookie resolution chain (mock each source), Firefox extraction with synthetic sqlite fixture, Chromium profile discovery/extraction, twid parsing, interactive auth-check selection.
 
 ## Task 3: Query ID Discovery
 

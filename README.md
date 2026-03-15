@@ -11,7 +11,7 @@ A Python CLI tool for archiving your Twitter/X bookmarks and likes into a local 
 - **Crash-safe checkpoints** — sync state advances atomically with data writes; safe to kill mid-run
 - **Full-text and semantic search** — built-in FTS (tantivy) and optional ONNX-based vector embeddings for hybrid search
 - **Automatic query ID discovery** — scrapes Twitter's JS bundles to stay current with GraphQL endpoint changes
-- **Firefox cookie extraction** — reads session cookies directly from your Firefox profile (or set them via env vars / config)
+- **Browser cookie extraction** — reads session cookies from Firefox plus Chromium-family browsers like Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, and Arc
 - **Rate limit handling** — exponential backoff, cooldown periods, and configurable retry limits
 - **Export** — export your archive to JSON or a self-contained HTML viewer
 
@@ -19,7 +19,7 @@ A Python CLI tool for archiving your Twitter/X bookmarks and likes into a local 
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- A Twitter/X account logged in via Firefox, or session cookies obtained manually
+- A Twitter/X account logged in via Firefox or a supported Chromium-family browser, or session cookies obtained manually
 
 ## Installation
 
@@ -60,23 +60,42 @@ ct0 = "your_ct0_token"
 user_id = "your_numeric_user_id"
 ```
 
-### 3. Firefox auto-extraction
+### 3. Browser auto-extraction
 
-If you're logged into x.com in Firefox, tweetxvault will automatically find and read your cookies. No configuration needed — just make sure Firefox isn't running when you sync (to avoid database locks).
+If you're logged into x.com in Firefox, Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, or Arc, tweetxvault will try them in that order and stop after the first browser profile that yields valid X cookies.
 
-To use a specific Firefox profile:
+Firefox is read from its profile database directly. Chromium-family browsers use `browser-cookie3` for cookie decryption and OS keyring access.
+
+To force a specific browser or profile for one command:
 
 ```bash
-export TWEETXVAULT_FIREFOX_PROFILE_PATH="/path/to/your/profile"
+uv run tweetxvault auth check --browser chrome
+uv run tweetxvault sync all --browser brave --profile "Profile 2"
+uv run tweetxvault sync all --browser firefox --profile-path /path/to/profile
+```
+
+To persist a browser preference in the environment or config:
+
+```bash
+export TWEETXVAULT_BROWSER="chrome"
+export TWEETXVAULT_BROWSER_PROFILE="Profile 2"
+export TWEETXVAULT_BROWSER_PROFILE_PATH="/path/to/profile"
+```
+
+Legacy Firefox-only override is still supported:
+
+```bash
+export TWEETXVAULT_FIREFOX_PROFILE_PATH="/path/to/your/firefox/profile"
 ```
 
 ### Verify your setup
 
 ```bash
 uv run tweetxvault auth check
+uv run tweetxvault auth check --interactive
 ```
 
-This probes the API without writing any data and reports credential status and endpoint readiness.
+This probes the API without writing any data and reports credential status and endpoint readiness. `--interactive` opens a picker over discovered browser profiles with valid X cookies.
 
 ## Usage
 
@@ -89,6 +108,9 @@ uv run tweetxvault sync all
 # Sync just bookmarks or likes
 uv run tweetxvault sync bookmarks
 uv run tweetxvault sync likes
+
+# Force a specific browser profile for this run
+uv run tweetxvault sync all --browser chrome --profile "Profile 2"
 
 # Full re-sync from scratch (resets sync state, does not delete existing data)
 uv run tweetxvault sync all --full
@@ -189,7 +211,7 @@ A process lock prevents overlapping runs.
 
 ## Configuration
 
-All configuration is optional. Defaults work out of the box with Firefox cookie extraction.
+All configuration is optional. Defaults work out of the box with browser cookie extraction.
 
 ### Sync tuning (config.toml or env vars)
 
@@ -218,7 +240,7 @@ Override with `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`.
 
 tweetxvault calls Twitter's internal GraphQL API — the same endpoints the web app uses. It:
 
-1. Resolves session cookies (env/config/Firefox)
+1. Resolves session cookies (env/config/browser extraction)
 2. Discovers current GraphQL query IDs by parsing Twitter's JS bundles (with a 24h TTL cache and static fallbacks)
 3. Fetches timeline pages with the proper headers, feature flags, and cursor pagination
 4. Stores raw API responses + parsed tweet records + collection memberships in a single LanceDB table

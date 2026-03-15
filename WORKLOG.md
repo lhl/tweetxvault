@@ -2,6 +2,19 @@
 
 ## 2026-03-15
 
+- Expanded auth extraction from Firefox-only to browser-family support:
+  - Added `tweetxvault/auth/chromium.py` and runtime dependency `browser-cookie3>=0.20,<1` so Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, and Arc can supply `auth_token` / `ct0` / `twid`
+  - Changed browser auto-resolution order to Firefox -> Chrome -> Chromium -> Brave -> Edge -> Opera -> Opera GX -> Vivaldi -> Arc, stopping at the first browser that yields valid X cookies
+  - Added generic browser selection config/env (`auth.browser`, `auth.browser_profile`, `auth.browser_profile_path`, `TWEETXVAULT_BROWSER*`) while keeping `TWEETXVAULT_FIREFOX_PROFILE_PATH` as a legacy compatibility path
+  - Added `--browser`, `--profile`, `--profile-path` flags to `tweetxvault sync ...` / `tweetxvault auth check`, plus `tweetxvault auth check --interactive` for an on-demand browser/profile picker
+  - Tweaked Firefox auto-pick to prefer install-default/default profiles instead of erroring on every multi-profile setup
+  - Validation:
+    - `uv lock`
+    - `uv run ruff check tweetxvault tests`
+    - `uv run ruff format --check tweetxvault/auth/chromium.py tweetxvault/auth/cookies.py tweetxvault/auth/firefox.py tweetxvault/auth/__init__.py tweetxvault/cli.py tweetxvault/config.py tweetxvault/sync.py tests/test_auth.py tests/test_cli.py`
+    - `uv run pytest`
+  - Result: all checks passed (`42 passed`); repo-wide `uv run ruff format --check tweetxvault tests` still reports an unrelated pre-existing formatting issue in `tweetxvault/storage/backend.py`
+
 - Scoped the next capture-expansion milestone in `docs/PLAN.md` / `docs/IMPLEMENTATION.md`:
   - Added a post-MVP design for canonical `tweet_object` rows plus `tweet_relation`, `media`, `url`, `url_ref`, and `article` record types on the existing single-table LanceDB archive
   - Split future work into concrete follow-on tasks for secondary-object extraction, media downloads, URL unfurls/snapshots, article capture, and X-archive import
