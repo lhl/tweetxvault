@@ -8,6 +8,27 @@ from numpy.typing import NDArray
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 
+_engine_cache: EmbeddingEngine | None = None
+
+
+def is_available() -> bool:
+    """Check if embedding dependencies are installed."""
+    try:
+        import onnxruntime  # noqa: F401
+        import tokenizers  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def get_engine() -> EmbeddingEngine:
+    """Get or create a cached embedding engine instance."""
+    global _engine_cache
+    if _engine_cache is None:
+        _engine_cache = EmbeddingEngine()
+    return _engine_cache
+
 
 class EmbeddingEngine:
     def __init__(self, model_name: str = DEFAULT_MODEL) -> None:
@@ -24,7 +45,11 @@ class EmbeddingEngine:
         self.tokenizer = Tokenizer.from_file(tok_path)
         self.tokenizer.enable_padding()
         self.tokenizer.enable_truncation(max_length=256)
-        self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        providers = ort.get_available_providers()
+        preferred = ["CUDAExecutionProvider", "ROCMExecutionProvider", "CPUExecutionProvider"]
+        selected = [p for p in preferred if p in providers] or ["CPUExecutionProvider"]
+        self.session = ort.InferenceSession(model_path, providers=selected)
+        self.provider = self.session.get_providers()[0]
 
     def embed_batch(self, texts: list[str]) -> NDArray[np.float32]:
         """Embed a batch of texts, returning (N, EMBEDDING_DIM) float32 array."""

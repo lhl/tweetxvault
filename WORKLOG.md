@@ -2,6 +2,36 @@
 
 ## 2026-03-15
 
+- Added FTS search and ONNX-based embeddings:
+  - Added `embedding` column (384-dim float32 vector) to archive schema with auto-migration for existing archives
+  - Created `tweetxvault/embed.py`: ONNX engine using all-MiniLM-L6-v2 via onnxruntime + tokenizers (~0.7ms/tweet batched, ~18s for 25k tweets on CPU)
+  - Added `tweetxvault embed` command: resumes by default (skips already-embedded), `--regen` to clear and redo
+  - Added `tweetxvault search <query>`: modes auto/fts/vector/hybrid, defaults to hybrid when embeddings exist
+  - FTS uses LanceDB's built-in tantivy index on tweet text column
+  - Embedding deps are optional via `[embed]` extra (`uv sync --extra embed`)
+  - Added tqdm progress bar to embed command
+
+- Added `--sort` flag to view commands (newest/oldest), fixed sort order bug (was using synced_at as primary key which inverted order)
+
+- Fixed author username extraction: Twitter moved screen_name/name to `core.user_results.result.core` (not just `legacy`), added cascading fallback. Added `tweetxvault rehydrate` to backfill existing archives from stored raw_json.
+
+- Added tqdm progress bars for long-running operations (rehydrate, embed)
+  - Made rehydrate use batched merge_inserts (500 rows) instead of per-row updates (~18s vs ~1hr for 25k tweets)
+
+- Fixed LanceDB "Too many open files" errors:
+  - Added `ArchiveStore.optimize()` to compact table versions after sync
+  - Added `tweetxvault optimize` CLI command for manual compaction
+  - Added auto-optimize retry in view/export on too-many-open-files error
+  - Raised soft file-descriptor limit to hard limit at CLI startup
+
+- Fixed duplicate detection bug and added `--backfill` flag:
+  - Root cause: `has_membership()` did per-tweet `search().where()` queries through LanceDB's vector-search API, which silently returned no results on large archives (25k+ tweets), so duplicate detection never triggered
+  - Fix: replaced per-tweet queries with `get_collection_tweet_ids()` that bulk-loads all known tweet IDs for the collection into an in-memory set at sync start
+  - Added `--backfill` CLI flag: continues past duplicates without resetting sync state (unlike `--full` which resets state AND skips dedup)
+  - Default behavior (no flags) now correctly stops on the first page containing already-archived tweets
+  - Added tests: `test_duplicate_detection_stops_sync`, `test_backfill_flag_skips_duplicate_stop`
+  - Validation: `uv run pytest` (37 passed), `uv run ruff check`, `uv run ruff format --check` all clean
+
 - Added local inspection/export commands on top of the LanceDB archive:
   - Added `tweetxvault view bookmarks|likes|all` to print recent archived rows in a terminal table
   - Added `tweetxvault export html` to write a local HTML viewer alongside the existing JSON export

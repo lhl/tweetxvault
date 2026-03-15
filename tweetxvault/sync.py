@@ -428,6 +428,29 @@ async def sync_collection(
     )
 
 
+def _embed_new_tweets(store: Any, console: Console | None) -> None:
+    """Embed any unembedded tweets if embedding deps are available."""
+    from tweetxvault.embed import is_available
+
+    if not is_available():
+        return
+    remaining = store.count_unembedded()
+    if remaining == 0:
+        return
+
+    from tweetxvault.embed import get_engine
+
+    if console:
+        console.print(f"embedding {remaining} new tweets...")
+    engine = get_engine()
+    for batch in store.get_unembedded_tweets(batch_size=100):
+        texts = [f"@{row['author_username'] or ''}: {row['text'] or ''}" for row in batch]
+        vectors = engine.embed_batch(texts)
+        store.write_embeddings(batch, vectors)
+    if console:
+        console.print(f"embedded {remaining} tweets")
+
+
 async def _sync_collection_ready(
     *,
     collection: str,
@@ -529,6 +552,7 @@ async def _sync_collection_ready(
         finally:
             await client.aclose()
             if pages_total > 0:
+                _embed_new_tweets(store, console)
                 store.optimize()
             store.close()
     finally:
