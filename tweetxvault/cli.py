@@ -31,18 +31,22 @@ from tweetxvault.export.common import (
     normalize_collection_name,
     tweet_url,
 )
+from tweetxvault.media import download_media
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import open_archive_store
 from tweetxvault.sync import run_preflight, sync_all, sync_collection
+from tweetxvault.unfurl import unfurl_urls
 
 app = typer.Typer(no_args_is_help=True)
 auth_app = typer.Typer(no_args_is_help=True)
 export_app = typer.Typer(no_args_is_help=True)
+media_app = typer.Typer(no_args_is_help=True)
 sync_app = typer.Typer(no_args_is_help=True)
 view_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(auth_app, name="auth")
 app.add_typer(export_app, name="export")
+app.add_typer(media_app, name="media")
 app.add_typer(sync_app, name="sync")
 app.add_typer(view_app, name="view")
 
@@ -526,6 +530,65 @@ def export_html(
     finally:
         store.close()
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
+
+
+@media_app.command("download")
+def media_download(
+    limit: int | None = None,
+    photos_only: bool = False,
+    retry_failed: bool = False,
+) -> None:
+    console = _configure_logging()
+    try:
+        config, paths = load_config()
+        result = asyncio.run(
+            download_media(
+                limit=limit,
+                photos_only=photos_only,
+                retry_failed=retry_failed,
+                config=config,
+                paths=paths,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(
+        "media: "
+        f"{result.processed} processed, "
+        f"{result.downloaded} downloaded, "
+        f"{result.skipped} skipped, "
+        f"{result.failed} failed"
+    )
+
+
+@app.command("unfurl")
+def unfurl_archive(limit: int | None = None, retry_failed: bool = False) -> None:
+    console = _configure_logging()
+    try:
+        config, paths = load_config()
+        result = asyncio.run(
+            unfurl_urls(
+                limit=limit,
+                retry_failed=retry_failed,
+                config=config,
+                paths=paths,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(
+        f"unfurl: {result.processed} processed, {result.updated} updated, {result.failed} failed"
+    )
 
 
 @app.command("optimize")

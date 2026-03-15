@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -101,6 +102,13 @@ def extract_canonical_text(tweet: dict[str, Any]) -> str:
     return extract_note_tweet_text(tweet) or (tweet.get("legacy") or {}).get("full_text", "")
 
 
+def _iso8601_from_unix(value: Any) -> str | None:
+    seconds = _as_int(value)
+    if seconds is None:
+        return None
+    return datetime.fromtimestamp(seconds, tz=UTC).isoformat()
+
+
 def canonicalize_url(value: str | None) -> str | None:
     if not value:
         return None
@@ -126,6 +134,13 @@ def canonicalize_url(value: str | None) -> str | None:
     path = parsed.path or "/"
     query = urlencode(query_pairs, doseq=True)
     return urlunsplit((scheme, netloc, path, query, ""))
+
+
+def _article_result(tweet: dict[str, Any]) -> dict[str, Any] | None:
+    article_result = (tweet.get("article") or {}).get("article_results", {}).get("result") or (
+        tweet.get("article_results") or {}
+    ).get("result")
+    return article_result if isinstance(article_result, dict) else None
 
 
 @dataclass(slots=True)
@@ -163,6 +178,8 @@ class MediaData:
     duration_millis: int | None
     variants: list[dict[str, Any]]
     raw_json: dict[str, Any]
+    source: str | None = None
+    article_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -172,6 +189,10 @@ class UrlData:
     expanded_url: str | None
     host: str | None
     raw_json: dict[str, Any]
+    final_url: str | None = None
+    title: str | None = None
+    description: str | None = None
+    site_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -182,6 +203,7 @@ class UrlRefData:
     expanded_url: str | None
     canonical_url: str | None
     display_url: str | None
+    url_hash: str | None
     raw_json: dict[str, Any]
 
 
@@ -193,6 +215,7 @@ class ArticleData:
     summary_text: str | None
     content_text: str | None
     canonical_url: str | None
+    published_at: str | None
     status: str
     raw_json: dict[str, Any]
 
@@ -245,6 +268,8 @@ class ExtractedTweetGraph:
             duration_millis=_coalesce(item.duration_millis, existing.duration_millis),
             variants=item.variants or existing.variants,
             raw_json=item.raw_json or existing.raw_json,
+            source=_coalesce(item.source, existing.source),
+            article_id=_coalesce(item.article_id, existing.article_id),
         )
 
     def add_url(self, item: UrlData) -> None:
@@ -258,6 +283,10 @@ class ExtractedTweetGraph:
             expanded_url=_coalesce(item.expanded_url, existing.expanded_url),
             host=_coalesce(item.host, existing.host),
             raw_json=item.raw_json or existing.raw_json,
+            final_url=_coalesce(item.final_url, existing.final_url),
+            title=_coalesce(item.title, existing.title),
+            description=_coalesce(item.description, existing.description),
+            site_name=_coalesce(item.site_name, existing.site_name),
         )
 
     def add_url_ref(self, item: UrlRefData) -> None:
@@ -273,6 +302,7 @@ class ExtractedTweetGraph:
             expanded_url=_coalesce(item.expanded_url, existing.expanded_url),
             canonical_url=_coalesce(item.canonical_url, existing.canonical_url),
             display_url=_coalesce(item.display_url, existing.display_url),
+            url_hash=_coalesce(item.url_hash, existing.url_hash),
             raw_json=item.raw_json or existing.raw_json,
         )
 
@@ -289,6 +319,7 @@ class ExtractedTweetGraph:
             summary_text=_coalesce(item.summary_text, existing.summary_text),
             content_text=content_text,
             canonical_url=_coalesce(item.canonical_url, existing.canonical_url),
+            published_at=_coalesce(item.published_at, existing.published_at),
             status="body_present" if content_text else "preview_only",
             raw_json=item.raw_json or existing.raw_json,
         )
@@ -375,6 +406,30 @@ def _canonical_url_candidate(url_item: dict[str, Any]) -> str | None:
     return None
 
 
+def _payload_url_metadata(url_item: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    unwound = url_item.get("unwound_url")
+    if not isinstance(unwound, dict):
+        return None, None, None
+    title = _deep_first_string(unwound, ("title", "title_text", "page_title"))
+    description = _deep_first_string(
+        unwound,
+        ("description", "description_text", "full_text", "subtitle"),
+    )
+    site_name = _deep_first_string(unwound, ("site_name", "site", "publisher"))
+    return title, description, site_name
+
+
+def _final_url_candidate(url_item: dict[str, Any]) -> str | None:
+    for key in ("unwound_url", "expanded_url"):
+        found = _deep_first_string(url_item.get(key), ("url", "expanded_url", "string_value"))
+        if found:
+            return found
+        value = url_item.get(key)
+        if isinstance(value, str) and value.startswith(("http://", "https://")):
+            return value
+    return None
+
+
 def _url_entries(tweet: dict[str, Any]) -> tuple[list[UrlRefData], list[UrlData]]:
     tweet_id = tweet.get("rest_id")
     if not tweet_id:
@@ -384,7 +439,9 @@ def _url_entries(tweet: dict[str, Any]) -> tuple[list[UrlRefData], list[UrlData]
     for position, item in enumerate(_tweet_urls(tweet)):
         short_url = item.get("url")
         expanded_url = item.get("expanded_url")
+        final_url = _final_url_candidate(item)
         canonical_url = canonicalize_url(_canonical_url_candidate(item))
+        url_hash = sha256(canonical_url.encode("utf-8")).hexdigest() if canonical_url else None
         refs.append(
             UrlRefData(
                 tweet_id=tweet_id,
@@ -395,18 +452,24 @@ def _url_entries(tweet: dict[str, Any]) -> tuple[list[UrlRefData], list[UrlData]
                 display_url=item.get("display_url")
                 if isinstance(item.get("display_url"), str)
                 else None,
+                url_hash=url_hash,
                 raw_json=item,
             )
         )
         if canonical_url:
+            title, description, site_name = _payload_url_metadata(item)
             parsed = urlsplit(canonical_url)
             urls.append(
                 UrlData(
-                    url_hash=sha256(canonical_url.encode("utf-8")).hexdigest(),
+                    url_hash=url_hash or sha256(canonical_url.encode("utf-8")).hexdigest(),
                     canonical_url=canonical_url,
                     expanded_url=expanded_url if isinstance(expanded_url, str) else canonical_url,
                     host=parsed.hostname,
                     raw_json=item,
+                    final_url=final_url if isinstance(final_url, str) else None,
+                    title=title,
+                    description=description,
+                    site_name=site_name,
                 )
             )
     return refs, urls
@@ -493,19 +556,77 @@ def _media_entries(tweet: dict[str, Any]) -> list[MediaData]:
                 duration_millis=_as_int((item.get("video_info") or {}).get("duration_millis")),
                 variants=variants,
                 raw_json=item,
+                source="tweet_media",
             )
         )
     return records
 
 
-def _article_entry(tweet: dict[str, Any]) -> ArticleData | None:
+def _article_media_dimensions(item: dict[str, Any]) -> tuple[int | None, int | None]:
+    media_info = item.get("media_info") or {}
+    return (
+        _as_int(media_info.get("original_img_width")) or _as_int(media_info.get("width")),
+        _as_int(media_info.get("original_img_height")) or _as_int(media_info.get("height")),
+    )
+
+
+def _article_media_entries(
+    tweet: dict[str, Any],
+    article_result: dict[str, Any],
+    *,
+    article_id: str,
+) -> list[MediaData]:
+    tweet_id = tweet.get("rest_id")
+    if not tweet_id:
+        return []
+    records: list[MediaData] = []
+    candidates: list[tuple[str, int, dict[str, Any]]] = []
+    cover_media = article_result.get("cover_media")
+    if isinstance(cover_media, dict):
+        candidates.append(("article_cover", 0, cover_media))
+    media_entities = article_result.get("media_entities")
+    if isinstance(media_entities, list):
+        base = len(candidates)
+        for offset, item in enumerate(media_entities):
+            if isinstance(item, dict):
+                candidates.append(("article_media", base + offset, item))
+    for source, position, item in candidates:
+        media_info = item.get("media_info") or {}
+        media_key = item.get("media_key") or f"{source}:{article_id}:{position}"
+        width, height = _article_media_dimensions(item)
+        media_url = _deep_first_string(
+            media_info,
+            ("original_img_url", "media_url_https", "media_url", "url"),
+            absolute_url_only=True,
+        )
+        records.append(
+            MediaData(
+                tweet_id=tweet_id,
+                position=position,
+                media_key=str(media_key),
+                media_type="photo",
+                media_url=media_url,
+                thumbnail_url=media_url,
+                width=width,
+                height=height,
+                duration_millis=None,
+                variants=[],
+                raw_json=item,
+                source=source,
+                article_id=article_id,
+            )
+        )
+    return records
+
+
+def _article_entry(
+    tweet: dict[str, Any], article_result: dict[str, Any] | None = None
+) -> ArticleData | None:
     tweet_id = tweet.get("rest_id")
     if not tweet_id:
         return None
-    article_result = (tweet.get("article") or {}).get("article_results", {}).get("result") or (
-        tweet.get("article_results") or {}
-    ).get("result")
-    if not isinstance(article_result, dict):
+    article_result = article_result or _article_result(tweet)
+    if article_result is None:
         return None
     article_id = article_result.get("rest_id") or article_result.get("id") or tweet_id
     title = article_result.get("title")
@@ -546,6 +667,9 @@ def _article_entry(tweet: dict[str, Any]) -> ArticleData | None:
         summary_text=summary_text if isinstance(summary_text, str) else None,
         content_text=content_text if isinstance(content_text, str) else None,
         canonical_url=article_url,
+        published_at=_iso8601_from_unix(
+            (article_result.get("metadata") or {}).get("first_published_at_secs")
+        ),
         status="body_present" if content_text else "preview_only",
         raw_json=article_result,
     )
@@ -577,9 +701,15 @@ def _visit_tweet(
         graph.add_url_ref(item)
     for item in urls:
         graph.add_url(item)
-    article = _article_entry(tweet)
+    article_result = _article_result(tweet)
+    article = _article_entry(tweet, article_result)
     if article:
         graph.add_article(article)
+        if article_result is not None:
+            for item in _article_media_entries(
+                tweet, article_result, article_id=article.article_id
+            ):
+                graph.add_media(item)
     if not expand_attached:
         return
     for relation_type, attached in _attached_tweets(tweet):

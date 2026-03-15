@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed Task 12 media downloads + URL unfurls:
+  - Extended `tweetxvault/storage/backend.py` with per-media download state/local-path/hash fields plus URL unfurl/final-url/title/description metadata fields
+  - Expanded `tweetxvault/extractor.py` so article cover/body media are captured into `media` rows and URL rows preserve payload-provided metadata before any remote fetches
+  - Added `tweetxvault/media.py` + `tweetxvault/unfurl.py` with lock-safe follow-on runners, wired to `tweetxvault media download` and `tweetxvault unfurl`
+  - Kept downloads and unfurls outside the sync transaction while making JSON exports include nested `media`, `urls`, and `article` sections
+  - Validation:
+    - `uv run pytest tests/test_extractor.py tests/test_storage.py tests/test_media.py tests/test_unfurl.py tests/test_cli.py`
+    - `uv run ruff check tweetxvault/extractor.py tweetxvault/storage/backend.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/cli.py tests/test_extractor.py tests/test_storage.py tests/test_media.py tests/test_unfurl.py tests/test_cli.py`
+
 - Added `--article-backfill` sync mode:
   - Extended `tweetxvault sync bookmarks|likes|all` with `--article-backfill`, which rewalks existing timeline pages without resetting sync state so older tweets can pick up newly-enabled article fields
   - Kept it on the normal sync persistence path, so refetched pages update `tweet.raw_json` plus normalized `article` / secondary rows directly; no follow-up `tweetxvault rehydrate` is required after the backfill itself

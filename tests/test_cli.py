@@ -210,3 +210,35 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
         "limit": None,
     }
     assert "bookmarks: 2 pages, 3 tweets, empty" in buffer.getvalue()
+
+
+def test_media_download_reports_runner_result(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+
+    async def fake_download_media(**kwargs):
+        return SimpleNamespace(processed=3, downloaded=2, skipped=1, failed=0)
+
+    monkeypatch.setattr(cli, "download_media", fake_download_media)
+
+    cli.media_download(limit=5, photos_only=True, retry_failed=True)
+
+    output = buffer.getvalue()
+    assert "media: 3 processed, 2 downloaded, 1 skipped, 0 failed" in output
+
+
+def test_unfurl_archive_reports_runner_result(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+
+    async def fake_unfurl_urls(**kwargs):
+        return SimpleNamespace(processed=2, updated=2, failed=0)
+
+    monkeypatch.setattr(cli, "unfurl_urls", fake_unfurl_urls)
+
+    cli.unfurl_archive(limit=10, retry_failed=True)
+
+    output = buffer.getvalue()
+    assert "unfurl: 2 processed, 2 updated, 0 failed" in output

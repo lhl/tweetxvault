@@ -299,7 +299,7 @@ def test_persist_page_extracts_secondary_objects_once_across_collections(paths) 
         collections=2,
         tweet_objects=2,
         tweet_relations=1,
-        media=2,
+        media=3,
         urls=2,
         url_refs=2,
         articles=1,
@@ -309,6 +309,8 @@ def test_persist_page_extracts_secondary_objects_once_across_collections(paths) 
     article_rows = store.table.search().where("record_type = 'article'").to_list()
     assert article_rows[0]["title"] == "Article title"
     assert article_rows[0]["content_text"] == "Article body"
+    media_rows = store.table.search().where("record_type = 'media'").to_list()
+    assert any(row["source"] == "article_cover" for row in media_rows)
     relation_rows = store.table.search().where("record_type = 'tweet_relation'").to_list()
     assert relation_rows[0]["relation_type"] == "quote_of"
     assert relation_rows[0]["target_tweet_id"] == "200"
@@ -344,11 +346,11 @@ def test_rehydrate_from_raw_json_rebuilds_secondary_rows(paths) -> None:
     result = store.rehydrate_from_raw_json()
 
     assert result.tweets_updated == 1
-    assert result.secondary_records == 10
+    assert result.secondary_records == 11
     counts = store.counts()
     assert counts["tweet_objects"] == 2
     assert counts["tweet_relations"] == 1
-    assert counts["media"] == 2
+    assert counts["media"] == 3
     assert counts["urls"] == 2
     assert counts["url_refs"] == 2
     assert counts["articles"] == 1
@@ -356,4 +358,33 @@ def test_rehydrate_from_raw_json_rebuilds_secondary_rows(paths) -> None:
     assert rebuilt_row["text"] == "root longform text"
     assert rebuilt_row["author_username"] == "user1000"
     assert rebuilt_row["note_tweet_text"] == "root longform text"
+    store.close()
+
+
+def test_export_rows_include_secondary_objects(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    tweet = _complex_tweet()
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[tweet],
+        last_head_tweet_id=tweet.tweet_id,
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    exported = store.export_rows("bookmark")
+
+    assert len(exported) == 1
+    row = exported[0]
+    assert row["article"]["title"] == "Article title"
+    assert row["article"]["media"][0]["source"] == "article_cover"
+    assert any(item["source"] == "tweet_media" for item in row["media"])
+    assert row["urls"][0]["resolved"]["canonical_url"] == "https://example.com/story?keep=1"
     store.close()

@@ -482,6 +482,9 @@ Unfurling should use GraphQL payloads first and network fetches second.
   - fetch page metadata when GraphQL does not already provide it
   - enqueue/snapshot canonical URLs in ArchiveBox or an equivalent archiver
   - index URL/domain/title fields for search and filtering
+- The initial runner surface is inline CLI commands:
+  - `tweetxvault media download`
+  - `tweetxvault unfurl`
 
 ### Archive Import Requirements
 
@@ -518,6 +521,8 @@ tweetxvault view likes                # show recent likes in the terminal
 
 tweetxvault export json               # (phase 2+) export all collections
 tweetxvault export html               # export a local HTML viewer
+tweetxvault media download            # fetch archived media files
+tweetxvault unfurl                    # fetch final/canonical URL metadata
 
 tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
@@ -596,7 +601,7 @@ Reserved for future (not implemented in MVP):
 2. **Search table shape**: do we keep embeddings/indexes directly on `tweet` rows, or split out a derived LanceDB search table later if indexing mixed record types becomes awkward?
 3. **Canonical tweet layer migration**: do we keep long-term duplication between collection-scoped `tweet` rows and global `tweet_object` rows, or eventually slim the membership rows down to just collection/order state once downstream consumers move over?
 4. **Articles endpoint shape**: Does `UserArticlesTweets` include the full article body once article field toggles are enabled on an authenticated request? If not, decide whether we implement a targeted article fetch or a Playwright-only article fallback.
-5. **URL snapshot runner**: do we want inline CLI commands (`tweetxvault unfurl`, `tweetxvault snapshot`) or a small job queue table plus worker-style commands?
+5. **URL snapshot runner**: inline CLI commands landed for the first pass (`tweetxvault media download`, `tweetxvault unfurl`); decide later whether ArchiveBox/snapshotting needs a queue table or can stay command-driven.
 6. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
 
 ## Dependencies (Planned)

@@ -267,20 +267,21 @@ This is the next real implementation milestone after the LanceDB migration. The 
 
 ## Task 12: Media Downloads + URL Unfurls
 
-- [ ] Add per-media download state fields and local-path metadata.
-- [ ] Implement photo download first:
+- [x] Add per-media download state fields and local-path metadata.
+- [x] Implement photo download first:
   - deterministic on-disk layout under the XDG data dir
   - SHA-256 + byte-size verification
   - idempotent retries
-- [ ] Implement video/GIF download later:
+- [x] Implement video/GIF download later:
   - variant selection policy (prefer highest-bitrate MP4 when present)
   - poster image capture
-- [ ] Implement URL canonicalization and unfurl persistence:
+- [x] Implement URL canonicalization and unfurl persistence:
   - preserve original `t.co` URL
   - store expanded/final/canonical URL values
   - store metadata already present in GraphQL payloads before doing network fetches
-- [ ] Add a follow-on command or job-runner surface for remote unfurl fetches / snapshots without coupling them to the sync transaction.
-- [ ] Leave ArchiveBox integration as optional queue/runner plumbing until the metadata model is stable.
+- [x] Add a follow-on command or job-runner surface for remote unfurl fetches / snapshots without coupling them to the sync transaction.
+  - Landed as inline commands: `tweetxvault media download` and `tweetxvault unfurl`
+- [x] Leave ArchiveBox integration as optional queue/runner plumbing until the metadata model is stable.
 
 ## Task 13: Articles
 

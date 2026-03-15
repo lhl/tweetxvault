@@ -85,6 +85,10 @@ class XDGPaths(BaseModel):
         return self.data_dir / DB_DIRNAME
 
     @property
+    def media_dir(self) -> Path:
+        return self.data_dir / "media"
+
+    @property
     def database_file(self) -> Path:
         """Backward-compatible alias for older callers/tests."""
         return self.database_path

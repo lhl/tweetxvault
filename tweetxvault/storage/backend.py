@@ -103,15 +103,33 @@ ARCHIVE_SCHEMA = pa.schema(
         pa.field("height", pa.int32()),
         pa.field("duration_millis", pa.int64()),
         pa.field("variants_json", pa.large_string()),
+        pa.field("download_state", pa.string()),
+        pa.field("local_path", pa.string()),
+        pa.field("sha256", pa.string()),
+        pa.field("byte_size", pa.int64()),
+        pa.field("content_type", pa.string()),
+        pa.field("thumbnail_local_path", pa.string()),
+        pa.field("thumbnail_sha256", pa.string()),
+        pa.field("thumbnail_byte_size", pa.int64()),
+        pa.field("thumbnail_content_type", pa.string()),
+        pa.field("downloaded_at", pa.string()),
+        pa.field("download_error", pa.large_string()),
+        pa.field("url_hash", pa.string()),
         pa.field("url", pa.string()),
         pa.field("expanded_url", pa.string()),
+        pa.field("final_url", pa.string()),
         pa.field("canonical_url", pa.string()),
         pa.field("display_url", pa.string()),
         pa.field("url_host", pa.string()),
+        pa.field("description", pa.large_string()),
+        pa.field("site_name", pa.string()),
+        pa.field("unfurl_state", pa.string()),
+        pa.field("last_fetched_at", pa.string()),
         pa.field("article_id", pa.string()),
         pa.field("title", pa.large_string()),
         pa.field("summary_text", pa.large_string()),
         pa.field("content_text", pa.large_string()),
+        pa.field("published_at", pa.string()),
         pa.field("status", pa.string()),
         pa.field("last_head_tweet_id", pa.string()),
         pa.field("backfill_cursor", pa.string()),
@@ -233,6 +251,24 @@ class ArchiveStore:
     def _get_row(self, row_key: str) -> dict[str, Any] | None:
         rows = self.table.search().where(f"row_key = {_expr_quote(row_key)}").limit(1).to_list()
         return rows[0] if rows else None
+
+    def _rows_for_values(
+        self,
+        record_type: str,
+        field_name: str,
+        values: set[str] | list[str] | tuple[str, ...],
+    ) -> list[dict[str, Any]]:
+        unique_values = [value for value in dict.fromkeys(values) if value]
+        if not unique_values:
+            return []
+        rows: list[dict[str, Any]] = []
+        chunk_size = 100
+        for start in range(0, len(unique_values), chunk_size):
+            chunk = unique_values[start : start + chunk_size]
+            joined = " OR ".join(f"{field_name} = {_expr_quote(value)}" for value in chunk)
+            expr = f"record_type = {_expr_quote(record_type)} AND ({joined})"
+            rows.extend(self.table.search().where(expr).to_list())
+        return rows
 
     def _lookup_row(
         self, row_key: str, *, cursor: _PageBuffer | None = None
@@ -556,6 +592,10 @@ class ArchiveStore:
             row_key=row_key,
             record_type="media",
             tweet_id=media.tweet_id,
+            source=self._coalesce_value(media.source, existing["source"] if existing else None),
+            article_id=self._coalesce_value(
+                media.article_id, existing["article_id"] if existing else None
+            ),
             position=media.position,
             media_key=media.media_key,
             media_type=self._coalesce_value(
@@ -576,6 +616,20 @@ class ArchiveStore:
                 self._json_value(media.variants) if media.variants else None,
                 existing["variants_json"] if existing else None,
             ),
+            download_state=self._coalesce_value(
+                existing["download_state"] if existing else None,
+                "pending",
+            ),
+            local_path=existing["local_path"] if existing else None,
+            sha256=existing["sha256"] if existing else None,
+            byte_size=existing["byte_size"] if existing else None,
+            content_type=existing["content_type"] if existing else None,
+            thumbnail_local_path=existing["thumbnail_local_path"] if existing else None,
+            thumbnail_sha256=existing["thumbnail_sha256"] if existing else None,
+            thumbnail_byte_size=existing["thumbnail_byte_size"] if existing else None,
+            thumbnail_content_type=existing["thumbnail_content_type"] if existing else None,
+            downloaded_at=existing["downloaded_at"] if existing else None,
+            download_error=existing["download_error"] if existing else None,
             raw_json=self._coalesce_value(
                 self._json_value(media.raw_json), existing["raw_json"] if existing else None
             ),
@@ -592,12 +646,28 @@ class ArchiveStore:
         return self._record(
             row_key=row_key,
             record_type="url",
+            url_hash=url.url_hash,
             url=url.canonical_url,
             expanded_url=self._coalesce_value(
                 url.expanded_url, existing["expanded_url"] if existing else None
             ),
+            final_url=self._coalesce_value(
+                url.final_url, existing["final_url"] if existing else None
+            ),
             canonical_url=url.canonical_url,
             url_host=self._coalesce_value(url.host, existing["url_host"] if existing else None),
+            title=self._coalesce_value(url.title, existing["title"] if existing else None),
+            description=self._coalesce_value(
+                url.description, existing["description"] if existing else None
+            ),
+            site_name=self._coalesce_value(
+                url.site_name, existing["site_name"] if existing else None
+            ),
+            unfurl_state=self._coalesce_value(
+                existing["unfurl_state"] if existing else None,
+                "pending",
+            ),
+            last_fetched_at=existing["last_fetched_at"] if existing else None,
             raw_json=self._coalesce_value(
                 self._json_value(url.raw_json), existing["raw_json"] if existing else None
             ),
@@ -616,6 +686,9 @@ class ArchiveStore:
             record_type="url_ref",
             tweet_id=url_ref.tweet_id,
             position=url_ref.position,
+            url_hash=self._coalesce_value(
+                url_ref.url_hash, existing["url_hash"] if existing else None
+            ),
             url=self._coalesce_value(url_ref.short_url, existing["url"] if existing else None),
             expanded_url=self._coalesce_value(
                 url_ref.expanded_url, existing["expanded_url"] if existing else None
@@ -670,6 +743,9 @@ class ArchiveStore:
             content_text=content_text,
             canonical_url=self._coalesce_value(
                 article.canonical_url, existing["canonical_url"] if existing else None
+            ),
+            published_at=self._coalesce_value(
+                article.published_at, existing["published_at"] if existing else None
             ),
             status=status,
             raw_json=self._coalesce_value(
@@ -752,6 +828,258 @@ class ArchiveStore:
         )
         self._merge_records(list(buffer.records.values()))
 
+    def list_media_rows(
+        self,
+        *,
+        states: set[str] | None = None,
+        media_types: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.table.search().where("record_type = 'media'").to_list()
+        filtered: list[dict[str, Any]] = []
+        for row in rows:
+            state = row.get("download_state") or "pending"
+            media_type = row.get("media_type")
+            if states is not None and state not in states:
+                continue
+            if media_types is not None and media_type not in media_types:
+                continue
+            filtered.append(row)
+        filtered.sort(
+            key=lambda row: (
+                row.get("tweet_id") or "",
+                row.get("position") if row.get("position") is not None else 1_000_000,
+            )
+        )
+        return filtered[:limit] if limit is not None else filtered
+
+    def update_media_download(
+        self,
+        row_key: str,
+        *,
+        download_state: str,
+        local_path: str | None,
+        sha256: str | None,
+        byte_size: int | None,
+        content_type: str | None,
+        thumbnail_local_path: str | None,
+        thumbnail_sha256: str | None,
+        thumbnail_byte_size: int | None,
+        thumbnail_content_type: str | None,
+        downloaded_at: str | None,
+        download_error: str | None,
+    ) -> None:
+        row = self._get_row(row_key)
+        if row is None:
+            raise KeyError(f"Media row not found: {row_key}")
+        updated = dict(row)
+        updated.update(
+            {
+                "download_state": download_state,
+                "local_path": local_path,
+                "sha256": sha256,
+                "byte_size": byte_size,
+                "content_type": content_type,
+                "thumbnail_local_path": thumbnail_local_path,
+                "thumbnail_sha256": thumbnail_sha256,
+                "thumbnail_byte_size": thumbnail_byte_size,
+                "thumbnail_content_type": thumbnail_content_type,
+                "downloaded_at": downloaded_at,
+                "download_error": download_error,
+                "updated_at": utc_now(),
+            }
+        )
+        self._merge_records([updated])
+
+    def list_url_rows(
+        self,
+        *,
+        states: set[str] | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.table.search().where("record_type = 'url'").to_list()
+        filtered: list[dict[str, Any]] = []
+        for row in rows:
+            state = row.get("unfurl_state") or "pending"
+            if states is not None and state not in states:
+                continue
+            filtered.append(row)
+        filtered.sort(key=lambda row: row.get("canonical_url") or row.get("url") or "")
+        return filtered[:limit] if limit is not None else filtered
+
+    def update_url_unfurl(
+        self,
+        row_key: str,
+        *,
+        http_status: int | None,
+        final_url: str | None,
+        canonical_url: str | None,
+        title: str | None,
+        description: str | None,
+        site_name: str | None,
+        content_type: str | None,
+        unfurl_state: str,
+        last_fetched_at: str | None,
+        download_error: str | None,
+    ) -> None:
+        row = self._get_row(row_key)
+        if row is None:
+            raise KeyError(f"URL row not found: {row_key}")
+        updated = dict(row)
+        updated.update(
+            {
+                "http_status": http_status,
+                "final_url": final_url,
+                "canonical_url": canonical_url,
+                "url": canonical_url or updated.get("url"),
+                "title": title,
+                "description": description,
+                "site_name": site_name,
+                "content_type": content_type,
+                "unfurl_state": unfurl_state,
+                "last_fetched_at": last_fetched_at,
+                "download_error": download_error,
+                "updated_at": utc_now(),
+            }
+        )
+        self._merge_records([updated])
+
+    def list_article_rows(
+        self,
+        *,
+        preview_only: bool = False,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.table.search().where("record_type = 'article'").to_list()
+        if preview_only:
+            rows = [row for row in rows if row.get("status") != "body_present"]
+        rows.sort(key=lambda row: row.get("tweet_id") or "")
+        return rows[:limit] if limit is not None else rows
+
+    def get_article_tweet_ids(
+        self,
+        *,
+        preview_only: bool = False,
+        limit: int | None = None,
+    ) -> list[str]:
+        return [
+            row["tweet_id"]
+            for row in self.list_article_rows(preview_only=preview_only, limit=limit)
+        ]
+
+    def _refresh_tweet_records_for_detail(
+        self,
+        tweet: TimelineTweet,
+        *,
+        cursor: _PageBuffer,
+    ) -> None:
+        legacy = tweet.raw_json.get("legacy") or {}
+        rows = self._rows_for_values("tweet", "tweet_id", [tweet.tweet_id])
+        now = utc_now()
+        for row in rows:
+            updated = dict(row)
+            updated["text"] = self._coalesce_value(tweet.text, row.get("text"))
+            updated["author_id"] = self._coalesce_value(tweet.author_id, row.get("author_id"))
+            updated["author_username"] = self._coalesce_value(
+                tweet.author_username,
+                row.get("author_username"),
+            )
+            updated["author_display_name"] = self._coalesce_value(
+                tweet.author_display_name,
+                row.get("author_display_name"),
+            )
+            updated["created_at"] = self._coalesce_value(tweet.created_at, row.get("created_at"))
+            updated["conversation_id"] = self._coalesce_value(
+                legacy.get("conversation_id_str"),
+                row.get("conversation_id"),
+            )
+            updated["lang"] = self._coalesce_value(legacy.get("lang"), row.get("lang"))
+            updated["note_tweet_text"] = self._coalesce_value(
+                extract_note_tweet_text(tweet.raw_json),
+                row.get("note_tweet_text"),
+            )
+            updated["raw_json"] = self._json_value(tweet.raw_json)
+            updated["last_seen_at"] = now
+            updated["synced_at"] = now
+            cursor.records[updated["row_key"]] = updated
+
+    def persist_tweet_detail(
+        self,
+        *,
+        tweet: TimelineTweet,
+        raw_json: dict[str, Any],
+        http_status: int = 200,
+    ) -> None:
+        buffer = _PageBuffer()
+        self.append_raw_capture(
+            "TweetDetail",
+            tweet.tweet_id,
+            None,
+            http_status,
+            raw_json,
+            cursor=buffer,
+        )
+        self._refresh_tweet_records_for_detail(tweet, cursor=buffer)
+        self._buffer_secondary_graph(extract_secondary_objects(tweet.raw_json), cursor=buffer)
+        self._merge_records(list(buffer.records.values()))
+
+    def _serialize_media_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        variants = json.loads(row["variants_json"]) if row.get("variants_json") else []
+        return {
+            "media_key": row.get("media_key"),
+            "type": row.get("media_type"),
+            "source": row.get("source"),
+            "article_id": row.get("article_id"),
+            "position": row.get("position"),
+            "url": row.get("media_url"),
+            "thumbnail_url": row.get("thumbnail_url"),
+            "width": row.get("width"),
+            "height": row.get("height"),
+            "duration_millis": row.get("duration_millis"),
+            "variants": variants,
+            "download": {
+                "state": row.get("download_state") or "pending",
+                "local_path": row.get("local_path"),
+                "sha256": row.get("sha256"),
+                "byte_size": row.get("byte_size"),
+                "content_type": row.get("content_type"),
+                "thumbnail_local_path": row.get("thumbnail_local_path"),
+                "thumbnail_sha256": row.get("thumbnail_sha256"),
+                "thumbnail_byte_size": row.get("thumbnail_byte_size"),
+                "thumbnail_content_type": row.get("thumbnail_content_type"),
+                "downloaded_at": row.get("downloaded_at"),
+                "error": row.get("download_error"),
+            },
+        }
+
+    def _serialize_article_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "article_id": row.get("article_id"),
+            "title": row.get("title"),
+            "summary_text": row.get("summary_text"),
+            "content_text": row.get("content_text"),
+            "canonical_url": row.get("canonical_url"),
+            "published_at": row.get("published_at"),
+            "status": row.get("status"),
+        }
+
+    def _serialize_url_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "url_hash": row.get("url_hash"),
+            "canonical_url": row.get("canonical_url"),
+            "expanded_url": row.get("expanded_url"),
+            "final_url": row.get("final_url"),
+            "host": row.get("url_host"),
+            "title": row.get("title"),
+            "description": row.get("description"),
+            "site_name": row.get("site_name"),
+            "content_type": row.get("content_type"),
+            "http_status": row.get("http_status"),
+            "unfurl_state": row.get("unfurl_state") or "pending",
+            "last_fetched_at": row.get("last_fetched_at"),
+            "error": row.get("download_error"),
+        }
+
     def export_rows(self, collection: str, *, sort: str = "newest") -> list[dict[str, Any]]:
         filter_expr = "record_type = 'tweet'"
         if collection != "all":
@@ -761,8 +1089,63 @@ class ArchiveStore:
         def sort_key(row: dict[str, Any]) -> int:
             return int(row["sort_index"]) if row["sort_index"] else -1
 
+        tweet_ids = [row["tweet_id"] for row in tweet_rows if row.get("tweet_id")]
+        media_rows = self._rows_for_values("media", "tweet_id", tweet_ids)
+        article_rows = self._rows_for_values("article", "tweet_id", tweet_ids)
+        url_ref_rows = self._rows_for_values("url_ref", "tweet_id", tweet_ids)
+        url_hashes = [row["url_hash"] for row in url_ref_rows if row.get("url_hash")]
+        url_rows = self._rows_for_values("url", "url_hash", url_hashes)
+
+        media_by_tweet: dict[str, list[dict[str, Any]]] = {}
+        for row in sorted(
+            media_rows,
+            key=lambda item: (
+                item.get("tweet_id") or "",
+                item.get("position") if item.get("position") is not None else 1_000_000,
+            ),
+        ):
+            media_by_tweet.setdefault(row["tweet_id"], []).append(self._serialize_media_row(row))
+
+        articles_by_tweet = {
+            row["tweet_id"]: self._serialize_article_row(row)
+            for row in article_rows
+            if row.get("tweet_id")
+        }
+        urls_by_hash = {
+            row["url_hash"]: self._serialize_url_row(row) for row in url_rows if row.get("url_hash")
+        }
+        url_refs_by_tweet: dict[str, list[dict[str, Any]]] = {}
+        for row in sorted(
+            url_ref_rows,
+            key=lambda item: (
+                item.get("tweet_id") or "",
+                item.get("position") if item.get("position") is not None else 1_000_000,
+            ),
+        ):
+            resolved = urls_by_hash.get(row.get("url_hash"))
+            url_refs_by_tweet.setdefault(row["tweet_id"], []).append(
+                {
+                    "position": row.get("position"),
+                    "url_hash": row.get("url_hash"),
+                    "short_url": row.get("url"),
+                    "expanded_url": row.get("expanded_url"),
+                    "display_url": row.get("display_url"),
+                    "canonical_url": row.get("canonical_url"),
+                    "resolved": resolved,
+                }
+            )
+
         exported = []
         for row in sorted(tweet_rows, key=sort_key, reverse=(sort != "oldest")):
+            tweet_media = media_by_tweet.get(row["tweet_id"], [])
+            article = articles_by_tweet.get(row["tweet_id"])
+            if article is not None:
+                article["media"] = [
+                    item
+                    for item in tweet_media
+                    if item.get("article_id") == article.get("article_id")
+                    or str(item.get("source") or "").startswith("article_")
+                ]
             exported.append(
                 {
                     "tweet_id": row["tweet_id"],
@@ -780,6 +1163,9 @@ class ArchiveStore:
                         "added_at": row["added_at"],
                         "synced_at": row["synced_at"],
                     },
+                    "media": tweet_media,
+                    "urls": url_refs_by_tweet.get(row["tweet_id"], []),
+                    "article": article,
                     "raw_json": json.loads(row["raw_json"]),
                 }
             )

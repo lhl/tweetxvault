@@ -192,6 +192,24 @@ uv run tweetxvault export html
 uv run tweetxvault export html --collection likes --out ~/exports/likes.html
 ```
 
+JSON exports now include normalized `media`, `urls`, and `article` sections alongside each exported tweet row.
+
+### Media + URL Enrichment
+
+```bash
+# Download all pending archived media files into the local data dir
+uv run tweetxvault media download
+
+# Only download photos
+uv run tweetxvault media download --photos-only
+
+# Fetch final URL, canonical URL, title, and description metadata
+uv run tweetxvault unfurl
+
+# Retry previously failed URL unfurls
+uv run tweetxvault unfurl --retry-failed
+```
+
 ### Maintenance
 
 ```bash

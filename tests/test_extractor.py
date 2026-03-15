@@ -60,9 +60,13 @@ def test_extract_secondary_objects_captures_quote_media_urls_and_article() -> No
     assert graph.tweet_objects["200"].text == "quoted longform text"
     assert relation.relation_type == "quote_of"
     assert relation.target_tweet_id == "200"
-    assert len(graph.media) == 2
+    assert len(graph.media) == 3
     video = graph.media[("200", "7_quoted")]
     assert video.media_url == "https://video.twimg.com/ext_tw_video/quoted-hd.mp4"
+    article_cover = graph.media[("100", "article_cover:article-1:0")]
+    assert article_cover.source == "article_cover"
+    assert article_cover.article_id == "article-1"
+    assert article_cover.media_url == "https://pbs.twimg.com/article-cover.jpg"
     assert len(graph.url_refs) == 2
     canonical_urls = {item.canonical_url for item in graph.urls.values()}
     assert "https://example.com/story?keep=1" in canonical_urls
