@@ -96,10 +96,12 @@ def _render_archive_view(console: Console, *, collection: str, limit: int) -> No
 
 
 @sync_app.command("bookmarks")
-def sync_bookmarks(full: bool = False, limit: int | None = None) -> None:
+def sync_bookmarks(full: bool = False, backfill: bool = False, limit: int | None = None) -> None:
     console = _configure_logging()
     try:
-        result = asyncio.run(sync_collection("bookmarks", full=full, limit=limit, console=console))
+        result = asyncio.run(
+            sync_collection("bookmarks", full=full, backfill=backfill, limit=limit, console=console)
+        )
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
@@ -115,10 +117,12 @@ def sync_bookmarks(full: bool = False, limit: int | None = None) -> None:
 
 
 @sync_app.command("likes")
-def sync_likes(full: bool = False, limit: int | None = None) -> None:
+def sync_likes(full: bool = False, backfill: bool = False, limit: int | None = None) -> None:
     console = _configure_logging()
     try:
-        result = asyncio.run(sync_collection("likes", full=full, limit=limit, console=console))
+        result = asyncio.run(
+            sync_collection("likes", full=full, backfill=backfill, limit=limit, console=console)
+        )
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
@@ -131,10 +135,10 @@ def sync_likes(full: bool = False, limit: int | None = None) -> None:
 
 
 @sync_app.command("all")
-def sync_everything(full: bool = False, limit: int | None = None) -> None:
+def sync_everything(full: bool = False, backfill: bool = False, limit: int | None = None) -> None:
     console = _configure_logging()
     try:
-        outcome = asyncio.run(sync_all(full=full, limit=limit, console=console))
+        outcome = asyncio.run(sync_all(full=full, backfill=backfill, limit=limit, console=console))
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc

@@ -286,6 +286,141 @@ async def test_collection_scoped_duplicate_detection(paths, config: AppConfig, a
 
 
 @pytest.mark.asyncio
+async def test_duplicate_detection_stops_sync(paths, config: AppConfig, auth_bundle) -> None:
+    """After a full sync, a normal re-sync should stop on the first page (all dupes)."""
+    _save_query_ids(paths)
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out="c1",
+        http_status=200,
+        raw_json={"seed": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id="1",
+                text="already stored",
+                author_id="a1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="10",
+                raw_json={"tweet": "1"},
+            ),
+            TimelineTweet(
+                tweet_id="2",
+                text="also stored",
+                author_id="a1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="9",
+                raw_json={"tweet": "2"},
+            ),
+        ],
+        last_head_tweet_id="1",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.close()
+
+    pages_requested: list[str | None] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+        pages_requested.append(cursor if isinstance(cursor, str) else None)
+        if cursor is None:
+            return httpx.Response(
+                200, json=make_bookmarks_response(["1", "2"], cursor="c1"), request=request
+            )
+        raise AssertionError(f"should have stopped before cursor {cursor}")
+
+    result = await sync_collection(
+        "bookmarks",
+        full=False,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+    assert result.stop_reason == "duplicate"
+    assert result.pages_fetched == 1
+    assert pages_requested == [None]
+
+
+@pytest.mark.asyncio
+async def test_backfill_flag_skips_duplicate_stop(paths, config: AppConfig, auth_bundle) -> None:
+    """--backfill should continue past duplicates without resetting state."""
+    _save_query_ids(paths)
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"seed": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id="1",
+                text="existing",
+                author_id="a1",
+                author_username="user1",
+                author_display_name="User 1",
+                created_at="date",
+                sort_index="10",
+                raw_json={"tweet": "1"},
+            ),
+        ],
+        last_head_tweet_id="1",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.close()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+        if cursor is None:
+            return httpx.Response(
+                200, json=make_bookmarks_response(["1"], cursor="c1"), request=request
+            )
+        if cursor == "c1":
+            return httpx.Response(200, json=make_bookmarks_response(["2"]), request=request)
+        raise AssertionError(f"unexpected cursor {cursor}")
+
+    result = await sync_collection(
+        "bookmarks",
+        full=False,
+        backfill=True,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+    assert result.pages_fetched == 2
+    assert result.stop_reason != "duplicate"
+
+
+@pytest.mark.asyncio
 async def test_sync_all_aborts_on_failed_preflight_without_writes(paths, config: AppConfig) -> None:
     _save_query_ids(paths)
 

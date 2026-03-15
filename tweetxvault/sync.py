@@ -296,6 +296,7 @@ async def _run_pass(
     prior_backfill_cursor: str | None,
     prior_backfill_incomplete: bool,
     initial_seen_ids: set[str],
+    existing_tweet_ids: set[str],
     is_head_pass: bool,
     console: Console,
     sleep: Callable[[float], Awaitable[None]],
@@ -326,8 +327,7 @@ async def _run_pass(
         duplicate_seen = False
         if is_head_pass and stop_on_duplicate:
             duplicate_seen = any(
-                tweet.tweet_id not in seen_ids
-                and store.has_membership(tweet.tweet_id, COLLECTION_TO_STORAGE[collection])
+                tweet.tweet_id not in seen_ids and tweet.tweet_id in existing_tweet_ids
                 for tweet in tweets
             )
 
@@ -389,7 +389,8 @@ async def sync_collection(
     collection: str,
     *,
     full: bool,
-    limit: int | None,
+    backfill: bool = False,
+    limit: int | None = None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
     auth_bundle: ResolvedAuthBundle | None = None,
@@ -416,6 +417,7 @@ async def sync_collection(
     return await _sync_collection_ready(
         collection=collection,
         full=full,
+        backfill=backfill,
         limit=limit,
         config=config,
         paths=paths,
@@ -430,6 +432,7 @@ async def _sync_collection_ready(
     *,
     collection: str,
     full: bool,
+    backfill: bool = False,
     limit: int | None,
     config: AppConfig,
     paths: XDGPaths,
@@ -464,6 +467,10 @@ async def _sync_collection_ready(
         )
         prior_backfill_incomplete = previous_state.backfill_incomplete
         seen_ids: set[str] = set()
+        stop_on_dup = not full and not backfill
+        existing_tweet_ids: set[str] = set()
+        if stop_on_dup:
+            existing_tweet_ids = store.get_collection_tweet_ids(COLLECTION_TO_STORAGE[collection])
         client = build_async_client(
             preflight.auth, timeout=config.sync.timeout, transport=transport
         )
@@ -477,11 +484,12 @@ async def _sync_collection_ready(
                 query_ids=dict(preflight.query_ids),
                 store=store,
                 count_limit=limit,
-                stop_on_duplicate=not full,
+                stop_on_duplicate=stop_on_dup,
                 previous_state=previous_state,
                 prior_backfill_cursor=prior_backfill_cursor,
                 prior_backfill_incomplete=prior_backfill_incomplete,
                 initial_seen_ids=seen_ids,
+                existing_tweet_ids=existing_tweet_ids,
                 is_head_pass=True,
                 console=console,
                 sleep=sleep,
@@ -508,6 +516,7 @@ async def _sync_collection_ready(
                     prior_backfill_cursor=prior_backfill_cursor,
                     prior_backfill_incomplete=prior_backfill_incomplete,
                     initial_seen_ids=seen_ids,
+                    existing_tweet_ids=set(),
                     is_head_pass=False,
                     console=console,
                     sleep=sleep,
@@ -533,6 +542,7 @@ async def _sync_collection_ready(
 async def sync_all(
     *,
     full: bool,
+    backfill: bool = False,
     limit: int | None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -565,6 +575,7 @@ async def sync_all(
             result = await _sync_collection_ready(
                 collection=collection,
                 full=full,
+                backfill=backfill,
                 limit=limit,
                 config=config,
                 paths=paths,

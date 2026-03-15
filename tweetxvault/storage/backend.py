@@ -308,6 +308,11 @@ class ArchiveStore:
         row_key = self._row_key_for_tweet(tweet_id, collection_type, folder_id)
         return self._get_row(row_key) is not None
 
+    def get_collection_tweet_ids(self, collection_type: str) -> set[str]:
+        filter_expr = f"record_type = 'tweet' AND collection_type = {_expr_quote(collection_type)}"
+        rows = self.table.search().where(filter_expr).select(["tweet_id"]).to_list()
+        return {row["tweet_id"] for row in rows}
+
     def get_archive_owner_id(self) -> str | None:
         row = self._get_row(self._row_key_for_metadata("owner_user_id"))
         return row["value"] if row else None
