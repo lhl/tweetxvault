@@ -164,6 +164,8 @@ Optional but useful early.
   - Export by collection type (likes/bookmarks/all) to a JSON file.
   - Include: tweet_id, text, author info, created_at, collection membership, raw_json (or path).
 - [x] Add `tweetxvault export json [--collection likes|bookmarks|all] [--out path]`.
+- [x] Add `tweetxvault export html [--collection likes|bookmarks|all] [--out path]`.
+- [x] Add `tweetxvault view bookmarks|likes|all [--limit N]`.
 
 ## Task 9: Integration Test + Polish
 

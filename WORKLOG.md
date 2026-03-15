@@ -2,6 +2,12 @@
 
 ## 2026-03-15
 
+- Added local inspection/export commands on top of the LanceDB archive:
+  - Added `tweetxvault view bookmarks|likes|all` to print recent archived rows in a terminal table
+  - Added `tweetxvault export html` to write a local HTML viewer alongside the existing JSON export
+  - Normalized collection names so `bookmarks`/`likes` work consistently for user-facing export/view commands
+  - Added direct CLI tests covering terminal view output, JSON export aliases, and HTML export output
+
 - Tightened Firefox profile autodiscovery for multi-profile setups:
   - Changed `discover_default_profile(...)` to scan discovered Firefox profiles and auto-pick the only profile that actually contains `x.com` session cookies
   - Added explicit ambiguity/no-cookie errors that list discovered profile paths and point users at `TWEETXVAULT_FIREFOX_PROFILE_PATH` / `auth.firefox_profile_path`

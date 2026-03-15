@@ -10,11 +10,17 @@ from typing import Annotated
 import typer
 from loguru import logger
 from rich.console import Console
+from rich.table import Table
 
 from tweetxvault.config import ensure_paths, load_config
 from tweetxvault.exceptions import ConfigError, TweetXVaultError
-from tweetxvault.export import export_json_archive
-from tweetxvault.export.json_export import default_export_path
+from tweetxvault.export import export_html_archive, export_json_archive
+from tweetxvault.export.common import (
+    default_export_path,
+    display_collection_name,
+    normalize_collection_name,
+    tweet_url,
+)
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import open_archive_store
 from tweetxvault.sync import run_preflight, sync_all, sync_collection
@@ -23,16 +29,70 @@ app = typer.Typer(no_args_is_help=True)
 auth_app = typer.Typer(no_args_is_help=True)
 export_app = typer.Typer(no_args_is_help=True)
 sync_app = typer.Typer(no_args_is_help=True)
+view_app = typer.Typer(no_args_is_help=True)
 
 app.add_typer(auth_app, name="auth")
 app.add_typer(export_app, name="export")
 app.add_typer(sync_app, name="sync")
+app.add_typer(view_app, name="view")
 
 
 def _configure_logging() -> Console:
     logger.remove()
     logger.add(sys.stderr, level="INFO")
     return Console(stderr=True)
+
+
+def _normalize_collection_or_exit(collection: str, console: Console) -> str:
+    try:
+        return normalize_collection_name(collection)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+def _open_store_for_read(console: Console):
+    _, paths = load_config()
+    store = open_archive_store(paths, create=False)
+    if store is None:
+        console.print("[red]No local archive found.[/red]")
+        raise typer.Exit(1)
+    return store, paths
+
+
+def _render_archive_view(console: Console, *, collection: str, limit: int) -> None:
+    normalized = _normalize_collection_or_exit(collection, console)
+    store, _ = _open_store_for_read(console)
+    try:
+        rows = store.export_rows(normalized)
+    finally:
+        store.close()
+
+    label = display_collection_name(normalized)
+    if not rows:
+        console.print(f"[yellow]No archived {label} rows found.[/yellow]")
+        return
+
+    shown = rows[:limit]
+    table = Table(title=f"{label} archive")
+    table.add_column("Created", style="cyan", no_wrap=True)
+    table.add_column("Author", style="green", no_wrap=True)
+    table.add_column("Text", overflow="fold")
+    table.add_column("URL", style="magenta", overflow="fold")
+
+    for row in shown:
+        author = row["author"]
+        username = author["username"] if author["username"] else author["id"] or "unknown"
+        text = (row["text"] or "").replace("\n", " ")
+        table.add_row(
+            row["created_at"] or "",
+            f"@{username}",
+            text,
+            tweet_url(row),
+        )
+
+    console.print(f"showing {len(shown)} of {len(rows)} archived {label} tweets")
+    console.print(table)
 
 
 @sync_app.command("bookmarks")
@@ -137,23 +197,62 @@ def auth_refresh_ids() -> None:
     console.print(f"refreshed {len(cache.ids)} query IDs into {store.path}")
 
 
+@view_app.command("bookmarks")
+def view_bookmarks(limit: int = 20) -> None:
+    console = _configure_logging()
+    _render_archive_view(console, collection="bookmarks", limit=limit)
+
+
+@view_app.command("likes")
+def view_likes(limit: int = 20) -> None:
+    console = _configure_logging()
+    _render_archive_view(console, collection="likes", limit=limit)
+
+
+@view_app.command("all")
+def view_all(limit: int = 20) -> None:
+    console = _configure_logging()
+    _render_archive_view(console, collection="all", limit=limit)
+
+
 @export_app.command("json")
 def export_json(
     collection: Annotated[str, typer.Option("--collection")] = "all",
     out: Annotated[Path | None, typer.Option("--out")] = None,
 ) -> None:
     console = _configure_logging()
-    _, paths = load_config()
-    store = open_archive_store(paths, create=False)
-    if store is None:
-        console.print("[red]No local archive found.[/red]")
-        raise typer.Exit(1)
+    normalized = _normalize_collection_or_exit(collection, console)
+    store, paths = _open_store_for_read(console)
     try:
-        out_path = out or default_export_path(paths.data_dir / "exports", collection)
-        export_json_archive(store, collection=collection, out_path=out_path)
+        out_path = out or default_export_path(
+            paths.data_dir / "exports",
+            normalized,
+            extension="json",
+        )
+        export_json_archive(store, collection=normalized, out_path=out_path)
     finally:
         store.close()
-    console.print(f"exported {collection} archive to {out_path}")
+    console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
+
+
+@export_app.command("html")
+def export_html(
+    collection: Annotated[str, typer.Option("--collection")] = "all",
+    out: Annotated[Path | None, typer.Option("--out")] = None,
+) -> None:
+    console = _configure_logging()
+    normalized = _normalize_collection_or_exit(collection, console)
+    store, paths = _open_store_for_read(console)
+    try:
+        out_path = out or default_export_path(
+            paths.data_dir / "exports",
+            normalized,
+            extension="html",
+        )
+        export_html_archive(store, collection=normalized, out_path=out_path)
+    finally:
+        store.close()
+    console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
 
 
 @app.callback()

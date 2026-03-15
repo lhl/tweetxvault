@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import UTC, datetime
 from pathlib import Path
 
+from tweetxvault.export.common import normalize_collection_name
 from tweetxvault.storage import ArchiveStore
-
-
-def default_export_path(base_dir: Path, collection: str) -> Path:
-    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
-    return base_dir / f"export-{collection}-{stamp}.json"
 
 
 def export_json_archive(store: ArchiveStore, *, collection: str, out_path: Path) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = store.export_rows(collection)
+    payload = store.export_rows(normalize_collection_name(collection))
     with tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",

@@ -378,7 +378,11 @@ tweetxvault sync all                  # preflight both, then sync bookmarks + li
 tweetxvault sync all --full           # full resync (ignore duplicates)
 tweetxvault sync bookmarks --limit 5  # stop after 5 pages (testing)
 
+tweetxvault view bookmarks            # show recent bookmarks in the terminal
+tweetxvault view likes                # show recent likes in the terminal
+
 tweetxvault export json               # (phase 2+) export all collections
+tweetxvault export html               # export a local HTML viewer
 
 tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
@@ -419,7 +423,10 @@ Reserved for future (not implemented in MVP):
 
 ### Phase 2: Export + Media Foundations
 
-- [ ] Export: JSON / CSV / Markdown
+- [x] Export: JSON
+- [x] Terminal view command
+- [x] HTML export viewer
+- [ ] Export: CSV / Markdown
 - [ ] Media metadata extraction to DB (URLs, types, dimensions, variants)
 - [ ] Media download (photos first; video later)
 
@@ -436,7 +443,7 @@ Reserved for future (not implemented in MVP):
 - [ ] Thread expansion (TweetDetail)
 - [ ] Articles export (`UserArticlesTweets`)
 - [ ] Following/followers lists
-- [ ] HTML export viewer (optional)
+- [x] HTML export viewer
 - [ ] attention-export integration
 
 ## Open Questions (Remaining)
