@@ -2,6 +2,11 @@
 
 ## 2026-03-16
 
+- Reprioritized the roadmap to add authored-tweet capture before archive import:
+  - Added a new Task 14 in `docs/IMPLEMENTATION.md` for `UserTweets`-backed own-tweet sync/export support
+  - Shifted archive import planning to Task 15 because it is a larger parallel ingestion problem, while own tweets reuse the existing live-sync/storage/media/export stack
+  - Added `sync tweets` / `view tweets` roadmap notes in `docs/PLAN.md` plus a new open UX question about whether authored tweets should join `sync all`
+
 - Landed the remaining article support:
   - Added `tweetxvault/articles.py` plus `tweetxvault articles refresh`, which resolves explicit tweet URLs/IDs or auto-selects preview-only archived article rows and refreshes them through authenticated `TweetDetail`
   - Added `build_tweet_detail_url(...)` / `parse_tweet_detail_response(...)` in `tweetxvault/client/timelines.py`

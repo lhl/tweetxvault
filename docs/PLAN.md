@@ -521,12 +521,14 @@ Primary commands:
 ```
 tweetxvault sync bookmarks            # incremental
 tweetxvault sync likes                # incremental
+tweetxvault sync tweets               # your own authored tweets
 tweetxvault sync all                  # preflight both, then sync bookmarks + likes
 tweetxvault sync all --full           # full resync (ignore duplicates)
 tweetxvault sync bookmarks --limit 5  # stop after 5 pages (testing)
 
 tweetxvault view bookmarks            # show recent bookmarks in the terminal
 tweetxvault view likes                # show recent likes in the terminal
+tweetxvault view tweets               # show your authored tweets in the terminal
 
 tweetxvault export json               # (phase 2+) export all collections
 tweetxvault export html               # export a local HTML viewer
@@ -597,6 +599,7 @@ Reserved for future (not implemented in MVP):
 ### Phase 4: Extended Collections + Polish
 
 - [ ] Bookmark folders
+- [ ] Own tweet timeline sync (`UserTweets`)
 - [ ] Thread expansion (TweetDetail)
 - [ ] Articles capture / export (`UserArticlesTweets` + article-bearing tweet payloads)
 - [ ] URL snapshot queue / ArchiveBox integration
@@ -612,7 +615,8 @@ Reserved for future (not implemented in MVP):
 3. **Canonical tweet layer migration**: do we keep long-term duplication between collection-scoped `tweet` rows and global `tweet_object` rows, or eventually slim the membership rows down to just collection/order state once downstream consumers move over?
 4. **Articles endpoint shape**: authenticated `TweetDetail` returned full article `plain_text` on 2026-03-16; remaining question is whether `UserArticlesTweets` adds anything we need beyond the current targeted refresh path.
 5. **URL snapshot runner**: inline CLI commands landed for the first pass (`tweetxvault media download`, `tweetxvault unfurl`); decide later whether ArchiveBox/snapshotting needs a queue table or can stay command-driven.
-6. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
+6. **Own-tweets UX surface**: once `UserTweets` lands, do we include authored tweets in `tweetxvault sync all`, or keep them as an explicit opt-in collection to avoid surprising archive growth?
+7. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
 
 ## Dependencies (Planned)
 

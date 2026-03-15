@@ -296,7 +296,27 @@ This is the next real implementation milestone after the LanceDB migration. The 
 - [x] Decide whether article-only fallback fetching is needed if GraphQL returns preview-only payloads.
   - Current decision: no extra fallback is needed right now; `tweetxvault articles refresh` uses authenticated `TweetDetail`, which returned full bodies for the Dimitris validation tweet on 2026-03-16
 
-## Task 14: X Archive Import Stub
+## Task 14: Own Tweet Capture
+
+This is materially smaller than archive import because it reuses the live GraphQL sync path, the current extractor layer, and the existing media/unfurl/export follow-on jobs.
+
+- [ ] Add `UserTweets` query-id coverage and a dedicated request builder.
+- [ ] Reserve `UserTweetsAndReplies` for a later follow-on; start with authored tweets only.
+- [ ] Add CLI shape:
+  - `tweetxvault sync tweets`
+  - `tweetxvault view tweets`
+  - `tweetxvault export json --collection tweets`
+  - `tweetxvault export html --collection tweets`
+- [ ] Add a collection/storage label for authored tweets that reuses the current `tweet` membership rows plus secondary-object extraction.
+- [ ] Reuse the existing duplicate-detection, sync-state, rehydrate, media-download, URL-unfurl, and article-refresh paths for own-tweet rows.
+- [ ] Decide whether `tweetxvault sync all` should include own tweets, or whether authored tweets stay an explicit opt-in collection.
+- [ ] Add regression coverage for:
+  - incremental `UserTweets` pagination
+  - collection-scoped duplicate detection on authored tweets
+  - export/view support for the new collection
+  - same authored tweet later appearing in likes/bookmarks without duplicating secondary objects
+
+## Task 15: X Archive Import Stub
 
 We do not have a fresh archive fixture yet, so this task starts as interface + provenance planning only.
 
