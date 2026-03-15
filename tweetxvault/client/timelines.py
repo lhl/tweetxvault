@@ -156,6 +156,7 @@ def _tweet_from_result(result: dict[str, Any], *, sort_index: str | None) -> Tim
     core = result.get("core") or {}
     user_result = core.get("user_results", {}).get("result", {})
     user_legacy = user_result.get("legacy") or {}
+    user_core = user_result.get("core") or {}
     tweet_id = result.get("rest_id")
     if not tweet_id:
         return None
@@ -163,8 +164,8 @@ def _tweet_from_result(result: dict[str, Any], *, sort_index: str | None) -> Tim
         tweet_id=tweet_id,
         text=legacy.get("full_text", ""),
         author_id=user_result.get("rest_id"),
-        author_username=user_legacy.get("screen_name"),
-        author_display_name=user_legacy.get("name"),
+        author_username=user_legacy.get("screen_name") or user_core.get("screen_name"),
+        author_display_name=user_legacy.get("name") or user_core.get("name"),
         created_at=legacy.get("created_at"),
         sort_index=sort_index,
         raw_json=result,

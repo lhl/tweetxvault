@@ -387,12 +387,11 @@ class ArchiveStore:
             filter_expr += f" AND collection_type = {_expr_quote(collection)}"
         tweet_rows = self.table.search().where(filter_expr).to_list()
 
-        def sort_key(row: dict[str, Any]) -> tuple[str, int]:
-            sort_index = int(row["sort_index"]) if row["sort_index"] else -1
-            return row["synced_at"] or "", sort_index
+        def sort_key(row: dict[str, Any]) -> int:
+            return int(row["sort_index"]) if row["sort_index"] else -1
 
         exported = []
-        for row in sorted(tweet_rows, key=sort_key, reverse=(sort == "newest")):
+        for row in sorted(tweet_rows, key=sort_key, reverse=(sort != "oldest")):
             exported.append(
                 {
                     "tweet_id": row["tweet_id"],
@@ -423,6 +422,42 @@ class ArchiveStore:
             "collections": tweet_rows,
             "sync_state": self.table.count_rows("record_type = 'sync_state'"),
         }
+
+    def rehydrate_authors(self) -> int:
+        """Re-extract author fields from raw_json for tweets missing usernames."""
+        rows = (
+            self.table.search()
+            .where("record_type = 'tweet' AND author_username IS NULL")
+            .select(["row_key", "raw_json"])
+            .to_list()
+        )
+        if not rows:
+            return 0
+        updated = 0
+        for row in rows:
+            raw = json.loads(row["raw_json"])
+            core = raw.get("core") or {}
+            user_result = core.get("user_results", {}).get("result", {})
+            user_legacy = user_result.get("legacy") or {}
+            user_core = user_result.get("core") or {}
+            username = user_legacy.get("screen_name") or user_core.get("screen_name")
+            display_name = user_legacy.get("name") or user_core.get("name")
+            author_id = user_result.get("rest_id")
+            if not username and not display_name:
+                continue
+            updates: dict[str, str] = {}
+            if username:
+                updates["author_username"] = _expr_quote(username)
+            if display_name:
+                updates["author_display_name"] = _expr_quote(display_name)
+            if author_id:
+                updates["author_id"] = _expr_quote(author_id)
+            self.table.update(
+                where=f"row_key = {_expr_quote(row['row_key'])}",
+                values_sql=updates,
+            )
+            updated += 1
+        return updated
 
     def version_count(self) -> int:
         return len(self.table.list_versions())

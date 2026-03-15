@@ -296,6 +296,20 @@ def optimize_archive() -> None:
         store.close()
 
 
+@app.command("rehydrate")
+def rehydrate_archive() -> None:
+    """Re-extract author info from stored raw_json for tweets missing usernames."""
+    console = _configure_logging()
+    store, _ = _open_store_for_read(console)
+    try:
+        count = _with_auto_optimize(store, console, lambda s: s.rehydrate_authors())
+        if count:
+            store.optimize()
+        console.print(f"rehydrated author data for {count} tweets")
+    finally:
+        store.close()
+
+
 def _raise_nofile_limit() -> None:
     """Raise the soft file-descriptor limit to the hard limit.
 
