@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import lancedb
+import numpy as np
 import pyarrow as pa
 
 from tweetxvault.client.timelines import TimelineTweet
@@ -80,8 +81,11 @@ ARCHIVE_SCHEMA = pa.schema(
         pa.field("updated_at", pa.string()),
         pa.field("key", pa.string()),
         pa.field("value", pa.large_string()),
+        pa.field("embedding", pa.list_(pa.float32(), 384)),
     ]
 )
+
+EMBEDDING_DIM = 384
 
 
 class ArchiveStore:
@@ -95,6 +99,7 @@ class ArchiveStore:
         table_names = set(self.db.list_tables().tables)
         if self.TABLE_NAME in table_names:
             self.table = self.db.open_table(self.TABLE_NAME)
+            self._migrate_schema()
         elif create:
             self.table = self.db.create_table(
                 self.TABLE_NAME,
@@ -103,6 +108,14 @@ class ArchiveStore:
             )
         else:
             raise FileNotFoundError(f"LanceDB archive table not found at {db_path}")
+
+    def _migrate_schema(self) -> None:
+        existing_names = {f.name for f in self.table.schema}
+        if "embedding" not in existing_names:
+            arrow_table = self.table.to_arrow()
+            null_embeddings = pa.nulls(len(arrow_table), type=pa.list_(pa.float32(), EMBEDDING_DIM))
+            new_table = arrow_table.append_column("embedding", null_embeddings)
+            self.table = self.db.create_table(self.TABLE_NAME, new_table, mode="overwrite")
 
     def close(self) -> None:
         return None
@@ -461,6 +474,95 @@ class ArchiveStore:
         if batch:
             self._merge_records(batch)
         return updated
+
+    def count_unembedded(self) -> int:
+        return self.table.count_rows("record_type = 'tweet' AND embedding IS NULL")
+
+    def get_unembedded_tweets(self, *, batch_size: int = 100) -> list[list[dict[str, Any]]]:
+        """Return unembedded tweet rows in batches."""
+        rows = (
+            self.table.search()
+            .where("record_type = 'tweet' AND embedding IS NULL")
+            .select(["row_key", "text", "author_username"])
+            .to_list()
+        )
+        batches = []
+        for i in range(0, len(rows), batch_size):
+            batches.append(rows[i : i + batch_size])
+        return batches
+
+    def write_embeddings(self, row_keys: list[str], embeddings: np.ndarray) -> None:
+        """Write embedding vectors for the given row_keys."""
+        updates = pa.table(
+            {
+                "row_key": row_keys,
+                "embedding": [emb.tolist() for emb in embeddings],
+            },
+            schema=pa.schema(
+                [
+                    pa.field("row_key", pa.string()),
+                    pa.field("embedding", pa.list_(pa.float32(), EMBEDDING_DIM)),
+                ]
+            ),
+        )
+        self.table.merge_insert("row_key").when_matched_update_all(
+            "target.embedding IS NULL"
+        ).execute(updates)
+
+    def clear_embeddings(self) -> None:
+        """Clear all embeddings so they can be regenerated."""
+        count = self.table.count_rows("record_type = 'tweet' AND embedding IS NOT NULL")
+        if count == 0:
+            return
+        arrow_table = self.table.to_arrow()
+        embedding_col_idx = arrow_table.schema.get_field_index("embedding")
+        null_embeddings = pa.nulls(len(arrow_table), type=pa.list_(pa.float32(), EMBEDDING_DIM))
+        new_table = arrow_table.set_column(embedding_col_idx, "embedding", null_embeddings)
+        self.table = self.db.create_table(self.TABLE_NAME, new_table, mode="overwrite")
+
+    def ensure_fts_index(self) -> None:
+        """Create FTS index on text column if it doesn't exist."""
+        indices = self.table.list_indices()
+        fts_exists = any(
+            idx.get("index_type") == "FTS" or idx.get("columns") == ["text"] for idx in indices
+        )
+        if not fts_exists:
+            self.table.create_fts_index("text", replace=True)
+
+    def search_fts(self, query: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Full-text search over tweet text."""
+        self.ensure_fts_index()
+        return (
+            self.table.search(query, query_type="fts")
+            .where("record_type = 'tweet'")
+            .limit(limit)
+            .to_list()
+        )
+
+    def search_vector(self, vector: list[float], *, limit: int = 20) -> list[dict[str, Any]]:
+        """Vector similarity search over tweet embeddings."""
+        return (
+            self.table.search(vector, query_type="vector")
+            .where("record_type = 'tweet' AND embedding IS NOT NULL")
+            .limit(limit)
+            .to_list()
+        )
+
+    def search_hybrid(
+        self, query: str, vector: list[float], *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Hybrid FTS + vector search with reranking."""
+        self.ensure_fts_index()
+        return (
+            self.table.search(query, query_type="hybrid")
+            .vector(vector)
+            .where("record_type = 'tweet'")
+            .limit(limit)
+            .to_list()
+        )
+
+    def has_embeddings(self) -> bool:
+        return self.table.count_rows("record_type = 'tweet' AND embedding IS NOT NULL") > 0
 
     def version_count(self) -> int:
         return len(self.table.list_versions())

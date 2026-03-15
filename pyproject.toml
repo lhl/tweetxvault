@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
   "httpx>=0.27,<1",
   "lancedb>=0.29,<1",
+  "numpy>=1.26,<3",
   "loguru>=0.7,<1",
   "pydantic>=2,<3",
   "pyarrow>=20,<23",
@@ -20,6 +21,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+embed = [
+  "huggingface-hub>=0.25,<1",
+  "onnxruntime>=1.19,<2",
+  "tokenizers>=0.21,<1",
+]
 dev = [
   "mypy>=1.10,<2",
   "pytest>=8,<9",

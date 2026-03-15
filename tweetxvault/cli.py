@@ -319,6 +319,104 @@ def rehydrate_archive() -> None:
         store.close()
 
 
+@app.command("embed")
+def embed_archive(regen: bool = False) -> None:
+    """Generate embeddings for archived tweets. Resumes by default."""
+    from tqdm import tqdm
+
+    from tweetxvault.embed import EmbeddingEngine
+
+    console = _configure_logging()
+    store, _ = _open_store_for_read(console)
+    try:
+        if regen:
+            console.print("clearing existing embeddings...")
+            store.clear_embeddings()
+        remaining = store.count_unembedded()
+        if remaining == 0:
+            console.print("all tweets already have embeddings")
+            return
+        console.print("loading embedding model...")
+        engine = EmbeddingEngine()
+        console.print(f"embedding {remaining} tweets...")
+        batches = store.get_unembedded_tweets(batch_size=100)
+        with tqdm(total=remaining, desc="embedding", unit="tweets") as pbar:
+            for batch in batches:
+                texts = [f"@{row['author_username'] or ''}: {row['text'] or ''}" for row in batch]
+                row_keys = [row["row_key"] for row in batch]
+                vectors = engine.embed_batch(texts)
+                store.write_embeddings(row_keys, vectors)
+                pbar.update(len(batch))
+        console.print("compacting archive...")
+        store.optimize()
+        console.print(f"embedded {remaining} tweets")
+    finally:
+        store.close()
+
+
+@app.command("search")
+def search_archive(
+    query: str,
+    limit: int = 20,
+    mode: str = "auto",
+) -> None:
+    """Search archived tweets. Modes: auto, fts, vector, hybrid."""
+    console = _configure_logging()
+    store, _ = _open_store_for_read(console)
+    try:
+        has_vec = store.has_embeddings()
+        if mode == "auto":
+            mode = "hybrid" if has_vec else "fts"
+        if mode in ("vector", "hybrid") and not has_vec:
+            console.print("[yellow]No embeddings found. Run 'tweetxvault embed' first.[/yellow]")
+            console.print("Falling back to full-text search.")
+            mode = "fts"
+
+        if mode == "fts":
+            results = _with_auto_optimize(
+                store, console, lambda s: s.search_fts(query, limit=limit)
+            )
+        elif mode == "vector":
+            from tweetxvault.embed import EmbeddingEngine
+
+            engine = EmbeddingEngine()
+            vec = engine.embed_batch([query])[0].tolist()
+            results = store.search_vector(vec, limit=limit)
+        else:
+            from tweetxvault.embed import EmbeddingEngine
+
+            engine = EmbeddingEngine()
+            vec = engine.embed_batch([query])[0].tolist()
+            results = _with_auto_optimize(
+                store, console, lambda s: s.search_hybrid(query, vec, limit=limit)
+            )
+
+        if not results:
+            console.print("[yellow]No results found.[/yellow]")
+            return
+
+        table = Table(title=f"search: {query}")
+        table.add_column("Score", style="yellow", no_wrap=True)
+        table.add_column("Created", style="cyan", no_wrap=True)
+        table.add_column("Author", style="green", no_wrap=True)
+        table.add_column("Text", overflow="fold")
+        for row in results:
+            score = row.get("_relevance_score") or row.get("_distance") or ""
+            if isinstance(score, float):
+                score = f"{score:.3f}"
+            username = row.get("author_username") or row.get("author_id") or "?"
+            text = (row.get("text") or "").replace("\n", " ")
+            table.add_row(
+                str(score),
+                row.get("created_at") or "",
+                f"@{username}",
+                text,
+            )
+        console.print(table)
+    finally:
+        store.close()
+
+
 def _raise_nofile_limit() -> None:
     """Raise the soft file-descriptor limit to the hard limit.
 
