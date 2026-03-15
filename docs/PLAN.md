@@ -600,7 +600,8 @@ Reserved for future (not implemented in MVP):
 
 - [ ] Bookmark folders
 - [ ] Own tweet timeline sync (`UserTweets`)
-- [ ] Thread expansion (TweetDetail)
+- [ ] Thread/context expansion (`TweetDetail`) for archived tweets
+- [ ] Linked X-status URL expansion
 - [ ] Articles capture / export (`UserArticlesTweets` + article-bearing tweet payloads)
 - [ ] URL snapshot queue / ArchiveBox integration
 - [ ] Following/followers lists
@@ -616,7 +617,8 @@ Reserved for future (not implemented in MVP):
 4. **Articles endpoint shape**: authenticated `TweetDetail` returned full article `plain_text` on 2026-03-16; remaining question is whether `UserArticlesTweets` adds anything we need beyond the current targeted refresh path.
 5. **URL snapshot runner**: inline CLI commands landed for the first pass (`tweetxvault media download`, `tweetxvault unfurl`); decide later whether ArchiveBox/snapshotting needs a queue table or can stay command-driven.
 6. **Own-tweets UX surface**: once `UserTweets` lands, do we include authored tweets in `tweetxvault sync all`, or keep them as an explicit opt-in collection to avoid surprising archive growth?
-7. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
+7. **Thread-expansion trigger**: do we keep thread/context capture as an explicit follow-on command, or add an opt-in sync-time expansion flag after the first stable implementation?
+8. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
 
 ## Dependencies (Planned)
 

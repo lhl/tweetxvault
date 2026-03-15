@@ -2,9 +2,14 @@
 
 ## 2026-03-16
 
+- Added a dedicated thread-expansion milestone ahead of archive import:
+  - Inserted Task 15 in `docs/IMPLEMENTATION.md` for `TweetDetail`-based thread/context capture plus linked X-status URL expansion
+  - Shifted archive import planning to Task 16
+  - Clarified in `docs/PLAN.md` that current attached-tweet extraction is not full thread expansion, and added a new open question about whether thread capture should stay an explicit command or become an opt-in sync-time flag
+
 - Reprioritized the roadmap to add authored-tweet capture before archive import:
   - Added a new Task 14 in `docs/IMPLEMENTATION.md` for `UserTweets`-backed own-tweet sync/export support
-  - Shifted archive import planning to Task 15 because it is a larger parallel ingestion problem, while own tweets reuse the existing live-sync/storage/media/export stack
+  - Initially shifted archive import planning back one slot because it is a larger parallel ingestion problem, while own tweets reuse the existing live-sync/storage/media/export stack
   - Added `sync tweets` / `view tweets` roadmap notes in `docs/PLAN.md` plus a new open UX question about whether authored tweets should join `sync all`
 
 - Landed the remaining article support:
