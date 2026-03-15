@@ -2,6 +2,8 @@
 
 A Python CLI tool for archiving your Twitter/X bookmarks and likes into a local [LanceDB](https://lancedb.github.io/lancedb/) database. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
 
+<img src="docs/screenshot.png" alt="tweetxvault view all" width="800">
+
 ## Features
 
 - **Incremental sync** — fetches only new items by default; resumes interrupted backfills automatically
