@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import resource
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -293,6 +294,19 @@ def optimize_archive() -> None:
         store.close()
 
 
+def _raise_nofile_limit() -> None:
+    """Raise the soft file-descriptor limit to the hard limit.
+
+    LanceDB creates one table version per merge_insert. Large archives can
+    accumulate thousands of versions, each backed by data files that Lance
+    opens during queries. The default soft limit (often 1024) is too low.
+    """
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft < hard:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+
+
 @app.callback()
 def main() -> None:
     """tweetxvault CLI."""
+    _raise_nofile_limit()
