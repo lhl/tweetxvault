@@ -2,6 +2,10 @@
 
 ## 2026-03-15
 
+- Scrubbed a user-specific Firefox profile identifier from the repo before publication:
+  - Replaced `profile.default`, `profile.dev-edition-default`, and `profile.dev-edition-default-1` with generic `profile.*` placeholders in historical planning docs and Firefox profile test fixtures
+  - Planned a `git filter-repo` rewrite so the old identifiers are removed from local git history before first public push
+
 - Added FTS search and ONNX-based embeddings:
   - Added `embedding` column (384-dim float32 vector) to archive schema with auto-migration for existing archives
   - Created `tweetxvault/embed.py`: ONNX engine using all-MiniLM-L6-v2 via onnxruntime + tokenizers (~0.7ms/tweet batched, ~18s for 25k tweets on CPU)
