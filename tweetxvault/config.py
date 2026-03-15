@@ -87,22 +87,31 @@ class XDGPaths(BaseModel):
         return self.database_path
 
 
-def _xdg_root(env: Mapping[str, str], *, name: str, default_dir: str) -> Path:
-    raw = env.get(name)
-    if raw:
-        return Path(raw).expanduser()
-    return Path.home() / default_dir
-
-
 def resolve_paths(env: Mapping[str, str] | None = None) -> XDGPaths:
+    import platformdirs
+
     env = env or os.environ
-    config_root = _xdg_root(env, name="XDG_CONFIG_HOME", default_dir=".config")
-    data_root = _xdg_root(env, name="XDG_DATA_HOME", default_dir=".local/share")
-    cache_root = _xdg_root(env, name="XDG_CACHE_HOME", default_dir=".cache")
+    # Allow explicit env-var overrides; otherwise use platformdirs for
+    # cross-platform defaults (XDG on Linux, ~/Library on macOS, %APPDATA% on Windows).
+    if raw := env.get("XDG_CONFIG_HOME"):
+        config_dir = Path(raw).expanduser() / APP_NAME
+    else:
+        config_dir = Path(platformdirs.user_config_dir(APP_NAME))
+
+    if raw := env.get("XDG_DATA_HOME"):
+        data_dir = Path(raw).expanduser() / APP_NAME
+    else:
+        data_dir = Path(platformdirs.user_data_dir(APP_NAME))
+
+    if raw := env.get("XDG_CACHE_HOME"):
+        cache_dir = Path(raw).expanduser() / APP_NAME
+    else:
+        cache_dir = Path(platformdirs.user_cache_dir(APP_NAME))
+
     return XDGPaths(
-        config_dir=config_root / APP_NAME,
-        data_dir=data_root / APP_NAME,
-        cache_dir=cache_root / APP_NAME,
+        config_dir=config_dir,
+        data_dir=data_dir,
+        cache_dir=cache_dir,
     )
 
 

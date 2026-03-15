@@ -202,7 +202,7 @@ All configuration is optional. Defaults work out of the box with Firefox cookie 
 
 ## Data storage
 
-Data lives in XDG-standard directories:
+Data paths are resolved by [platformdirs](https://platformdirs.readthedocs.io/) so they follow OS conventions on Linux, macOS, and Windows. On Linux the defaults are:
 
 | Purpose | Default path |
 |---------|-------------|
@@ -239,4 +239,4 @@ See [`docs/`](docs/README.md) for architecture docs, the implementation plan, an
 
 ## License
 
-MIT
+Apache 2.0
