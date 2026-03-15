@@ -381,7 +381,7 @@ class ArchiveStore:
         )
         self._merge_records(buffer.records)
 
-    def export_rows(self, collection: str) -> list[dict[str, Any]]:
+    def export_rows(self, collection: str, *, sort: str = "newest") -> list[dict[str, Any]]:
         filter_expr = "record_type = 'tweet'"
         if collection != "all":
             filter_expr += f" AND collection_type = {_expr_quote(collection)}"
@@ -392,7 +392,7 @@ class ArchiveStore:
             return row["synced_at"] or "", sort_index
 
         exported = []
-        for row in sorted(tweet_rows, key=sort_key, reverse=True):
+        for row in sorted(tweet_rows, key=sort_key, reverse=(sort == "newest")):
             exported.append(
                 {
                     "tweet_id": row["tweet_id"],

@@ -73,11 +73,13 @@ def _with_auto_optimize(store, console: Console, fn):
         return fn(store)
 
 
-def _render_archive_view(console: Console, *, collection: str, limit: int) -> None:
+def _render_archive_view(
+    console: Console, *, collection: str, limit: int, sort: str = "newest"
+) -> None:
     normalized = _normalize_collection_or_exit(collection, console)
     store, _ = _open_store_for_read(console)
     try:
-        rows = _with_auto_optimize(store, console, lambda s: s.export_rows(normalized))
+        rows = _with_auto_optimize(store, console, lambda s: s.export_rows(normalized, sort=sort))
     finally:
         store.close()
 
@@ -215,21 +217,21 @@ def auth_refresh_ids() -> None:
 
 
 @view_app.command("bookmarks")
-def view_bookmarks(limit: int = 20) -> None:
+def view_bookmarks(limit: int = 20, sort: str = "newest") -> None:
     console = _configure_logging()
-    _render_archive_view(console, collection="bookmarks", limit=limit)
+    _render_archive_view(console, collection="bookmarks", limit=limit, sort=sort)
 
 
 @view_app.command("likes")
-def view_likes(limit: int = 20) -> None:
+def view_likes(limit: int = 20, sort: str = "newest") -> None:
     console = _configure_logging()
-    _render_archive_view(console, collection="likes", limit=limit)
+    _render_archive_view(console, collection="likes", limit=limit, sort=sort)
 
 
 @view_app.command("all")
-def view_all(limit: int = 20) -> None:
+def view_all(limit: int = 20, sort: str = "newest") -> None:
     console = _configure_logging()
-    _render_archive_view(console, collection="all", limit=limit)
+    _render_archive_view(console, collection="all", limit=limit, sort=sort)
 
 
 @export_app.command("json")
