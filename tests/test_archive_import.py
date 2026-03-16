@@ -363,6 +363,32 @@ def test_import_x_archive_directory_populates_archive_and_copies_media(
     store.close()
 
 
+def test_import_x_archive_logs_progress_on_tty(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system=None)
+
+    asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=console,
+        )
+    )
+
+    output = buffer.getvalue()
+    assert "archive import: opening" in output
+    assert "archive import: hashing archive contents for idempotence check..." in output
+    assert "archive import: loading archive datasets..." in output
+    assert "archive import: likes 1/1 imported" in output
+    assert "archive import: media files 1/1 processed" in output
+    assert "archive import: running follow-up reconciliation and enrichment..." in output
+
+
 def test_import_x_archive_zip_populates_archive_and_copies_media(
     paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

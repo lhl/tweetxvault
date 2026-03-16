@@ -61,6 +61,7 @@ These are our architectural choices, made to serve tweetxvault's goals (unattend
   - Shipped: env vars + config file + Firefox extraction + Chromium-family extraction (Chrome, Chromium, Brave, Edge, Opera, Opera GX, Vivaldi, Arc).
   - Auto mode tries browsers in a fixed order and stops after the first valid X session; CLI flags and `auth check --interactive` provide explicit profile selection.
 - **CLI framework**: Typer + Rich (keep it minimal; no sprawling command surface).
+- **Long-running CLI UX**: any command that can spend more than a few seconds hashing archives, scanning local state, or waiting on network retries must emit immediate startup feedback plus phase/progress updates on interactive TTY runs; silent long-running work is not acceptable. Non-interactive runs (cron/pipes) should stay quiet by default apart from warnings/errors and final summaries.
 - **Data models**: Pydantic v2 for boundary types (config, parsed tweet records, sync state); raw JSON stored as-is in DB.
 - **Logging**: loguru.
 - **Project tooling**: uv (package management), ruff (lint + format), hatchling (build backend).

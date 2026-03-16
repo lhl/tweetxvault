@@ -8,8 +8,10 @@ import mimetypes
 import re
 import tempfile
 import zipfile
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -38,6 +40,8 @@ from tweetxvault.utils import resolve_query_ids, utc_now
 _YTD_ASSIGNMENT_RE = re.compile(r"^\s*window\.YTD\.[A-Za-z0-9_.]+\s*=\s*", re.DOTALL)
 _MANIFEST_ASSIGNMENT_RE = re.compile(r"^\s*window\.__THAR_CONFIG\s*=\s*", re.DOTALL)
 _IMPORT_BATCH_SIZE = 500
+_IMPORT_PROGRESS_EVERY = 5_000
+_MEDIA_PROGRESS_EVERY = 100
 
 
 @dataclass(slots=True)
@@ -82,6 +86,27 @@ class ArchiveEnrichResult:
     detail_terminal_unavailable: int = 0
     detail_transient_failures: int = 0
     pending_enrichment: int = 0
+
+
+def _log_archive_phase(console: Console, prefix: str, message: str) -> None:
+    console.print(f"{prefix}: {message}", highlight=False)
+
+
+def _emit_status(status: Callable[[str], None] | None, message: str) -> None:
+    if status is not None:
+        status(message)
+
+
+def _status_printer(console: Console, prefix: str) -> Callable[[str], None] | None:
+    if not console.is_terminal:
+        return None
+    return lambda message: _log_archive_phase(console, prefix, message)
+
+
+def _runner_console(console: Console) -> Console:
+    if console.is_terminal:
+        return console
+    return Console(file=StringIO(), force_terminal=False, color_system=None)
 
 
 class _ArchiveInput:
@@ -394,9 +419,11 @@ def _import_authored_tweets(
     *,
     deleted_headers: dict[str, str],
     counts: dict[str, int],
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     buffer = _PageBuffer()
-    for item in tweets:
+    total = len(tweets)
+    for index, item in enumerate(tweets, start=1):
         payload = item.get("tweet") if isinstance(item, dict) else None
         if not isinstance(payload, dict):
             continue
@@ -432,6 +459,8 @@ def _import_authored_tweets(
             counts["authored_tweets"] += 1
         if len(buffer.records) >= _IMPORT_BATCH_SIZE:
             _flush_buffer(store, buffer)
+        if progress and (index % _IMPORT_PROGRESS_EVERY == 0 or index == total):
+            progress(index, total)
     _flush_buffer(store, buffer)
 
 
@@ -447,8 +476,15 @@ def _should_seed_like_placeholder(store: ArchiveStore, buffer: _PageBuffer, twee
     )
 
 
-def _import_likes(store: ArchiveStore, likes: list[Any], *, counts: dict[str, int]) -> None:
+def _import_likes(
+    store: ArchiveStore,
+    likes: list[Any],
+    *,
+    counts: dict[str, int],
+    progress: Callable[[int, int], None] | None = None,
+) -> None:
     buffer = _PageBuffer()
+    total = len(likes)
     for index, item in enumerate(likes, start=1):
         payload = item.get("like") if isinstance(item, dict) else None
         if not isinstance(payload, dict):
@@ -490,6 +526,8 @@ def _import_likes(store: ArchiveStore, likes: list[Any], *, counts: dict[str, in
         counts["likes"] += 1
         if len(buffer.records) >= _IMPORT_BATCH_SIZE:
             _flush_buffer(store, buffer)
+        if progress and (index % _IMPORT_PROGRESS_EVERY == 0 or index == total):
+            progress(index, total)
     _flush_buffer(store, buffer)
 
 
@@ -551,6 +589,7 @@ def _copy_exported_media(
     *,
     counts: dict[str, int],
     warnings: list[str],
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     if not media_directory:
         return
@@ -573,73 +612,89 @@ def _copy_exported_media(
 
     pending_updates: dict[str, dict[str, Any]] = {}
     unmatched = 0
-    for relative_path in files:
+    total = len(files)
+    for index, relative_path in enumerate(files, start=1):
         filename = Path(relative_path).name
         if "-" not in filename:
             unmatched += 1
-            continue
-        tweet_id, asset_name = filename.split("-", 1)
-        target = row_by_asset.get((tweet_id, asset_name))
-        if target is None:
-            unmatched += 1
-            continue
-        row, is_thumbnail = target
-        suffix = "-poster" if is_thumbnail else ""
-        media_key = str(row.get("media_key") or "media")
-        extension = Path(asset_name).suffix.lower() or ".bin"
-        relative_dest = Path("media") / tweet_id / f"{media_key}{suffix}{extension}"
-        destination = paths.data_dir / relative_dest
-        if not destination.exists():
-            sha256, byte_size = _copy_file_from_archive(source, relative_path, destination)
-            counts["media_files_copied"] += 1
         else:
-            sha256 = str((row.get("thumbnail_sha256") if is_thumbnail else row.get("sha256")) or "")
-            byte_size = int(
-                (row.get("thumbnail_byte_size") if is_thumbnail else row.get("byte_size")) or 0
-            )
-        content_type = mimetypes.guess_type(destination.name)[0]
-        base_row = pending_updates.get(str(row["row_key"]), row)
-        local_path = base_row.get("local_path") if is_thumbnail else relative_dest.as_posix()
-        thumbnail_local_path = (
-            relative_dest.as_posix() if is_thumbnail else base_row.get("thumbnail_local_path")
-        )
-        updated_row = dict(base_row)
-        updated_row.update(
-            {
-                "local_path": local_path,
-                "sha256": base_row.get("sha256") if is_thumbnail else sha256 or None,
-                "byte_size": base_row.get("byte_size") if is_thumbnail else byte_size or None,
-                "content_type": base_row.get("content_type") if is_thumbnail else content_type,
-                "thumbnail_local_path": thumbnail_local_path,
-                "thumbnail_sha256": (sha256 or None)
-                if is_thumbnail
-                else base_row.get("thumbnail_sha256"),
-                "thumbnail_byte_size": (byte_size or None)
-                if is_thumbnail
-                else base_row.get("thumbnail_byte_size"),
-                "thumbnail_content_type": content_type
-                if is_thumbnail
-                else base_row.get("thumbnail_content_type"),
-            }
-        )
-        complete = _media_download_complete(paths.data_dir, updated_row)
-        pending_updates[str(row["row_key"])] = store.build_media_download_update(
-            base_row,
-            download_state="done" if complete else "pending",
-            local_path=local_path,
-            sha256=updated_row.get("sha256"),
-            byte_size=updated_row.get("byte_size"),
-            content_type=updated_row.get("content_type"),
-            thumbnail_local_path=thumbnail_local_path,
-            thumbnail_sha256=updated_row.get("thumbnail_sha256"),
-            thumbnail_byte_size=updated_row.get("thumbnail_byte_size"),
-            thumbnail_content_type=updated_row.get("thumbnail_content_type"),
-            downloaded_at=utc_now() if complete else (base_row.get("downloaded_at") or None),
-            download_error=None,
-        )
+            tweet_id, asset_name = filename.split("-", 1)
+            target = row_by_asset.get((tweet_id, asset_name))
+            if target is None:
+                unmatched += 1
+            else:
+                row, is_thumbnail = target
+                suffix = "-poster" if is_thumbnail else ""
+                media_key = str(row.get("media_key") or "media")
+                extension = Path(asset_name).suffix.lower() or ".bin"
+                relative_dest = Path("media") / tweet_id / f"{media_key}{suffix}{extension}"
+                destination = paths.data_dir / relative_dest
+                if not destination.exists():
+                    sha256, byte_size = _copy_file_from_archive(source, relative_path, destination)
+                    counts["media_files_copied"] += 1
+                else:
+                    sha256 = str(
+                        (row.get("thumbnail_sha256") if is_thumbnail else row.get("sha256")) or ""
+                    )
+                    byte_size = int(
+                        (row.get("thumbnail_byte_size") if is_thumbnail else row.get("byte_size"))
+                        or 0
+                    )
+                content_type = mimetypes.guess_type(destination.name)[0]
+                base_row = pending_updates.get(str(row["row_key"]), row)
+                local_path = (
+                    base_row.get("local_path") if is_thumbnail else relative_dest.as_posix()
+                )
+                thumbnail_local_path = (
+                    relative_dest.as_posix()
+                    if is_thumbnail
+                    else base_row.get("thumbnail_local_path")
+                )
+                updated_row = dict(base_row)
+                updated_row.update(
+                    {
+                        "local_path": local_path,
+                        "sha256": base_row.get("sha256") if is_thumbnail else sha256 or None,
+                        "byte_size": (
+                            base_row.get("byte_size") if is_thumbnail else byte_size or None
+                        ),
+                        "content_type": (
+                            base_row.get("content_type") if is_thumbnail else content_type
+                        ),
+                        "thumbnail_local_path": thumbnail_local_path,
+                        "thumbnail_sha256": (sha256 or None)
+                        if is_thumbnail
+                        else base_row.get("thumbnail_sha256"),
+                        "thumbnail_byte_size": (byte_size or None)
+                        if is_thumbnail
+                        else base_row.get("thumbnail_byte_size"),
+                        "thumbnail_content_type": content_type
+                        if is_thumbnail
+                        else base_row.get("thumbnail_content_type"),
+                    }
+                )
+                complete = _media_download_complete(paths.data_dir, updated_row)
+                pending_updates[str(row["row_key"])] = store.build_media_download_update(
+                    base_row,
+                    download_state="done" if complete else "pending",
+                    local_path=local_path,
+                    sha256=updated_row.get("sha256"),
+                    byte_size=updated_row.get("byte_size"),
+                    content_type=updated_row.get("content_type"),
+                    thumbnail_local_path=thumbnail_local_path,
+                    thumbnail_sha256=updated_row.get("thumbnail_sha256"),
+                    thumbnail_byte_size=updated_row.get("thumbnail_byte_size"),
+                    thumbnail_content_type=updated_row.get("thumbnail_content_type"),
+                    downloaded_at=(
+                        utc_now() if complete else (base_row.get("downloaded_at") or None)
+                    ),
+                    download_error=None,
+                )
         if len(pending_updates) >= 100:
             store.merge_rows(list(pending_updates.values()))
             pending_updates.clear()
+        if progress and (index % _MEDIA_PROGRESS_EVERY == 0 or index == total):
+            progress(index, total)
     if pending_updates:
         store.merge_rows(list(pending_updates.values()))
     if unmatched:
@@ -663,6 +718,7 @@ async def _run_live_reconciliation(
     auth_bundle: ResolvedAuthBundle | None,
     transport: httpx.AsyncBaseTransport | None,
     console: Console,
+    status: Callable[[str], None] | None = None,
 ) -> tuple[list[str], list[str], ResolvedAuthBundle | None]:
     warnings: list[str] = []
     try:
@@ -674,6 +730,7 @@ async def _run_live_reconciliation(
     completed: list[str] = []
     for collection in collections:
         try:
+            _emit_status(status, f"running live {collection} reconciliation...")
             await sync_collection(
                 collection,
                 full=False,
@@ -699,6 +756,7 @@ async def _run_archive_followup(
     auth_bundle: ResolvedAuthBundle | None,
     transport: httpx.AsyncBaseTransport | None,
     console: Console,
+    status: Callable[[str], None] | None = None,
 ) -> ArchiveEnrichResult:
     reconciled_collections, reconcile_warnings, resolved_auth = await _run_live_reconciliation(
         collections=collections,
@@ -707,6 +765,7 @@ async def _run_archive_followup(
         auth_bundle=auth_bundle,
         transport=transport,
         console=console,
+        status=status,
     )
     warnings = list(reconcile_warnings)
     detail_succeeded = 0
@@ -727,6 +786,7 @@ async def _run_archive_followup(
                 auth_bundle=resolved_auth,
                 transport=transport,
                 console=console,
+                status=status,
             )
         except Exception as exc:
             warnings.append(f"detail enrichment failed: {exc}")
@@ -753,6 +813,7 @@ async def _enrich_pending_rows(
     auth_bundle: ResolvedAuthBundle,
     transport: httpx.AsyncBaseTransport | None,
     console: Console,
+    status: Callable[[str], None] | None = None,
 ) -> tuple[int, int, int, int]:
     if limit is not None and limit <= 0:
         async with locked_archive_job(config=config, paths=paths) as job:
@@ -762,7 +823,10 @@ async def _enrich_pending_rows(
         store = job.store
         rows = store.list_tweet_objects_for_enrichment(limit=limit)
         if not rows:
+            _emit_status(status, "no pending detail enrichment rows")
             return 0, 0, 0, 0
+        limit_suffix = "" if limit is None else f" (limit {limit})"
+        _emit_status(status, f"detail enrichment over {len(rows)} pending tweets{limit_suffix}")
         query_store = QueryIdStore(paths)
         query_ids = await resolve_query_ids(
             query_store,
@@ -793,6 +857,15 @@ async def _enrich_pending_rows(
                         build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
                         config.sync,
                         refresh_once=refresh_once,
+                        status=(
+                            (
+                                lambda message, tweet_id=tweet_id: _emit_status(
+                                    status, f"detail {tweet_id}: {message}"
+                                )
+                            )
+                            if status is not None
+                            else None
+                        ),
                     )
                     payload = response.json()
                     tweet = parse_tweet_detail_response(payload, tweet_id)
@@ -918,6 +991,9 @@ async def enrich_imported_archive(
 ) -> ArchiveEnrichResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
+    status = _status_printer(console, "archive enrich")
+    runner_console = _runner_console(console)
+    _emit_status(status, "loading completed archive imports...")
     try:
         async with locked_archive_job(config=config, paths=paths) as job:
             manifest_rows = _list_import_manifest_rows(job.store)
@@ -939,7 +1015,8 @@ async def enrich_imported_archive(
         paths=paths,
         auth_bundle=auth_bundle,
         transport=transport,
-        console=console,
+        console=runner_console,
+        status=status,
     )
 
 
@@ -956,13 +1033,18 @@ async def import_x_archive(
 ) -> ArchiveImportResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
+    status = _status_printer(console, "archive import")
+    runner_console = _runner_console(console)
     if enrich and detail_lookups > 0:
         raise ConfigError("Use either --enrich or --detail-lookups, not both.")
+    _emit_status(status, f"opening {archive_path}")
     with _ArchiveInput(archive_path) as source:
+        _emit_status(status, "hashing archive contents for idempotence check...")
         digest = source.digest()
         generation_date = _manifest_generation_date(source.manifest)
         counts = _initial_counts()
         warnings: list[str] = []
+        _emit_status(status, "loading archive account metadata...")
         account_items, account_parts = source.load_dataset("account")
         identity = _archive_identity(source.manifest, account_items)
         existing_manifest: dict[str, Any] | None = None
@@ -991,6 +1073,7 @@ async def import_x_archive(
             else:
                 store.ensure_archive_owner_id(identity.account_id)
                 import_performed = True
+                _emit_status(status, "loading archive datasets...")
 
                 store.set_import_manifest(
                     digest,
@@ -1019,6 +1102,12 @@ async def import_x_archive(
                 )
                 tweets, tweet_parts = source.load_dataset("tweets")
                 likes, like_parts = source.load_dataset("like")
+                _emit_status(
+                    status,
+                    f"loaded {len(tweets)} tweets, "
+                    f"{len(deleted_tweets)} deleted tweets, "
+                    f"{len(likes)} likes",
+                )
 
                 for filename, payload in tweet_header_parts:
                     _record_archive_capture(store, "XArchiveTweetHeaders", filename, payload)
@@ -1032,17 +1121,38 @@ async def import_x_archive(
                     _record_archive_capture(store, "XArchiveLikes", filename, payload)
 
                 deleted_headers = _deleted_headers_map(deleted_headers_items)
+                _emit_status(status, f"importing {len(tweets)} authored tweets...")
                 _import_authored_tweets(
-                    store, tweets, identity, deleted_headers=deleted_headers, counts=counts
+                    store,
+                    tweets,
+                    identity,
+                    deleted_headers=deleted_headers,
+                    counts=counts,
+                    progress=lambda done, total: _emit_status(
+                        status, f"authored tweets {done}/{total} imported"
+                    ),
                 )
+                _emit_status(status, f"importing {len(deleted_tweets)} deleted authored tweets...")
                 _import_authored_tweets(
                     store,
                     deleted_tweets,
                     identity,
                     deleted_headers=deleted_headers,
                     counts=counts,
+                    progress=lambda done, total: _emit_status(
+                        status, f"deleted authored tweets {done}/{total} imported"
+                    ),
                 )
-                _import_likes(store, likes, counts=counts)
+                _emit_status(status, f"importing {len(likes)} likes...")
+                _import_likes(
+                    store,
+                    likes,
+                    counts=counts,
+                    progress=lambda done, total: _emit_status(
+                        status, f"likes {done}/{total} imported"
+                    ),
+                )
+                _emit_status(status, "copying exported media files...")
                 _copy_exported_media(
                     source,
                     store,
@@ -1050,6 +1160,9 @@ async def import_x_archive(
                     tweets_info.get("mediaDirectory") if isinstance(tweets_info, dict) else None,
                     counts=counts,
                     warnings=warnings,
+                    progress=lambda done, total: _emit_status(
+                        status, f"media files {done}/{total} processed"
+                    ),
                 )
                 store.set_import_manifest(
                     digest,
@@ -1060,6 +1173,7 @@ async def import_x_archive(
                     warnings=warnings,
                     counts=counts,
                 )
+                _emit_status(status, "optimizing archive storage...")
                 store.optimize()
             store.close()
         except Exception:
@@ -1084,6 +1198,7 @@ async def import_x_archive(
         # Bulk archive writes are complete at this point. The follow-up sync/enrichment helpers
         # reacquire the same process lock around their own writes, so we intentionally do not hold
         # the outer lock across potentially long network I/O.
+        _emit_status(status, "running follow-up reconciliation and enrichment...")
         followup = await _run_archive_followup(
             collections=_followup_collections_from_counts(counts),
             detail_limit=None if enrich else detail_lookups,
@@ -1091,7 +1206,8 @@ async def import_x_archive(
             paths=paths,
             auth_bundle=auth_bundle,
             transport=transport,
-            console=console,
+            console=runner_console,
+            status=status,
         )
         warnings.extend(followup.warnings)
 

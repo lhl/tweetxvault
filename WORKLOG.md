@@ -2,6 +2,16 @@
 
 ## 2026-03-17
 
+- Restored long-running UX feedback for archive import jobs and codified the rule in the plan:
+  - Updated `docs/PLAN.md` to make interactive progress visibility a hard requirement for long-running CLI features, while keeping non-interactive runs quiet by default
+  - Added TTY-gated phase/progress logging to `tweetxvault import x-archive` across archive hashing, dataset loading, authored/likes import, media copy, and follow-up reconciliation/enrichment
+  - Routed `tweetxvault import enrich` through the same TTY-gated follow-up status path and suppressed follow-up sync chatter on non-interactive runs
+  - Added archive-import regression coverage that locks in TTY progress output for interactive runs
+  - Validation:
+    - `uv run pytest tests/test_archive_import.py -q`
+    - `uv run ruff check tweetxvault/archive_import.py tests/test_archive_import.py`
+    - `uv run ruff format --check tweetxvault/archive_import.py tests/test_archive_import.py`
+
 - Tightened the archive-import edge cases from the latest review pass:
   - Kept archive-imported video/animated-GIF media rows `pending` until both the main asset and poster file are present, so poster-only archive exports no longer block later `tweetxvault media download` completion
   - Removed the archive `deleted_at` source-precedence override so a later archive deletion marker can merge into an existing live row without overwriting richer live text/author fields
