@@ -2,6 +2,15 @@
 
 ## 2026-03-17
 
+- Clarified live reconciliation output during archive follow-up and standalone sync/enrich runs:
+  - changed the shared sync logger to print explicit `head` vs `backfill` pass labels instead of one ambiguous cumulative `tweets N` counter
+  - per-page progress now includes both `page_tweets` and `total_tweets`, and resumed syncs print a `resuming saved backfill pass` line before continuing older pages
+  - confirmed the archive-import speedup work does not need to be repeated for `import enrich` / `threads expand`; those follow-up jobs are dominated by network fetches and the intentional sync `page_delay`, not by the LanceDB point-lookup bottleneck that affected archive ingest
+  - validation:
+    - `uv run pytest tests/test_sync.py -q`
+    - `uv run ruff check tweetxvault/sync.py tests/test_sync.py`
+    - `uv run ruff format --check tweetxvault/sync.py tests/test_sync.py`
+
 - Optimized archive import against large existing LanceDB archives by bulk-prefetching row state before each import chunk:
   - added `ArchiveStore.prefetch_rows(...)` so archive import can hydrate `cursor.existing_rows` in row-key batches instead of issuing per-record point lookups during merge construction
   - changed authored-tweet import to precompute tweet graphs in small chunks, bulk-prefetch the relevant `tweet` / `tweet_object` / `tweet_relation` / `media` / `url` / `url_ref` / `article` row keys, then merge the chunk in one buffered pass

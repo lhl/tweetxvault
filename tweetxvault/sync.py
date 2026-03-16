@@ -262,6 +262,10 @@ def _store_state_for_page(
     return next_cursor, bool(next_cursor)
 
 
+def _pass_label(*, is_head_pass: bool) -> str:
+    return "head" if is_head_pass else "backfill"
+
+
 async def _run_pass(
     *,
     collection: str,
@@ -351,7 +355,11 @@ async def _run_pass(
         pages_fetched += 1
         tweets_seen += len(tweets)
         console.print(
-            f"{collection}: page {pages_fetched}, tweets {tweets_seen}, stop={stop_reason}",
+            f"{collection} {_pass_label(is_head_pass=is_head_pass)}: "
+            f"page {pages_fetched}, "
+            f"page_tweets {len(tweets)}, "
+            f"total_tweets {tweets_seen}, "
+            f"stop={stop_reason}",
             highlight=False,
         )
 
@@ -487,6 +495,7 @@ async def _sync_collection_ready(
             preflight.auth, timeout=config.sync.timeout, transport=transport
         )
         try:
+            console.print(f"{collection}: starting head pass", highlight=False)
             head_pages, head_tweets, head_reason, _latest_head_id, _ = await _run_pass(
                 collection=collection,
                 start_cursor=None,
@@ -513,6 +522,7 @@ async def _sync_collection_ready(
             remaining = None if limit is None else max(limit - head_pages, 0)
 
             if prior_backfill_incomplete and remaining != 0:
+                console.print(f"{collection}: resuming saved backfill pass", highlight=False)
                 refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
                 backfill_pages, backfill_tweets, backfill_reason, _, _ = await _run_pass(
                     collection=collection,

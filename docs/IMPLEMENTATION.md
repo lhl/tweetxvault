@@ -417,6 +417,10 @@ Fresh fixture status (2026-03-16):
   - added storage-level row-key prefetching so archive import can bulk hydrate existing rows into the page buffer instead of issuing one LanceDB lookup per merged tweet/object/media/url/article record
   - changed authored-tweet import to precompute and merge small graph chunks with one prefetch pass per chunk, and changed like import to prefetch `tweet:like` + `tweet_object` rows before placeholder seeding
   - validated the optimization against a `/tmp` copy of the real optimized archive DB: sampled authored import improved from `39.09s` (`25.6 tweets/s`) to `1.37s` (`728.1 tweets/s`), and sampled like import improved from `24.69s` (`40.5 likes/s`) to `0.55s` (`1806.1 likes/s`)
+- [x] Clarified reconciliation progress output after the first real archive follow-up run:
+  - changed the shared sync logger used by live sync and archive follow-up to label `head` vs `backfill` passes explicitly instead of printing one ambiguous cumulative `tweets N` counter
+  - per-page reconciliation lines now report both `page_tweets` and `total_tweets`, and resumed runs emit a `resuming saved backfill pass` line before continuing older pages
+  - confirmed the large speedup fix was specific to archive ingest's LanceDB point-lookups; `import enrich`, `threads expand`, and the other follow-up jobs remain primarily network-bound and did not need the same storage prefetch optimization
 
 ## Review Cleanup
 

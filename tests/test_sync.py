@@ -195,6 +195,84 @@ async def test_sync_collection_end_to_end_and_resume(paths, config: AppConfig, a
 
 
 @pytest.mark.asyncio
+async def test_sync_collection_logs_head_and_backfill_progress(
+    paths, config: AppConfig, auth_bundle
+) -> None:
+    _save_query_ids(paths)
+
+    async def first_handler(request: httpx.Request) -> httpx.Response:
+        _operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(
+                200, json=make_bookmarks_response(["1"], cursor="probe-cursor"), request=request
+            )
+        if cursor is None:
+            return httpx.Response(
+                200, json=make_bookmarks_response(["1"], cursor="c1"), request=request
+            )
+        raise AssertionError(f"unexpected request cursor {cursor}")
+
+    first = await sync_collection(
+        "bookmarks",
+        full=False,
+        limit=1,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(first_handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+    )
+    assert first.pages_fetched == 1
+
+    console_buffer = StringIO()
+    console = Console(file=console_buffer, force_terminal=False, color_system=None)
+
+    async def second_handler(request: httpx.Request) -> httpx.Response:
+        _operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(
+                200, json=make_bookmarks_response(["new"], cursor="probe-cursor"), request=request
+            )
+        if cursor is None:
+            return httpx.Response(
+                200, json=make_bookmarks_response(["new", "1"], cursor="ignored"), request=request
+            )
+        if cursor == "c1":
+            return httpx.Response(
+                200, json=make_bookmarks_response(["2"], cursor="c2"), request=request
+            )
+        if cursor == "c2":
+            return httpx.Response(200, json=make_bookmarks_response(["3"]), request=request)
+        raise AssertionError(f"unexpected request cursor {cursor}")
+
+    second = await sync_collection(
+        "bookmarks",
+        full=False,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(second_handler),
+        console=console,
+        sleep=lambda _: asyncio.sleep(0),
+    )
+
+    assert second.pages_fetched == 3
+    output = console_buffer.getvalue()
+    assert "bookmarks: starting head pass" in output
+    assert "bookmarks head: page 1, page_tweets 2, total_tweets 2, stop=duplicate" in output
+    assert "bookmarks: resuming saved backfill pass" in output
+    assert "bookmarks backfill: page 1, page_tweets 1, total_tweets 1, stop=continue" in output
+
+
+@pytest.mark.asyncio
 async def test_sync_collection_keeps_success_when_auto_embedding_fails(
     paths,
     config: AppConfig,
