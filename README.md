@@ -201,7 +201,8 @@ Import follow-up options:
 - If the same archive digest was already imported, a plain re-run still short-circuits, but `--enrich` reuses the existing import and runs only the follow-up enrichment instead of re-importing the ZIP contents.
 - `tweetxvault import enrich` reruns that same archive-specific follow-up later against already imported archive data, without needing the original ZIP or directory path again.
 - `tweetxvault threads expand` is the broader TweetDetail-based context/thread capture command; use it when you want parents, replies, and linked status URLs beyond the archive-placeholder follow-up.
-- `--debug` prints per-phase timing diagnostics, and interactive TTY runs show tqdm progress bars for hashing, tweet/like import, media copy, and detail enrichment.
+- Interactive TTY runs show tqdm progress bars for hashing, tweet/like import, media copy, and detail enrichment by default.
+- `--debug` adds per-phase timing diagnostics on top of that interactive progress output.
 - `--limit N` requires `--debug` and is a sampled diagnostic import: tweetxvault still hashes and parses the full archive files, but only imports the first `N` authored tweets, deleted tweets, likes, and media files after load. Sampled runs are stored as `sampled`, not `completed`, and skip the automatic live follow-up unless you explicitly ask for `--enrich` / `--detail-lookups`.
 
 ### Viewing your archive

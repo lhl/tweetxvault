@@ -2,6 +2,10 @@
 
 ## 2026-03-17
 
+- Clarified the archive-import UX wording after the sampled/debug progress change:
+  - fixed `tweetxvault import x-archive --debug` help text and README copy to state that interactive TTY runs already show tqdm progress bars by default
+  - `--debug` is now documented as adding per-phase timing diagnostics on top of the normal interactive progress output, not as the switch that enables progress bars
+
 - Finished the queued archive-import hardening and recovery work:
   - added `tweetxvault import x-archive --regen` to clear archive-import-owned rows, manifests, and copied archive media files before reimporting, while leaving live-owned rows untouched
   - changed archive dataset `raw_capture` writes to use deterministic keys per `(archive_digest, operation, filename)` so interrupted reruns overwrite instead of duplicating archive captures

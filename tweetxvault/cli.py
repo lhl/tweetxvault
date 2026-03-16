@@ -750,8 +750,8 @@ def import_x_archive_command(
         typer.Option(
             "--debug",
             help=(
-                "Print detailed archive-import timing diagnostics. Interactive runs also show "
-                "tqdm-based progress bars."
+                "Print detailed archive-import timing diagnostics. Interactive TTY runs already "
+                "show tqdm-based progress bars by default."
             ),
         ),
     ] = False,
