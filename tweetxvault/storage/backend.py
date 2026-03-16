@@ -41,6 +41,30 @@ def _expr_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _expr_in(field: str, values: set[str]) -> str:
+    return f"{field} IN ({', '.join(_expr_quote(value) for value in sorted(values))})"
+
+
+def _pending_state_expr(field: str) -> str:
+    return f"({field} IS NULL OR {field} = '' OR {field} = 'pending')"
+
+
+def _state_filter_expr(field: str, states: set[str]) -> str:
+    clauses: list[str] = []
+    explicit_states = {state for state in states if state != "pending"}
+    if explicit_states:
+        clauses.append(_expr_in(field, explicit_states))
+    if "pending" in states:
+        clauses.append(_pending_state_expr(field))
+    if not clauses:
+        raise ValueError("state filter requires at least one state")
+    return clauses[0] if len(clauses) == 1 else f"({' OR '.join(clauses)})"
+
+
+def _and_expr(*clauses: str) -> str:
+    return " AND ".join(clause for clause in clauses if clause)
+
+
 @dataclass(slots=True)
 class SyncState:
     collection_type: str
@@ -872,23 +896,23 @@ class ArchiveStore:
         media_types: set[str] | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        rows = self.table.search().where("record_type = 'media'").to_list()
-        filtered: list[dict[str, Any]] = []
-        for row in rows:
-            state = row.get("download_state") or "pending"
-            media_type = row.get("media_type")
-            if states is not None and state not in states:
-                continue
-            if media_types is not None and media_type not in media_types:
-                continue
-            filtered.append(row)
-        filtered.sort(
+        if states is not None and not states:
+            return []
+        if media_types is not None and not media_types:
+            return []
+        where_expr = _and_expr(
+            "record_type = 'media'",
+            _state_filter_expr("download_state", states) if states is not None else "",
+            _expr_in("media_type", media_types) if media_types is not None else "",
+        )
+        rows = self.table.search().where(where_expr).to_list()
+        rows.sort(
             key=lambda row: (
                 row.get("tweet_id") or "",
                 row.get("position") if row.get("position") is not None else 1_000_000,
             )
         )
-        return filtered[:limit] if limit is not None else filtered
+        return rows[:limit] if limit is not None else rows
 
     def update_media_download(
         self,
@@ -934,15 +958,15 @@ class ArchiveStore:
         states: set[str] | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        rows = self.table.search().where("record_type = 'url'").to_list()
-        filtered: list[dict[str, Any]] = []
-        for row in rows:
-            state = row.get("unfurl_state") or "pending"
-            if states is not None and state not in states:
-                continue
-            filtered.append(row)
-        filtered.sort(key=lambda row: row.get("canonical_url") or row.get("url") or "")
-        return filtered[:limit] if limit is not None else filtered
+        if states is not None and not states:
+            return []
+        where_expr = _and_expr(
+            "record_type = 'url'",
+            _state_filter_expr("unfurl_state", states) if states is not None else "",
+        )
+        rows = self.table.search().where(where_expr).to_list()
+        rows.sort(key=lambda row: row.get("canonical_url") or row.get("url") or "")
+        return rows[:limit] if limit is not None else rows
 
     def update_url_unfurl(
         self,
@@ -987,9 +1011,11 @@ class ArchiveStore:
         preview_only: bool = False,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        rows = self.table.search().where("record_type = 'article'").to_list()
-        if preview_only:
-            rows = [row for row in rows if row.get("status") != "body_present"]
+        where_expr = _and_expr(
+            "record_type = 'article'",
+            "(status IS NULL OR status != 'body_present')" if preview_only else "",
+        )
+        rows = self.table.search().where(where_expr).to_list()
         rows.sort(key=lambda row: row.get("tweet_id") or "")
         return rows[:limit] if limit is not None else rows
 

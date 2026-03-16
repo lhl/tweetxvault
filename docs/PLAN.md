@@ -620,6 +620,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup items landed: added a small storage-record helper layer for coalescing/timestamp setup and moved the shared UTC timestamp helper into a proper utility module.
 - [x] Reduce extractor duplication in the URL candidate selection logic.
   - Next cleanup item landed: replaced the parallel canonical/final URL candidate helpers with one shared helper that keeps their remaining behavioral differences explicit at the call sites.
+- [x] Push secondary row filtering into LanceDB for media/url/article batch runners.
+  - Next cleanup item landed: moved state/type/preview filters out of Python loops and into `ArchiveStore` `.where(...)` clauses while preserving the existing sorted return order.
 
 ## Open Questions (Remaining)
 

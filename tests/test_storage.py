@@ -496,6 +496,112 @@ def test_persist_page_preserves_richer_secondary_values_from_existing_rows(paths
     store.close()
 
 
+def test_secondary_row_listings_filter_through_lancedb(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    body_tweet = _complex_tweet()
+    preview_raw = make_tweet_result(
+        "101",
+        "preview short",
+        user_id="1001",
+        urls=[
+            make_url_entity(
+                "https://t.co/preview",
+                "https://preview.example.com/post",
+                display_url="preview.example.com/post",
+            )
+        ],
+        article=make_article_result(
+            "article-2",
+            title="Preview article",
+            preview_text="Preview only",
+            plain_text=None,
+            url="https://x.com/i/article/456",
+        ),
+    )
+    preview_tweet = TimelineTweet(
+        tweet_id="101",
+        text="preview short",
+        author_id="1001",
+        author_username="user1001",
+        author_display_name="User 1001",
+        created_at="Sat Mar 14 00:00:00 +0000 2026",
+        sort_index="11",
+        raw_json=preview_raw,
+    )
+
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[body_tweet, preview_tweet],
+        last_head_tweet_id="101",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    root_photo = next(row for row in store.list_media_rows() if row["media_key"] == "3_root")
+    store.update_media_download(
+        root_photo["row_key"],
+        download_state="done",
+        local_path="media/root.jpg",
+        sha256="root-sha",
+        byte_size=123,
+        content_type="image/jpeg",
+        thumbnail_local_path=None,
+        thumbnail_sha256=None,
+        thumbnail_byte_size=None,
+        thumbnail_content_type=None,
+        downloaded_at="2026-03-16T00:00:00Z",
+        download_error=None,
+    )
+
+    root_url = next(
+        row
+        for row in store.list_url_rows()
+        if row["canonical_url"] == "https://example.com/story?keep=1"
+    )
+    store.update_url_unfurl(
+        root_url["row_key"],
+        http_status=200,
+        final_url="https://example.com/story?keep=1",
+        canonical_url="https://example.com/story?keep=1",
+        title="Root title",
+        description="Root description",
+        site_name="Example",
+        content_type="text/html",
+        unfurl_state="done",
+        last_fetched_at="2026-03-16T00:00:00Z",
+        download_error=None,
+    )
+
+    pending_video_rows = store.list_media_rows(states={"pending"}, media_types={"video"})
+    assert [(row["tweet_id"], row["media_key"]) for row in pending_video_rows] == [
+        ("200", "7_quoted")
+    ]
+
+    done_photo_rows = store.list_media_rows(states={"done"}, media_types={"photo"})
+    assert [(row["tweet_id"], row["media_key"]) for row in done_photo_rows] == [("100", "3_root")]
+
+    pending_url_rows = store.list_url_rows(states={"pending"})
+    assert [row["canonical_url"] for row in pending_url_rows] == [
+        "https://preview.example.com/post",
+        "https://quoted.example.com/post",
+    ]
+
+    done_url_rows = store.list_url_rows(states={"done"})
+    assert [row["canonical_url"] for row in done_url_rows] == ["https://example.com/story?keep=1"]
+
+    preview_rows = store.list_article_rows(preview_only=True)
+    assert [row["tweet_id"] for row in preview_rows] == ["101"]
+    assert preview_rows[0]["status"] == "preview_only"
+    store.close()
+
+
 def test_persist_thread_detail_keeps_context_tweets_out_of_memberships(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

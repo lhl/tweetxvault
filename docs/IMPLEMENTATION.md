@@ -380,3 +380,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: the two helpers are nearly identical but diverge in subtle ways, which is an easy future bug source if one path gets updated without the other.
   - Landed approach: replaced the parallel helpers with one `_url_candidate(...)` helper that takes the candidate key order plus a `require_absolute` switch, so the canonical-vs-final differences stay explicit in the call sites.
   - Coverage: extractor tests now exercise both unwound final-URL selection and `t.co` canonical fallback through the shared helper.
+- [x] Review item 6: push state/type filtering for secondary row listings into LanceDB predicates in `tweetxvault/storage/backend.py`.
+  - Current problem: `list_media_rows(...)`, `list_url_rows(...)`, and `list_article_rows(...)` currently materialize every row of that record type and then filter in Python.
+  - Landed approach: moved the state/type/preview filters into shared LanceDB expression helpers so `ArchiveStore` only materializes matching media/url/article rows, while keeping the existing Python-side sort order unchanged.
+  - Coverage: storage now has a real LanceDB-backed regression covering pending/done media filters, URL state filters, and preview-only article selection.

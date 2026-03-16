@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 6 for secondary row filter pushdown:
+  - Updated `tweetxvault/storage/backend.py` so `list_media_rows(...)`, `list_url_rows(...)`, and `list_article_rows(...)` push their state/type/preview predicates into LanceDB `.where(...)` clauses before materializing rows
+  - Added small shared expression helpers for quoted `IN (...)` lists, pending-state handling, and combined `AND` filters so the LanceDB predicate logic stays explicit and reusable inside the backend
+  - Kept the existing Python-side sort order and limit semantics unchanged; only the filtering step moved out of Python
+  - Added a real archive-store regression in `tests/test_storage.py` proving pending/done media filters, URL state filters, and preview-only article selection all work against LanceDB-backed storage
+  - Validation:
+    - `uv run pytest tests/test_storage.py tests/test_media.py tests/test_unfurl.py tests/test_articles.py`
+    - `uv run ruff check tweetxvault/storage/backend.py tests/test_storage.py`
+    - `uv run ruff format --check tweetxvault/storage/backend.py tests/test_storage.py`
+
 - Landed review cleanup item 5 for extractor URL-candidate duplication:
   - Replaced the parallel `_canonical_url_candidate(...)` / `_final_url_candidate(...)` helpers in `tweetxvault/extractor.py` with one `_url_candidate(...)` helper parameterized by key order and absolute-URL requirements
   - Kept the remaining behavioral differences explicit in `_url_entries(...)`: final URLs still require absolute `unwound_url` / `expanded_url` values, while canonical selection can still fall back to the short `url`
