@@ -138,3 +138,51 @@ async def test_expand_threads_fetches_membership_and_linked_status(
     assert second.expanded == 0
     assert second.failed == 0
     assert second.skipped >= 1
+
+
+@pytest.mark.asyncio
+async def test_expand_threads_explicit_targets_preserve_duplicate_and_failure_counts(
+    paths,
+    config,
+    auth_bundle,
+) -> None:
+    root_raw = _seed_thread_archive(paths)
+    parent_raw = make_tweet_result("200", "parent tweet", user_id="2000")
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        focal = request.url.params["variables"]
+        if '"focalTweetId":"100"' in focal:
+            requests.append("100")
+            return httpx.Response(
+                200,
+                json=make_tweet_detail_response([root_raw, parent_raw], module=True),
+                request=request,
+            )
+        if '"focalTweetId":"200"' in focal:
+            requests.append("200")
+            return httpx.Response(
+                200,
+                json=make_tweet_detail_response([root_raw]),
+                request=request,
+            )
+        raise AssertionError(f"unexpected request {request.url}")
+
+    result = await expand_threads(
+        targets=[
+            "https://x.com/example/status/100",
+            "100",
+            "200",
+        ],
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 2
+    assert result.expanded == 1
+    assert result.failed == 1
+    assert result.skipped == 1
+    assert requests == ["100", "200"]

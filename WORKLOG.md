@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 7 for thread-expansion control-flow repetition:
+  - Refactored `tweetxvault/threads.py` so the repeated `_expand_target(...)` try/except/result-counting logic now lives in one `_try_expand_target(...)` helper
+  - Kept the loop-specific rules unchanged: explicit targets still dedupe inputs first, membership targets still skip already-expanded tweets, and linked-status targets still skip source/self/known targets before attempting expansion
+  - Added an explicit-target regression in `tests/test_threads.py` that locks in duplicate skipping plus per-target failure counting alongside the existing membership + linked-status expansion coverage
+  - Validation:
+    - `uv run pytest tests/test_threads.py tests/test_cli.py`
+    - `uv run ruff check tweetxvault/threads.py tests/test_threads.py`
+    - `uv run ruff format --check tweetxvault/threads.py tests/test_threads.py`
+
 - Landed review cleanup item 6 for secondary row filter pushdown:
   - Updated `tweetxvault/storage/backend.py` so `list_media_rows(...)`, `list_url_rows(...)`, and `list_article_rows(...)` push their state/type/preview predicates into LanceDB `.where(...)` clauses before materializing rows
   - Added small shared expression helpers for quoted `IN (...)` lists, pending-state handling, and combined `AND` filters so the LanceDB predicate logic stays explicit and reusable inside the backend

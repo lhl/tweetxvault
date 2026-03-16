@@ -622,6 +622,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: replaced the parallel canonical/final URL candidate helpers with one shared helper that keeps their remaining behavioral differences explicit at the call sites.
 - [x] Push secondary row filtering into LanceDB for media/url/article batch runners.
   - Next cleanup item landed: moved state/type/preview filters out of Python loops and into `ArchiveStore` `.where(...)` clauses while preserving the existing sorted return order.
+- [x] Reduce repetition in thread-expansion target handling.
+  - Next cleanup item landed: extracted the shared `_expand_target(...)` try/except/result-counting path so the explicit-target, membership, and linked-status loops no longer carry three copies of the same expansion logic.
 
 ## Open Questions (Remaining)
 

@@ -384,3 +384,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `list_media_rows(...)`, `list_url_rows(...)`, and `list_article_rows(...)` currently materialize every row of that record type and then filter in Python.
   - Landed approach: moved the state/type/preview filters into shared LanceDB expression helpers so `ArchiveStore` only materializes matching media/url/article rows, while keeping the existing Python-side sort order unchanged.
   - Coverage: storage now has a real LanceDB-backed regression covering pending/done media filters, URL state filters, and preview-only article selection.
+- [x] Review item 7: de-duplicate the repeated thread-expansion try/except/counting blocks in `tweetxvault/threads.py`.
+  - Current problem: the explicit-target loop, membership loop, and linked-status loop all repeat the same `_expand_target(...)` error-handling and result-counting path.
+  - Landed approach: extracted one `_try_expand_target(...)` helper that owns the shared processed/expanded/failed bookkeeping plus `expanded_targets` / `known_tweet_ids` updates, while leaving the loop-specific skip/selection rules unchanged.
+  - Coverage: thread tests now cover both the existing membership+linked-status path and an explicit-target case that locks in duplicate skipping plus failure counting.

@@ -102,6 +102,39 @@ async def _expand_target(
     return [tweet.tweet_id for tweet in tweets]
 
 
+async def _try_expand_target(
+    *,
+    tweet_id: str,
+    store: ArchiveStore,
+    query_ids: dict[str, str],
+    query_store: QueryIdStore,
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    expanded_targets: set[str],
+    known_tweet_ids: set[str],
+    result: ThreadExpandResult,
+    console: Console,
+) -> None:
+    result.processed += 1
+    try:
+        discovered_ids = await _expand_target(
+            tweet_id=tweet_id,
+            store=store,
+            query_ids=query_ids,
+            query_store=query_store,
+            client=client,
+            config=config,
+        )
+    except Exception as exc:
+        result.failed += 1
+        console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
+        return
+
+    expanded_targets.add(tweet_id)
+    known_tweet_ids.update(discovered_ids)
+    result.expanded += 1
+
+
 async def expand_threads(
     *,
     targets: list[str] | None = None,
@@ -143,22 +176,18 @@ async def expand_threads(
                 result.skipped += duplicate_count
                 target_ids = requested[:limit] if limit is not None else requested
                 for tweet_id in target_ids:
-                    result.processed += 1
-                    try:
-                        discovered_ids = await _expand_target(
-                            tweet_id=tweet_id,
-                            store=store,
-                            query_ids=query_ids,
-                            query_store=query_store,
-                            client=client,
-                            config=config,
-                        )
-                        expanded_targets.add(tweet_id)
-                        known_tweet_ids.update(discovered_ids)
-                        result.expanded += 1
-                    except Exception as exc:
-                        result.failed += 1
-                        console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
+                    await _try_expand_target(
+                        tweet_id=tweet_id,
+                        store=store,
+                        query_ids=query_ids,
+                        query_store=query_store,
+                        client=client,
+                        config=config,
+                        expanded_targets=expanded_targets,
+                        known_tweet_ids=known_tweet_ids,
+                        result=result,
+                        console=console,
+                    )
             else:
                 for tweet_id in membership_ids:
                     if limit is not None and result.processed >= limit:
@@ -166,22 +195,18 @@ async def expand_threads(
                     if tweet_id in expanded_targets:
                         result.skipped += 1
                         continue
-                    result.processed += 1
-                    try:
-                        discovered_ids = await _expand_target(
-                            tweet_id=tweet_id,
-                            store=store,
-                            query_ids=query_ids,
-                            query_store=query_store,
-                            client=client,
-                            config=config,
-                        )
-                        expanded_targets.add(tweet_id)
-                        known_tweet_ids.update(discovered_ids)
-                        result.expanded += 1
-                    except Exception as exc:
-                        result.failed += 1
-                        console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
+                    await _try_expand_target(
+                        tweet_id=tweet_id,
+                        store=store,
+                        query_ids=query_ids,
+                        query_store=query_store,
+                        client=client,
+                        config=config,
+                        expanded_targets=expanded_targets,
+                        known_tweet_ids=known_tweet_ids,
+                        result=result,
+                        console=console,
+                    )
 
                 if limit is None or result.processed < limit:
                     for row in store.list_url_ref_rows():
@@ -204,25 +229,18 @@ async def expand_threads(
                         ):
                             result.skipped += 1
                             continue
-                        result.processed += 1
-                        try:
-                            discovered_ids = await _expand_target(
-                                tweet_id=target_id,
-                                store=store,
-                                query_ids=query_ids,
-                                query_store=query_store,
-                                client=client,
-                                config=config,
-                            )
-                            expanded_targets.add(target_id)
-                            known_tweet_ids.update(discovered_ids)
-                            result.expanded += 1
-                        except Exception as exc:
-                            result.failed += 1
-                            console.print(
-                                f"thread {target_id}: failed ({exc})",
-                                highlight=False,
-                            )
+                        await _try_expand_target(
+                            tweet_id=target_id,
+                            store=store,
+                            query_ids=query_ids,
+                            query_store=query_store,
+                            client=client,
+                            config=config,
+                            expanded_targets=expanded_targets,
+                            known_tweet_ids=known_tweet_ids,
+                            result=result,
+                            console=console,
+                        )
         finally:
             await client.aclose()
 
