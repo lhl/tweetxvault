@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Improved CLI search readability by highlighting literal query matches in result text:
+  - Updated `tweetxvault/cli.py` so `tweetxvault search` now applies reverse-video highlighting to case-insensitive matches for the query terms in the rendered text column
+  - Kept the change local to output rendering only; it does not alter FTS/vector/hybrid retrieval logic or ranking
+  - Added focused CLI coverage in `tests/test_cli.py` for the highlight span generation
+  - Validation:
+    - `uv run pytest tests/test_cli.py -q`
+    - `uv run ruff check tweetxvault/cli.py tests/test_cli.py`
+    - `uv run ruff format --check tweetxvault/cli.py tests/test_cli.py`
+
 - Prepared the follow-up `0.1.1` release while cleaning up stale review nits:
   - Moved the shared query-id refresh/resolve helper out of `tweetxvault/sync.py` into `tweetxvault/utils.py`, then updated `sync.py`, `articles.py`, and `threads.py` to use the public helper instead of importing a private sync-only function
   - Removed the unused `_store_state_for_page(...)` parameters in `tweetxvault/sync.py` to match the current sync-state behavior and reduce leftover historical noise

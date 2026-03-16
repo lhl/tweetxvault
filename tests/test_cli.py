@@ -109,6 +109,19 @@ def test_view_tweets_prints_rows(paths, monkeypatch) -> None:
     assert "bookmark tweet" not in output
 
 
+def test_highlight_search_matches_marks_query_terms() -> None:
+    rendered = cli._highlight_search_matches(
+        "Machine learning beats keyword search for search-heavy tasks.",
+        "search learning",
+    )
+
+    assert rendered.plain == "Machine learning beats keyword search for search-heavy tasks."
+    spans = {(span.start, span.end, span.style) for span in rendered.spans}
+    assert (8, 16, "reverse") in spans
+    assert (31, 37, "reverse") in spans
+    assert (42, 48, "reverse") in spans
+
+
 def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path: Path) -> None:
     _seed_archive(paths)
     buffer = StringIO()

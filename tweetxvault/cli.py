@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import resource
 import sys
 from collections.abc import Awaitable, Callable
@@ -17,6 +18,7 @@ from rich import box
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
+from rich.text import Text
 
 from tweetxvault.articles import refresh_articles
 from tweetxvault.auth import (
@@ -346,6 +348,17 @@ def _render_archive_view(
 
     console.print(f"showing {len(shown)} of {len(rows)} archived {label} tweets")
     console.print(table)
+
+
+def _highlight_search_matches(text: str, query: str) -> Text:
+    rendered = Text(text)
+    tokens = [token for token in dict.fromkeys(query.split()) if token]
+    if not tokens:
+        return rendered
+    pattern = re.compile("|".join(re.escape(token) for token in tokens), re.IGNORECASE)
+    for match in pattern.finditer(text):
+        rendered.stylize("reverse", match.start(), match.end())
+    return rendered
 
 
 sync_bookmarks = _register_sync_collection_command("bookmarks")
@@ -891,7 +904,7 @@ def search_archive(
                 str(score),
                 row.get("created_at") or "",
                 f"@{username}",
-                text,
+                _highlight_search_matches(text, query),
             )
         console.print(table)
     finally:
