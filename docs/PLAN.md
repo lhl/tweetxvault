@@ -402,6 +402,7 @@ Extend the single-table LanceDB archive with additional `record_type` values:
   - Canonical snapshot for the underlying tweet object across collections.
   - Stores the latest raw tweet object plus normalized text fields that are global to the tweet (`text`, `created_at`, author fields, later `conversation_id`, `lang`, note-tweet text if present).
   - Carries `source` for the current winning normalized snapshot plus nullable `deleted_at` when the only surviving payload comes from the official archive.
+  - Archive-seeded sparse placeholders should also track live-enrichment state (`pending`, `done`, `transient_failure`, `terminal_unavailable`) plus last-checked/result metadata so we can stop requerying permanently unavailable tweets.
   - Consumers should prefer this row over collection-scoped `tweet.raw_json` once it exists, but the existing `tweet` row remains the membership/projection layer.
 
 - `tweet_relation`
@@ -508,6 +509,7 @@ We want a second ingestion path for downloaded X account archives. A fresh sampl
 - Treat archive import as an ingestion path parallel to live GraphQL sync, not as a one-off converter.
 - Imported rows must preserve provenance (`live_graphql` vs `x_archive`) and be idempotent/resumable.
 - Archive import should map into the same `tweet_object`, collection-scoped `tweet`, `media`, `url`, and `article` rows so search/export code does not care where data came from.
+- The objective is the most complete local archive possible from the union of both sources; archive import seeds the archive, and live GraphQL follow-up enriches any still-available rows.
 - Never delete or downgrade richer live-captured data when importing thinner archive data later.
 - Record one dedicated `import_manifest` row per imported archive digest (generation date, started/completed timestamps, status, warnings, counts) so repeated imports can short-circuit safely.
 
@@ -529,13 +531,16 @@ Current sample-driven scope:
 Concrete merge rules from the first real fixture:
 
 - `tweets.js` rows are close enough to Twitter legacy tweet payloads that archive import should adapt them into the existing tweet/extractor path rather than inventing a second tweet model.
-- `like.js` rows are intentionally much thinner (`tweetId`, `fullText`, `expandedUrl` only), so likes import should create sparse collection/provenance rows and let later live sync upgrade tweet metadata when available.
+- `like.js` rows are intentionally much thinner (`tweetId`, `fullText`, `expandedUrl` only), so likes import should create sparse collection/provenance rows plus sparse global tweet placeholders, then let later live sync upgrade tweet metadata when available.
 - `tweets_media/` should be copied into the managed tweetxvault media layout during import, then registered against `media` rows via `local_path` / `download_state`.
 - Live GraphQL stays authoritative for richer normalized tweet/media/url/article metadata when both sources overlap; archive data fills null gaps and covers deleted/offline-only content.
 - Because the current extractor/storage coalescing behavior prefers the newest non-empty value, archive import must add explicit source-aware merge logic inside `ArchiveStore` instead of relying on naive re-use of the existing upsert path from the caller side.
 - Reuse one generic `parse_ytd_js(...)` loader for `window.YTD.*` files, then map specific files through small adapters.
 - Import `like.js` with a stable synthetic archive-order `sort_index`; later live sync may replace it with the real GraphQL timeline value.
 - Import deleted authored tweets into the normal `tweets` collection membership and surface nullable `deleted_at` rather than inventing a separate tombstone collection.
+- Do not perform an unconditional per-item GraphQL fetch inline during import; instead, run normal bulk collection syncs first, then targeted per-item lookups only for rows that remain sparse after import.
+- Track per-tweet live-enrichment status/result so explicit terminal misses stop retrying; only item-level lookup failures should mark `terminal_unavailable`.
+- Absence from a later live likes/bookmarks collection does **not** by itself mean the tweet is unavailable or that archive provenance should be removed.
 
 ### Parser Boundary
 

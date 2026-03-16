@@ -2,6 +2,12 @@
 
 ## 2026-03-17
 
+- Tightened the archive-import plan around “most complete archive wins” reconciliation:
+  - Updated `docs/PLAN.md` so archive import is explicitly a seed + live-enrichment flow, not a one-shot replacement for GraphQL capture
+  - Locked the follow-up policy: bulk collection syncs first, then targeted per-item GraphQL lookups only for rows that remain sparse after import
+  - Added planned per-tweet enrichment status tracking (`pending` / `done` / `transient_failure` / `terminal_unavailable`) so permanently missing tweets stop requerying
+  - Captured the important guardrail that absence from a later live likes/bookmarks collection does not erase archive provenance or prove tweet unavailability
+
 - Resolved the archive-import review questions in the planning docs and cleaned up stale roadmap notes:
   - Updated `docs/ANALYSIS-archive-import.md` with concrete decisions for storage-layer merge precedence, dedicated `import_manifest` rows, generic `parse_ytd_js(...)` loading, synthetic `like.js` ordering, nullable `deleted_at`, and copy-on-import media handling
   - Updated `docs/PLAN.md` to reflect the fresh archive fixture in the early scope note, added the new archive-import decisions to the requirements section, documented `source` / nullable `deleted_at` in the archive model, and refreshed the stale Phase 1/2/3 roadmap checkboxes to match shipped functionality

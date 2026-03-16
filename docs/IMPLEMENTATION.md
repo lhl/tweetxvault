@@ -364,8 +364,13 @@ Fresh fixture status (2026-03-16):
 - [ ] Add a dedicated `import_manifest` record type keyed by archive digest with generation date, status, warnings, and per-dataset counts.
 - [ ] Add a generic `parse_ytd_js(...)` / zip-directory loader for `manifest.js` plus `window.YTD.*` `data/*.js` parts, then layer per-file adapters on top.
 - [ ] Import authored tweets from `tweets.js` / `deleted-tweets.js` through a YTD-to-internal adapter, including nullable `deleted_at` support on the normalized tweet rows.
-- [ ] Import `like.js` into collection rows with a synthetic archive-order `sort_index` and raw provenance, without pretending it contains full tweet objects.
+- [ ] Import `like.js` into collection rows with a synthetic archive-order `sort_index` and raw provenance, while also seeding sparse global tweet placeholders for later enrichment.
 - [ ] Copy `tweets_media/` exports into the managed tweetxvault media layout, then register them on `media.local_path` / `download_state`.
+- [ ] Add post-import live reconciliation:
+  - run normal bulk live syncs first (`tweets`, `likes`, later bookmarks if available) to upgrade overlapping rows cheaply
+  - run targeted per-item GraphQL lookups only for rows that remain sparse after the bulk pass
+- [ ] Track per-tweet live-enrichment status (`pending`, `done`, `transient_failure`, `terminal_unavailable`) with last-check/result metadata so permanently unavailable tweets stop requerying.
+- [ ] Keep archive provenance even when a later live likes/bookmarks sync no longer includes that item; collection absence is not by itself a terminal lookup result.
 - [ ] Add regression fixtures/tests for repeated imports, live+archive merges, and archive-after-live precedence behavior.
 
 ## Review Cleanup
