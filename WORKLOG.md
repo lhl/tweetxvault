@@ -2,6 +2,13 @@
 
 ## 2026-03-17
 
+- Tightened the archive-import docs again before implementation handoff:
+  - Added concrete enrichment field names in `docs/PLAN.md` (`enrichment_state`, `enrichment_checked_at`, `enrichment_http_status`, `enrichment_reason`) instead of leaving “last-checked/result metadata” implicit
+  - Added `import_manifest` to the archive-model section in `docs/PLAN.md` so the planned record type is listed alongside the other row types
+  - Locked the synthetic `like.js` ordering scheme to negative numeric-string `sort_index` values for compatibility with the current integer-based sort handling
+  - Clarified that `deleted_at` applies to both membership `tweet` rows and normalized `tweet_object` rows for deleted authored tweets
+  - Added the missing archive-owner validation requirement and the `source = NULL` backward-compatibility rule for existing live rows
+
 - Tightened the archive-import plan around “most complete archive wins” reconciliation:
   - Updated `docs/PLAN.md` so archive import is explicitly a seed + live-enrichment flow, not a one-shot replacement for GraphQL capture
   - Locked the follow-up policy: bulk collection syncs first, then targeted per-item GraphQL lookups only for rows that remain sparse after import

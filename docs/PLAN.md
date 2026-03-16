@@ -352,6 +352,14 @@ Current implementation status:
   - `key`, `value`
   - `updated_at`
 
+- `import_manifest` rows (planned for Task 16 archive import):
+  - `row_key = import_manifest:{archive_digest}`
+  - `record_type = "import_manifest"`
+  - `archive_digest`, `archive_generation_date`
+  - `import_started_at`, `import_completed_at`, `status`
+  - `warnings_json`, `counts_json`
+  - Used for resumable/idempotent archive imports; live GraphQL sync does not write these rows.
+
 - Page persistence rules:
   - One persisted page issues one LanceDB `merge_insert` batch containing:
     - one new `raw_capture` row
@@ -402,7 +410,11 @@ Extend the single-table LanceDB archive with additional `record_type` values:
   - Canonical snapshot for the underlying tweet object across collections.
   - Stores the latest raw tweet object plus normalized text fields that are global to the tweet (`text`, `created_at`, author fields, later `conversation_id`, `lang`, note-tweet text if present).
   - Carries `source` for the current winning normalized snapshot plus nullable `deleted_at` when the only surviving payload comes from the official archive.
-  - Archive-seeded sparse placeholders should also track live-enrichment state (`pending`, `done`, `transient_failure`, `terminal_unavailable`) plus last-checked/result metadata so we can stop requerying permanently unavailable tweets.
+  - Archive-seeded sparse placeholders should also track:
+    - `enrichment_state` (`pending`, `done`, `transient_failure`, `terminal_unavailable`)
+    - `enrichment_checked_at`
+    - `enrichment_http_status`
+    - `enrichment_reason` (`deleted`, `suspended`, `not_found`, etc.)
   - Consumers should prefer this row over collection-scoped `tweet.raw_json` once it exists, but the existing `tweet` row remains the membership/projection layer.
 
 - `tweet_relation`
@@ -512,6 +524,7 @@ We want a second ingestion path for downloaded X account archives. A fresh sampl
 - The objective is the most complete local archive possible from the union of both sources; archive import seeds the archive, and live GraphQL follow-up enriches any still-available rows.
 - Never delete or downgrade richer live-captured data when importing thinner archive data later.
 - Record one dedicated `import_manifest` row per imported archive digest (generation date, started/completed timestamps, status, warnings, counts) so repeated imports can short-circuit safely.
+- Archive import must apply the same archive-owner guardrail as live sync by validating `account.js.account.accountId` against stored owner metadata before writing.
 
 Current sample-driven scope:
 
@@ -535,9 +548,10 @@ Concrete merge rules from the first real fixture:
 - `tweets_media/` should be copied into the managed tweetxvault media layout during import, then registered against `media` rows via `local_path` / `download_state`.
 - Live GraphQL stays authoritative for richer normalized tweet/media/url/article metadata when both sources overlap; archive data fills null gaps and covers deleted/offline-only content.
 - Because the current extractor/storage coalescing behavior prefers the newest non-empty value, archive import must add explicit source-aware merge logic inside `ArchiveStore` instead of relying on naive re-use of the existing upsert path from the caller side.
+- For backward compatibility, existing rows with `source = NULL` should be treated as `live_graphql` in precedence logic until an explicit backfill/migration populates them.
 - Reuse one generic `parse_ytd_js(...)` loader for `window.YTD.*` files, then map specific files through small adapters.
-- Import `like.js` with a stable synthetic archive-order `sort_index`; later live sync may replace it with the real GraphQL timeline value.
-- Import deleted authored tweets into the normal `tweets` collection membership and surface nullable `deleted_at` rather than inventing a separate tombstone collection.
+- Import `like.js` with a stable synthetic archive-order `sort_index` encoded as negative numeric strings (`-1`, `-2`, ... in file order) so the values stay compatible with current integer-based sorting and fall behind real live timeline sort keys in newest-first views.
+- Import deleted authored tweets into the normal `tweets` collection membership and surface nullable `deleted_at` on both the membership `tweet` row and the normalized `tweet_object` row rather than inventing a separate tombstone collection.
 - Do not perform an unconditional per-item GraphQL fetch inline during import; instead, run normal bulk collection syncs first, then targeted per-item lookups only for rows that remain sparse after import.
 - Track per-tweet live-enrichment status/result so explicit terminal misses stop retrying; only item-level lookup failures should mark `terminal_unavailable`.
 - Absence from a later live likes/bookmarks collection does **not** by itself mean the tweet is unavailable or that archive provenance should be removed.
