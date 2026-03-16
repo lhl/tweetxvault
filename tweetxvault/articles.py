@@ -19,7 +19,7 @@ from tweetxvault.config import AppConfig, XDGPaths
 from tweetxvault.exceptions import ConfigError
 from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
-from tweetxvault.sync import _resolve_query_ids
+from tweetxvault.utils import resolve_query_ids
 
 _STATUS_URL_RE = re.compile(r"/status/(\d+)")
 
@@ -67,7 +67,7 @@ async def refresh_articles(
             return result
 
         query_store = QueryIdStore(paths)
-        query_ids = await _resolve_query_ids(
+        query_ids = await resolve_query_ids(
             query_store,
             ["TweetDetail"],
             force_refresh=not query_store.is_fresh(),

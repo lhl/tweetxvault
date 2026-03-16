@@ -68,7 +68,7 @@ Config and auth are tightly coupled — build them together.
   - Refuse later syncs if resolved owner id differs from stored owner id.
 - [x] Implement `tweetxvault/auth/firefox.py`
   - Discover candidate profiles from `profiles.ini`, rank install-default/default profiles first, and allow explicit path/name override via config/env when a different profile is needed.
-  - Copy `cookies.sqlite` to temp file; open read-only; query `moz_cookies` for `.x.com` / `.twitter.com`.
+  - Copy `cookies.sqlite` to a temp snapshot before reading; see Review item 8 below for the current sidecar-copy details used on live profiles.
   - Extract `auth_token`, `ct0`, `twid`.
   - Parse `twid` (`u%3D<numeric_id>`) into numeric user_id.
 - [x] Extend auth extraction to Chromium-family browsers
@@ -440,3 +440,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: the ONNX embedding pipeline stored raw mean-pooled vectors, and LanceDB vector/hybrid search used the default distance metric instead of explicitly matching sentence-transformer-style cosine similarity.
   - Landed approach: L2-normalized embedding outputs in `tweetxvault/embed.py`, forced cosine distance in `ArchiveStore.search_vector(...)` / `search_hybrid(...)`, and documented that existing archives should rerun `tweetxvault embed --regen` once after upgrading.
   - Validation: `uv run pytest tests/test_embed.py tests/test_storage.py tests/test_cli.py tests/test_sync.py -q`, `uv run ruff check tweetxvault/embed.py tweetxvault/storage/backend.py tests/test_embed.py tests/test_storage.py`, and `uv run ruff format --check tweetxvault/embed.py tweetxvault/storage/backend.py tests/test_embed.py tests/test_storage.py`.
+- [x] Review item 21: reduce query-id coupling and clean up dead sync-state parameters.
+  - Current problem: `articles.py` / `threads.py` imported the private `_resolve_query_ids(...)` helper from `sync.py`, and `_store_state_for_page(...)` still carried unused parameters from an older sync-state shape.
+  - Landed approach: promoted the shared query-id resolver into `tweetxvault/utils.py`, updated the callers to use the public helper, removed the dead `_store_state_for_page(...)` parameters, and annotated the historical Firefox implementation note to point readers at the newer WAL-safe snapshot details below.
+  - Validation: `uv run pytest tests/test_sync.py tests/test_articles.py tests/test_threads.py tests/test_cli.py -q`, `uv run ruff check tweetxvault/utils.py tweetxvault/sync.py tweetxvault/articles.py tweetxvault/threads.py`, and `uv run ruff format --check tweetxvault/utils.py tweetxvault/sync.py tweetxvault/articles.py tweetxvault/threads.py`.

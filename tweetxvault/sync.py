@@ -29,11 +29,11 @@ from tweetxvault.exceptions import (
     AuthResolutionError,
     ConfigError,
     ProcessLockError,
-    QueryIdRefreshError,
     TweetXVaultError,
 )
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore, SyncState, open_archive_store
+from tweetxvault.utils import resolve_query_ids
 
 COLLECTION_TO_OPERATION = {
     "bookmarks": "Bookmarks",
@@ -119,34 +119,6 @@ class ProcessLock:
         self._handle = None
 
 
-def _resolve_query_id(operation: str, store: QueryIdStore) -> str:
-    query_id = store.get(operation)
-    if not query_id:
-        raise QueryIdRefreshError(f"No query ID available for {operation}.")
-    return query_id
-
-
-async def _resolve_query_ids(
-    store: QueryIdStore,
-    operations: Sequence[str],
-    *,
-    force_refresh: bool,
-    transport: httpx.AsyncBaseTransport | None,
-) -> dict[str, str]:
-    ids = {operation: store.get(operation) for operation in operations}
-    if force_refresh or any(value is None for value in ids.values()):
-        client = httpx.AsyncClient(follow_redirects=True, timeout=20.0, transport=transport)
-        try:
-            await refresh_query_ids(store, operations=operations, client=client)
-        finally:
-            await client.aclose()
-        ids = {operation: store.get(operation) for operation in operations}
-    missing = [operation for operation, value in ids.items() if value is None]
-    if missing:
-        raise QueryIdRefreshError(f"Missing query IDs for operations: {', '.join(missing)}")
-    return {operation: value for operation, value in ids.items() if value is not None}
-
-
 def _build_url(
     collection: str, query_id: str, auth: ResolvedAuthBundle, cursor: str | None, count: int
 ) -> str:
@@ -180,7 +152,7 @@ async def run_preflight(
             existing_store.close()
     operation_names = [COLLECTION_TO_OPERATION[collection] for collection in collections]
     query_store = QueryIdStore(paths)
-    query_ids = query_ids or await _resolve_query_ids(
+    query_ids = query_ids or await resolve_query_ids(
         query_store,
         operation_names,
         force_refresh=not query_store.is_fresh(),
@@ -275,10 +247,8 @@ async def _fetch_and_parse_page(
 
 def _store_state_for_page(
     *,
-    previous: SyncState,
     prior_backfill_cursor: str | None,
     prior_backfill_incomplete: bool,
-    first_head_tweet_id: str | None,
     next_cursor: str | None,
     stop_reason: str,
     is_head_pass: bool,
@@ -357,10 +327,8 @@ async def _run_pass(
             stop_reason = "continue"
 
         backfill_cursor, backfill_incomplete = _store_state_for_page(
-            previous=previous_state,
             prior_backfill_cursor=prior_backfill_cursor,
             prior_backfill_incomplete=prior_backfill_incomplete,
-            first_head_tweet_id=latest_head_id,
             next_cursor=next_cursor,
             stop_reason=stop_reason,
             is_head_pass=is_head_pass,

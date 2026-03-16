@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tweetxvault"
-version = "0.1.0"
+version = "0.1.1"
 description = "Export X bookmarks, likes, and authored tweets into a local archive."
 readme = "README.md"
 license = "Apache-2.0"

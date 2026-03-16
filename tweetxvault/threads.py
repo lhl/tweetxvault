@@ -22,7 +22,7 @@ from tweetxvault.extractor import extract_status_id_from_url
 from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore
-from tweetxvault.sync import _resolve_query_ids
+from tweetxvault.utils import resolve_query_ids
 
 _SCAN_PROGRESS_EVERY = 100
 
@@ -198,7 +198,7 @@ async def expand_threads(
         store = job.store
         _log_threads(console, "resolving TweetDetail query ID")
         query_store = QueryIdStore(paths)
-        query_ids = await _resolve_query_ids(
+        query_ids = await resolve_query_ids(
             query_store,
             ["TweetDetail"],
             force_refresh=not query_store.is_fresh(),

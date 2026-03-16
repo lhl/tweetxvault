@@ -2,6 +2,20 @@
 
 ## 2026-03-16
 
+- Prepared the follow-up `0.1.1` release while cleaning up stale review nits:
+  - Moved the shared query-id refresh/resolve helper out of `tweetxvault/sync.py` into `tweetxvault/utils.py`, then updated `sync.py`, `articles.py`, and `threads.py` to use the public helper instead of importing a private sync-only function
+  - Removed the unused `_store_state_for_page(...)` parameters in `tweetxvault/sync.py` to match the current sync-state behavior and reduce leftover historical noise
+  - Tweaked the historical Firefox implementation bullet in `docs/IMPLEMENTATION.md` so it still records the original task but now points readers at the newer WAL-safe snapshot note for the current sidecar-copy details
+  - Bumped package version metadata to `0.1.1`
+  - Validation:
+    - `uv run pytest tests/test_sync.py tests/test_articles.py tests/test_threads.py tests/test_cli.py -q`
+    - `uv run ruff check tweetxvault/utils.py tweetxvault/sync.py tweetxvault/articles.py tweetxvault/threads.py`
+    - `uv run ruff format --check tweetxvault/utils.py tweetxvault/sync.py tweetxvault/articles.py tweetxvault/threads.py`
+    - `uv run pytest -q`
+    - `uv build`
+    - `uv run --with twine twine check dist/tweetxvault-0.1.1*`
+    - `uv run --isolated --with dist/tweetxvault-0.1.1-py3-none-any.whl tweetxvault --help`
+
 - Normalized semantic-search embeddings and aligned LanceDB search to cosine distance:
   - Updated `tweetxvault/embed.py` so ONNX mean-pooled vectors are L2-normalized before storage, keeping query and archive embeddings on the same cosine-ready scale
   - Updated `tweetxvault/storage/backend.py` so both vector and hybrid search explicitly use the `embedding` column with `metric("cosine")`
