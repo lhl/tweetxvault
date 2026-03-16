@@ -15,6 +15,38 @@ from tweetxvault.exceptions import ArchiveOwnerMismatchError
 from tweetxvault.storage import open_archive_store
 
 
+class _FakeQueryBuilder:
+    def __init__(self) -> None:
+        self.metric_name: str | None = None
+        self.where_expr: str | None = None
+        self.limit_value: int | None = None
+        self.vector_value: list[float] | None = None
+        self.text_value: str | None = None
+
+    def metric(self, metric: str):
+        self.metric_name = metric
+        return self
+
+    def where(self, expr: str, prefilter: bool | None = None):
+        self.where_expr = expr
+        return self
+
+    def limit(self, value: int):
+        self.limit_value = value
+        return self
+
+    def vector(self, vector: list[float]):
+        self.vector_value = vector
+        return self
+
+    def text(self, text: str):
+        self.text_value = text
+        return self
+
+    def to_list(self) -> list[dict[str, object]]:
+        return [{"tweet_id": "1"}]
+
+
 def _counts(**overrides: int) -> dict[str, int]:
     counts = {
         "raw_captures": 0,
@@ -599,6 +631,64 @@ def test_secondary_row_listings_filter_through_lancedb(paths) -> None:
     preview_rows = store.list_article_rows(preview_only=True)
     assert [row["tweet_id"] for row in preview_rows] == ["101"]
     assert preview_rows[0]["status"] == "preview_only"
+    store.close()
+
+
+def test_search_vector_uses_cosine_metric(paths, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    query = _FakeQueryBuilder()
+    captured: dict[str, object] = {}
+
+    def fake_search(value, *, vector_column_name=None, query_type="auto"):
+        captured["value"] = value
+        captured["vector_column_name"] = vector_column_name
+        captured["query_type"] = query_type
+        return query
+
+    monkeypatch.setattr(store.table, "search", fake_search)
+
+    results = store.search_vector([0.1, 0.2, 0.3], limit=7)
+
+    assert results == [{"tweet_id": "1"}]
+    assert captured == {
+        "value": [0.1, 0.2, 0.3],
+        "vector_column_name": "embedding",
+        "query_type": "vector",
+    }
+    assert query.metric_name == "cosine"
+    assert query.where_expr == "record_type = 'tweet' AND embedding IS NOT NULL"
+    assert query.limit_value == 7
+    store.close()
+
+
+def test_search_hybrid_uses_cosine_metric(paths, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    query = _FakeQueryBuilder()
+    captured: dict[str, object] = {}
+
+    def fake_search(query_value=None, *, vector_column_name=None, query_type="auto"):
+        captured["query_value"] = query_value
+        captured["vector_column_name"] = vector_column_name
+        captured["query_type"] = query_type
+        return query
+
+    monkeypatch.setattr(store.table, "search", fake_search)
+
+    results = store.search_hybrid("machine learning", [0.1, 0.2, 0.3], limit=9)
+
+    assert results == [{"tweet_id": "1"}]
+    assert captured == {
+        "query_value": None,
+        "vector_column_name": "embedding",
+        "query_type": "hybrid",
+    }
+    assert query.vector_value == [0.1, 0.2, 0.3]
+    assert query.text_value == "machine learning"
+    assert query.metric_name == "cosine"
+    assert query.where_expr == "record_type = 'tweet'"
+    assert query.limit_value == 9
     store.close()
 
 

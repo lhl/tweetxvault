@@ -212,6 +212,7 @@ uv run tweetxvault embed --regen
 ```
 
 Uses the `all-MiniLM-L6-v2` model (384 dimensions) via ONNX Runtime. The model is downloaded automatically from Hugging Face Hub on first run.
+If you already generated embeddings with an older tweetxvault version, run `uv run tweetxvault embed --regen` once after upgrading so stored vectors are rebuilt with the current normalized cosine-search setup.
 
 ### Exporting
 

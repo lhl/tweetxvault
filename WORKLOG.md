@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Normalized semantic-search embeddings and aligned LanceDB search to cosine distance:
+  - Updated `tweetxvault/embed.py` so ONNX mean-pooled vectors are L2-normalized before storage, keeping query and archive embeddings on the same cosine-ready scale
+  - Updated `tweetxvault/storage/backend.py` so both vector and hybrid search explicitly use the `embedding` column with `metric("cosine")`
+  - Added focused regressions in `tests/test_embed.py` for normalized embedding output and in `tests/test_storage.py` for cosine metric wiring on vector/hybrid search
+  - Added a README upgrade note telling existing users to run `uv run tweetxvault embed --regen` once so older stored vectors are rebuilt under the normalized cosine-search setup
+  - Validation:
+    - `uv run pytest tests/test_embed.py tests/test_storage.py tests/test_cli.py tests/test_sync.py -q`
+    - `uv run ruff check tweetxvault/embed.py tweetxvault/storage/backend.py tests/test_embed.py tests/test_storage.py`
+    - `uv run ruff format --check tweetxvault/embed.py tweetxvault/storage/backend.py tests/test_embed.py tests/test_storage.py`
+
 - Tightened the PyPI release surface for `0.1.0`:
   - Switched the README screenshot to the direct GitHub raw URL after confirming `https://github.com/lhl/tweetxvault/blob/main/docs/screenshot.png?raw=true` resolves to `200 image/png`; this avoids a broken repo-relative image on PyPI while keeping the same asset
   - Reworked the installation section in `README.md` so `pip install tweetxvault` / `pip install "tweetxvault[embed]"` come first, with `git clone` + `uv sync` kept as the source-install path

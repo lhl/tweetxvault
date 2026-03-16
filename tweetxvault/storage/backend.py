@@ -1542,7 +1542,8 @@ class ArchiveStore:
     def search_vector(self, vector: list[float], *, limit: int = 20) -> list[dict[str, Any]]:
         """Vector similarity search over tweet embeddings."""
         return (
-            self.table.search(vector, query_type="vector")
+            self.table.search(vector, vector_column_name="embedding", query_type="vector")
+            .metric("cosine")
             .where("record_type = 'tweet' AND embedding IS NOT NULL")
             .limit(limit)
             .to_list()
@@ -1554,9 +1555,10 @@ class ArchiveStore:
         """Hybrid FTS + vector search with reranking."""
         self.ensure_fts_index()
         return (
-            self.table.search(query_type="hybrid")
+            self.table.search(vector_column_name="embedding", query_type="hybrid")
             .vector(vector)
             .text(query)
+            .metric("cosine")
             .where("record_type = 'tweet'")
             .limit(limit)
             .to_list()

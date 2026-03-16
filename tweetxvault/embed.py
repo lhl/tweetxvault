@@ -11,6 +11,12 @@ EMBEDDING_DIM = 384
 _engine_cache: EmbeddingEngine | None = None
 
 
+def _normalize_embeddings(vectors: NDArray[np.float32]) -> NDArray[np.float32]:
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms = np.clip(norms, a_min=1e-12, a_max=None)
+    return vectors / norms
+
+
 def is_available() -> bool:
     """Check if embedding dependencies are installed."""
     try:
@@ -71,4 +77,5 @@ class EmbeddingEngine:
         mask_expanded = attention_mask[:, :, np.newaxis].astype(np.float32)
         summed = (token_embeddings * mask_expanded).sum(axis=1)
         counts = mask_expanded.sum(axis=1).clip(min=1e-9)
-        return (summed / counts).astype(np.float32)
+        pooled = (summed / counts).astype(np.float32)
+        return _normalize_embeddings(pooled)
