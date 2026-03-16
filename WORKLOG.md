@@ -2,6 +2,17 @@
 
 ## 2026-03-17
 
+- Applied the first post-Task-16 archive-import review fixes:
+  - Fixed the existing-thumbnail fallback in `tweetxvault/archive_import.py` so a reused poster file no longer turns missing thumbnail metadata into `"None"` or `int(None)`
+  - Closed zip inputs if `_ArchiveInput` manifest loading fails, added context-manager support for the helper, and rejected `..` path segments before resolving extracted-directory reads
+  - Added archive-import regressions for missing manifests, archive-owner mismatch, zip-close-on-init-failure, malicious manifest filenames, and pre-existing thumbnail destinations
+  - Validation:
+    - `uv run ruff format tweetxvault/archive_import.py tests/test_archive_import.py`
+    - `uv run pytest tests/test_archive_import.py -q`
+    - `uv run ruff check`
+    - `uv run ruff format --check`
+    - `uv run pytest -q`
+
 - Implemented Task 16 end-to-end for official X archive ingestion:
   - Added `tweetxvault/archive_import.py` plus `tweetxvault import x-archive <zip-or-dir>` in `tweetxvault/cli.py`
   - Added content-based archive digest manifests, archive-owner validation, generic `parse_ytd_js(...)` loading for zip/directory inputs, authored/deleted tweet import, sparse `like.js` placeholders, and archive media copy-in to the managed `media/` layout

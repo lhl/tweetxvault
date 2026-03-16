@@ -13,7 +13,7 @@ import tweetxvault.archive_import as archive_import
 from tweetxvault.archive_import import import_x_archive
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
-from tweetxvault.exceptions import ConfigError
+from tweetxvault.exceptions import ArchiveOwnerMismatchError, ConfigError
 from tweetxvault.storage import open_archive_store
 
 
@@ -21,7 +21,9 @@ def _wrap_ytd(name: str, payload: object) -> str:
     return f"window.{name} = {json.dumps(payload, indent=2)}\n"
 
 
-def _write_archive_dir(base: Path, *, like_tweet_id: str = "300") -> Path:
+def _write_archive_dir(
+    base: Path, *, like_tweet_id: str = "300", media_kind: str = "photo"
+) -> Path:
     root = base / "archive"
     data_dir = root / "data"
     media_dir = data_dir / "tweets_media"
@@ -89,6 +91,47 @@ def _write_archive_dir(base: Path, *, like_tweet_id: str = "300") -> Path:
         encoding="utf-8",
     )
 
+    if media_kind == "video":
+        media_item = {
+            "id": "500",
+            "id_str": "500",
+            "media_url": "http://pbs.twimg.com/ext_tw_video_thumb/archive-poster.jpg",
+            "media_url_https": "https://pbs.twimg.com/ext_tw_video_thumb/archive-poster.jpg",
+            "expanded_url": "https://x.com/archiveuser/status/100/video/1",
+            "url": "https://t.co/archive-video",
+            "display_url": "pic.x.com/archive-video",
+            "type": "video",
+            "sizes": {"large": {"w": "1200", "h": "675", "resize": "fit"}},
+            "video_info": {
+                "duration_millis": 1000,
+                "variants": [
+                    {
+                        "content_type": "application/x-mpegURL",
+                        "url": "https://video.twimg.com/ext_tw_video/archive-video.m3u8",
+                    },
+                    {
+                        "bitrate": 832000,
+                        "content_type": "video/mp4",
+                        "url": "https://video.twimg.com/ext_tw_video/archive-video.mp4",
+                    },
+                ],
+            },
+        }
+        exported_media_name = "100-archive-poster.jpg"
+    else:
+        media_item = {
+            "id": "500",
+            "id_str": "500",
+            "media_url": "http://pbs.twimg.com/media/archive-photo.jpg",
+            "media_url_https": "https://pbs.twimg.com/media/archive-photo.jpg",
+            "expanded_url": "https://x.com/archiveuser/status/100/photo/1",
+            "url": "https://t.co/archive-photo",
+            "display_url": "pic.x.com/archive-photo",
+            "type": "photo",
+            "sizes": {"large": {"w": "1200", "h": "675", "resize": "fit"}},
+        }
+        exported_media_name = "100-archive-photo.jpg"
+
     authored_tweet = {
         "tweet": {
             "id": "100",
@@ -100,35 +143,9 @@ def _write_archive_dir(base: Path, *, like_tweet_id: str = "300") -> Path:
                 "urls": [],
                 "hashtags": [],
                 "user_mentions": [],
-                "media": [
-                    {
-                        "id": "500",
-                        "id_str": "500",
-                        "media_url": "http://pbs.twimg.com/media/archive-photo.jpg",
-                        "media_url_https": "https://pbs.twimg.com/media/archive-photo.jpg",
-                        "expanded_url": "https://x.com/archiveuser/status/100/photo/1",
-                        "url": "https://t.co/archive-photo",
-                        "display_url": "pic.x.com/archive-photo",
-                        "type": "photo",
-                        "sizes": {"large": {"w": "1200", "h": "675", "resize": "fit"}},
-                    }
-                ],
+                "media": [media_item],
             },
-            "extended_entities": {
-                "media": [
-                    {
-                        "id": "500",
-                        "id_str": "500",
-                        "media_url": "http://pbs.twimg.com/media/archive-photo.jpg",
-                        "media_url_https": "https://pbs.twimg.com/media/archive-photo.jpg",
-                        "expanded_url": "https://x.com/archiveuser/status/100/photo/1",
-                        "url": "https://t.co/archive-photo",
-                        "display_url": "pic.x.com/archive-photo",
-                        "type": "photo",
-                        "sizes": {"large": {"w": "1200", "h": "675", "resize": "fit"}},
-                    }
-                ]
-            },
+            "extended_entities": {"media": [media_item]},
             "favorite_count": "0",
             "retweet_count": "0",
             "retweeted": False,
@@ -205,7 +222,7 @@ def _write_archive_dir(base: Path, *, like_tweet_id: str = "300") -> Path:
         ),
         encoding="utf-8",
     )
-    (media_dir / "100-archive-photo.jpg").write_bytes(b"archive-photo")
+    (media_dir / exported_media_name).write_bytes(b"archive-photo")
     return root
 
 
@@ -424,4 +441,118 @@ def test_live_sync_can_upgrade_archive_like_placeholder_after_import(
     assert tweet_object["source"] == "live_graphql"
     assert tweet_object["text"] == "live liked tweet"
     assert tweet_object["enrichment_state"] == "done"
+    store.close()
+
+
+def test_import_x_archive_rejects_missing_manifest(paths, tmp_path: Path) -> None:
+    broken_dir = tmp_path / "broken-archive"
+    broken_dir.mkdir()
+
+    with pytest.raises(ConfigError, match="missing manifest.js"):
+        asyncio.run(
+            import_x_archive(
+                broken_dir,
+                config=AppConfig(),
+                paths=paths,
+                console=_console(),
+            )
+        )
+
+
+def test_archive_input_closes_zip_when_manifest_load_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_zip = tmp_path / "broken-archive.zip"
+    with zipfile.ZipFile(archive_zip, "w") as handle:
+        handle.writestr("data/manifest.js", "window.__THAR_CONFIG = {}\n")
+
+    closed: list[str] = []
+    original_close = zipfile.ZipFile.close
+
+    def tracking_close(self: zipfile.ZipFile) -> None:
+        if self.fp is not None:
+            closed.append(str(self.filename))
+        original_close(self)
+
+    def raise_bad_manifest(_self: archive_import._ArchiveInput) -> dict[str, object]:
+        raise ConfigError("bad manifest")
+
+    monkeypatch.setattr(zipfile.ZipFile, "close", tracking_close)
+    monkeypatch.setattr(archive_import._ArchiveInput, "_load_manifest", raise_bad_manifest)
+
+    with pytest.raises(ConfigError, match="bad manifest"):
+        archive_import._ArchiveInput(archive_zip)
+
+    assert closed == [str(archive_zip)]
+
+
+def test_import_x_archive_rejects_owner_mismatch(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.ensure_archive_owner_id("84")
+    store.close()
+    _disable_live_reconciliation(monkeypatch)
+
+    with pytest.raises(ArchiveOwnerMismatchError):
+        asyncio.run(
+            import_x_archive(
+                archive_dir,
+                config=AppConfig(),
+                paths=paths,
+                console=_console(),
+            )
+        )
+
+
+def test_import_x_archive_rejects_parent_segments_in_manifest_paths(paths, tmp_path: Path) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    manifest_path = archive_dir / "data" / "manifest.js"
+    manifest = json.loads(
+        manifest_path.read_text(encoding="utf-8").removeprefix("window.__THAR_CONFIG = ")
+    )
+    manifest["dataTypes"]["tweets"]["files"][0]["fileName"] = "data/../../../etc/passwd"
+    manifest_path.write_text(
+        f"window.__THAR_CONFIG = {json.dumps(manifest, indent=2)}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="must stay within the archive data/ directory"):
+        asyncio.run(
+            import_x_archive(
+                archive_dir,
+                config=AppConfig(),
+                paths=paths,
+                console=_console(),
+            )
+        )
+
+
+def test_import_x_archive_reuses_existing_thumbnail_destination(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path, media_kind="video")
+    (paths.data_dir / "media" / "100").mkdir(parents=True, exist_ok=True)
+    (paths.data_dir / "media" / "100" / "7_500-poster.jpg").write_bytes(b"poster")
+    _disable_live_reconciliation(monkeypatch)
+
+    result = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert result.counts["media_files_copied"] == 0
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    media_row = store.table.search().where("record_type = 'media'").limit(1).to_list()[0]
+    assert media_row["download_state"] == "done"
+    assert media_row["thumbnail_local_path"] == "media/100/7_500-poster.jpg"
+    assert media_row["thumbnail_sha256"] is None
+    assert media_row["thumbnail_byte_size"] is None
     store.close()

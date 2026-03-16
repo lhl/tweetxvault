@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -91,7 +91,17 @@ class _ArchiveInput:
             raise ConfigError(
                 "Archive input must be a .zip file or an extracted archive directory."
             )
-        self.manifest = self._load_manifest()
+        try:
+            self.manifest = self._load_manifest()
+        except Exception:
+            self.close()
+            raise
+
+    def __enter__(self) -> _ArchiveInput:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
 
     def close(self) -> None:
         if self._zip is not None:
@@ -99,7 +109,11 @@ class _ArchiveInput:
 
     def _normalize_name(self, relative_path: str) -> str:
         relative = relative_path.replace("\\", "/").lstrip("/")
-        return relative if relative.startswith("data/") else f"data/{relative}"
+        normalized = relative if relative.startswith("data/") else f"data/{relative}"
+        parts = [part for part in PurePosixPath(normalized).parts if part not in {"", "."}]
+        if any(part == ".." for part in parts):
+            raise ConfigError("Archive paths must stay within the archive data/ directory.")
+        return "/".join(parts)
 
     def _directory_path(self, relative_path: str) -> Path:
         assert self._data_dir is not None
@@ -439,6 +453,8 @@ def _import_likes(store: ArchiveStore, likes: list[Any], *, counts: dict[str, in
             author_username=None,
             author_display_name=None,
             created_at=None,
+            # Existing list/view code sorts these numerically descending, so -1 stays ahead of -2
+            # and preserves the original archive file order without a special-case code path.
             sort_index=str(-index),
             raw_json=raw_json,
         )
@@ -550,9 +566,9 @@ def _copy_exported_media(
             sha256, byte_size = _copy_file_from_archive(source, relative_path, destination)
             counts["media_files_copied"] += 1
         else:
-            sha256 = str(row.get("thumbnail_sha256") if is_thumbnail else row.get("sha256") or "")
+            sha256 = str((row.get("thumbnail_sha256") if is_thumbnail else row.get("sha256")) or "")
             byte_size = int(
-                row.get("thumbnail_byte_size") if is_thumbnail else row.get("byte_size") or 0
+                (row.get("thumbnail_byte_size") if is_thumbnail else row.get("byte_size")) or 0
             )
         content_type = mimetypes.guess_type(destination.name)[0]
         pending_updates.append(
@@ -755,8 +771,7 @@ async def import_x_archive(
 ) -> ArchiveImportResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
-    source = _ArchiveInput(archive_path)
-    try:
+    with _ArchiveInput(archive_path) as source:
         digest = source.digest()
         generation_date = _manifest_generation_date(source.manifest)
         counts = _initial_counts()
@@ -868,6 +883,9 @@ async def import_x_archive(
         finally:
             lock.release()
 
+        # Bulk archive writes are complete at this point. The follow-up sync/enrichment helpers
+        # reacquire the same process lock around their own writes, so we intentionally do not hold
+        # the outer lock across potentially long network I/O.
         reconciled_collections, reconcile_warnings, resolved_auth = await _run_live_reconciliation(
             counts=counts,
             config=config,
@@ -934,5 +952,3 @@ async def import_x_archive(
             detail_transient_failures=detail_transient,
             pending_enrichment=pending,
         )
-    finally:
-        source.close()

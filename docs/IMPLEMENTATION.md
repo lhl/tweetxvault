@@ -381,6 +381,11 @@ Fresh fixture status (2026-03-16):
   - `enrichment_reason`
 - [x] Keep archive provenance even when a later live likes/bookmarks sync no longer includes that item; collection absence is not by itself a terminal lookup result.
 - [x] Add regression fixtures/tests for repeated imports, live+archive merges, and archive-after-live precedence behavior.
+- [x] Landed the first post-review hardening pass for Task 16:
+  - fixed the existing-thumbnail fallback so reused archive poster files do not coerce missing metadata into `"None"` / `int(None)`
+  - closed zip inputs on manifest-load failure and made `_ArchiveInput` usable as a context manager
+  - rejected `..` path segments in manifest-provided archive filenames before resolving extracted-directory paths
+  - added regressions for missing manifests, owner mismatch, zip-close-on-init-failure, malicious manifest filenames, and pre-existing thumbnail destinations
 
 ## Review Cleanup
 
