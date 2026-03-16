@@ -127,7 +127,7 @@ uv run tweetxvault sync bookmarks --article-backfill
 uv run tweetxvault sync all --limit 5
 ```
 
-If the `[embed]` extra is installed, new tweets are automatically embedded after each sync.
+If the `[embed]` extra is installed, new tweets are automatically embedded after each sync on a best-effort basis; if embedding fails, sync still succeeds and you can retry later with `tweetxvault embed`.
 `--article-backfill` updates stored `raw_json` and normalized secondary rows inline, so it does not require a follow-up `tweetxvault rehydrate`.
 `tweetxvault sync all` still covers bookmarks + likes only; authored tweets stay opt-in via `tweetxvault sync tweets`.
 

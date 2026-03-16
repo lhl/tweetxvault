@@ -625,7 +625,7 @@ Reserved for future (not implemented in MVP):
 - [x] Reduce repetition in thread-expansion target handling.
   - Next cleanup item landed: extracted the shared `_expand_target(...)` try/except/result-counting path so the explicit-target, membership, and linked-status loops no longer carry three copies of the same expansion logic.
 - [x] Make Firefox cookie extraction WAL-safe.
-  - Next cleanup item landed: replaced manual `cookies.sqlite` / `-wal` / `-shm` copying with a proper SQLite snapshot so live Firefox profiles no longer rely on sidecar copy timing.
+  - Update: the first SQLite-backup snapshot attempt could hang on busy live profiles, so the bounded shipped path copies `cookies.sqlite` plus any present `-wal` / `-shm` / `-journal` sidecars into a temp snapshot before querying.
 - [x] Expand failure-path coverage for post-sync runners and extractor edge cases.
   - Next cleanup item landed: added targeted tests for retries, limits, invalid responses, and malformed payload handling across media, unfurl, articles, threads, and extractor.
 - [x] Add direct unit coverage for `ExtractedTweetGraph` coalescing rules.
@@ -638,6 +638,14 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: the runner now prints preload progress before the archive scans begin, and it defers the expensive known-tweet-id scan until the linked-status pass actually needs it.
 - [x] Add an auth-resolution debug flag for commands that can stall before the archive job starts.
   - Next cleanup item landed: `threads expand --debug-auth` and `auth check --debug-auth` now surface browser/profile probing steps when cookie extraction or keyring access is the slow step.
+- [x] Decouple post-sync auto-embedding from sync success.
+  - Next cleanup item landed: archive capture success now wins. If auto-embedding fails, sync warns and leaves the new tweets for a later `tweetxvault embed` run or the next sync instead of failing the completed sync.
+- [ ] Clarify browser-override auth semantics for `user_id`.
+  - Pending decision: whether `--browser` only forces cookie sourcing (`auth_token` / `ct0`) or overrides all auth fields, including explicit env/config `user_id`.
+- [ ] Tighten thread-expansion rerun and dedupe semantics.
+  - Pending decisions: whether explicit `threads expand <id/url>...` should skip already-expanded targets by default, and whether failed linked-status targets should be attempted only once per run.
+- [ ] Decide whether the current CLI is Unix-only or needs first-class Windows support.
+  - Current gap: `fcntl`, `resource`, and `strftime("%-d")` keep the runtime Unix-specific today even though path handling is cross-platform.
 
 ## Open Questions (Remaining)
 
@@ -648,6 +656,9 @@ Reserved for future (not implemented in MVP):
 5. **URL snapshot runner**: inline CLI commands landed for the first pass (`tweetxvault media download`, `tweetxvault unfurl`); decide later whether ArchiveBox/snapshotting needs a queue table or can stay command-driven.
 6. **Thread-expansion trigger**: do we keep thread/context capture as an explicit follow-on command, or add an opt-in sync-time expansion flag after the first stable implementation?
 7. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
+8. **Browser override semantics**: when `--browser` is set, should explicit env/config `user_id` remain a fallback for likes/tweets, or should browser extraction own all auth fields?
+9. **Explicit thread-expansion semantics**: should `tweetxvault threads expand <id/url>...` be idempotent by default, or treated as a force-refresh surface? Related: should failed linked-status targets be attempted once per run or once per matching URL ref?
+10. **Platform target**: is Windows a real support target for the runtime, or should current support be documented as Unix-only until locking/resource/date-format gaps are addressed?
 
 ## Dependencies (Planned)
 

@@ -464,6 +464,11 @@ def _embed_new_tweets(store: Any, console: Console | None) -> None:
         console.print(f"embedded {remaining} tweets")
 
 
+def _log_embedding_warning(console: Console | None, message: str) -> None:
+    if console is not None:
+        console.print(f"[yellow]{message}[/yellow]")
+
+
 async def _sync_collection_ready(
     *,
     collection: str,
@@ -567,7 +572,14 @@ async def _sync_collection_ready(
         finally:
             await client.aclose()
             if pages_total > 0:
-                _embed_new_tweets(store, console)
+                try:
+                    _embed_new_tweets(store, console)
+                except Exception as exc:
+                    _log_embedding_warning(
+                        console,
+                        "sync completed, but auto-embedding was skipped; "
+                        f"run 'tweetxvault embed' later ({exc})",
+                    )
                 store.optimize()
             store.close()
     finally:

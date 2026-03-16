@@ -390,7 +390,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Coverage: thread tests now cover both the existing membership+linked-status path and an explicit-target case that locks in duplicate skipping plus failure counting.
 - [x] Review item 8: make Firefox cookie snapshotting WAL-safe in `tweetxvault/auth/firefox.py`.
   - Current problem: copying `cookies.sqlite` plus `-wal` / `-shm` sidecars separately can still race a live Firefox write and produce an inconsistent snapshot.
-  - Landed approach: replaced manual sidecar copying with a real SQLite backup snapshot into a temp DB before querying cookies.
+  - Landed approach: the first SQLite-backup snapshot attempt proved capable of hanging on busy live profiles, so the bounded shipped path copies `cookies.sqlite` plus any present `-wal` / `-shm` / `-journal` sidecars into a temp snapshot before querying cookies.
   - Coverage: auth tests now cover reading cookies from a WAL-mode Firefox DB while the source connection remains live.
 - [x] Review item 9: broaden runner and extractor test coverage for error paths and edge cases.
   - Current problem: the new runner modules mostly only have happy-path tests, and extractor coverage is still thin on malformed payloads.
@@ -416,3 +416,18 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: if a command stalls before the archive job starts, there is no visibility into whether browser cookie resolution or profile/keyring probing is the blocking step.
   - Landed approach: added a `--debug-auth` flag for `threads expand` and `auth check`, plus auth-resolution status callbacks that surface browser/profile probing steps from the cookie resolver.
   - Coverage: auth tests now lock in emitted browser-probe status, and CLI tests cover `--debug-auth` output plumbing for both `auth check` and `threads expand`.
+- [x] Review item 15: make post-sync auto-embedding best-effort instead of failing a successful sync.
+  - Current problem: `_sync_collection_ready()` persists fetched pages, then auto-embedding can still raise on model/artifact/runtime issues and flip the whole command to failure after the archive write already succeeded.
+  - Landed approach: successful sync persistence now wins. Auto-embedding failures are caught, surfaced as warnings, and deferred to a later `tweetxvault embed` run or a future sync instead of failing the capture command.
+  - Coverage: `tests/test_sync.py` now forces embedding initialization to fail after page persistence and proves the sync still succeeds with stored rows intact.
+- [ ] Review item 16: define `--browser` auth-override semantics for `user_id`.
+  - Current problem: the current browser override drops explicit env/config `user_id`, which can break likes/tweets even when the user configured a numeric fallback.
+  - Pending decision: whether `--browser` means “browser source for cookies only, while explicit `user_id` fallback still applies” or “browser-only for all auth fields, including `user_id`.”
+  - Coverage target: CLI/auth regressions for `--browser` + env/config `user_id` on likes/tweets once the intended semantics are chosen.
+- [ ] Review item 17: tighten thread-expansion rerun/dedupe semantics.
+  - Current problem: explicit `threads expand <id/url>...` currently refetches already-expanded targets, and linked-status expansion only remembers successful targets within a run, so one failing target can be retried repeatedly from multiple URL refs.
+  - Pending decisions: whether explicit targets should be idempotent by default or act as a force-refresh surface, and whether failed linked-status targets should be attempted once per run or retried per occurrence.
+  - Coverage target: one regression for explicit-target reruns and one for duplicate linked-status IDs where the first fetch fails.
+- [ ] Review item 18: decide and document the supported runtime platforms.
+  - Current problem: README/path messaging implies Windows support, but core runtime pieces (`fcntl`, `resource`, `strftime("%-d")`) keep the current CLI Unix-specific.
+  - Pending decision: explicitly scope the current runtime to Unix-like platforms, or add platform-specific implementations/tests before claiming Windows support.

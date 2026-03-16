@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -188,6 +190,60 @@ async def test_sync_collection_end_to_end_and_resume(paths, config: AppConfig, a
         state = store.get_sync_state("bookmark")
         assert state.backfill_incomplete is False
         assert state.last_head_tweet_id == "new"
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_sync_collection_keeps_success_when_auto_embedding_fails(
+    paths,
+    config: AppConfig,
+    auth_bundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _save_query_ids(paths)
+    monkeypatch.setitem(
+        sys.modules,
+        "tweetxvault.embed",
+        SimpleNamespace(
+            is_available=lambda: True,
+            get_engine=lambda: (_ for _ in ()).throw(RuntimeError("model download failed")),
+        ),
+    )
+    console_buffer = StringIO()
+    console = Console(file=console_buffer, force_terminal=False, color_system=None)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        _operation, variables = _op_and_variables(request)
+        if int(variables["count"]) == 1:
+            return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+        return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+
+    result = await sync_collection(
+        "bookmarks",
+        full=False,
+        limit=1,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(handler),
+        console=console,
+        sleep=lambda _: asyncio.sleep(0),
+    )
+
+    assert result.pages_fetched == 1
+    output = console_buffer.getvalue()
+    assert "sync completed, but auto-embedding was skipped" in output
+    assert "model download failed" in output
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        counts = store.counts()
+        assert counts["raw_captures"] == 1
+        assert counts["tweets"] == 1
+        assert counts["collections"] == 1
     finally:
         store.close()
 

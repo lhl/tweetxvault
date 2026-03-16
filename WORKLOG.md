@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Recorded the new review-driven refactor decisions/open questions and fixed sync/embed coupling:
+  - Changed `tweetxvault/sync.py` so post-sync auto-embedding is best-effort; embedding/model/runtime failures now emit a warning and leave the already-persisted sync result intact instead of failing the whole command after insertions succeeded
+  - Added a sync regression in `tests/test_sync.py` that forces embedding initialization to fail after page persistence and proves the sync still returns success with stored rows intact
+  - Updated `docs/PLAN.md` / `docs/IMPLEMENTATION.md` to capture the decided embedding behavior, the remaining `--browser user_id` / thread-expansion / platform-support decisions, and corrected the Firefox snapshotting notes to match the current copy-plus-sidecars implementation
+  - Updated `README.md` to document best-effort auto-embedding after sync
+  - Validation:
+    - `uv run pytest tests/test_sync.py -q`
+    - `uv run ruff check tweetxvault/sync.py tests/test_sync.py`
+    - `uv run ruff format --check tweetxvault/sync.py tests/test_sync.py`
+
 - Fixed the Firefox live-profile auth-check hang introduced by the WAL-safe cookie snapshot refactor:
   - Root cause: `tweetxvault/auth/firefox.py` switched to SQLite's backup API for `cookies.sqlite`, but that call can block indefinitely against an actively used Firefox Dev Edition profile even though the cookie DB itself is readable via a copied DB+WAL snapshot
   - Replaced the snapshot helper with a temp copy of `cookies.sqlite` plus any live `-wal` / `-shm` / `-journal` sidecars, keeping the query path unchanged while restoring bounded auth checks against busy Firefox profiles
