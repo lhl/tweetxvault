@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 5 for extractor URL-candidate duplication:
+  - Replaced the parallel `_canonical_url_candidate(...)` / `_final_url_candidate(...)` helpers in `tweetxvault/extractor.py` with one `_url_candidate(...)` helper parameterized by key order and absolute-URL requirements
+  - Kept the remaining behavioral differences explicit in `_url_entries(...)`: final URLs still require absolute `unwound_url` / `expanded_url` values, while canonical selection can still fall back to the short `url`
+  - Added extractor coverage for both an unwound absolute final URL and a short-link-only fallback path so future URL-selection changes exercise the shared helper from both call sites
+  - Validation:
+    - `uv run pytest tests/test_extractor.py tests/test_storage.py`
+    - `uv run ruff check tweetxvault/extractor.py tests/test_extractor.py`
+    - `uv run ruff format --check tweetxvault/extractor.py tests/test_extractor.py`
+
 - Landed review cleanup items 3 and 4 for storage record-builder boilerplate and duplicate time helpers:
   - Added `tweetxvault/utils.py` with the shared `utc_now()` helper and switched `tweetxvault/storage/backend.py`, `tweetxvault/media.py`, and `tweetxvault/unfurl.py` over to it
   - Refactored the LanceDB record builders in `tweetxvault/storage/backend.py` around a small `_RecordContext` helper plus `_coalesce_existing(...)` / `_record_with_context(...)` so row timestamp setup and existing-value coalescing are shared

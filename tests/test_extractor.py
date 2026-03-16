@@ -122,3 +122,44 @@ def test_extract_thread_objects_adds_reply_and_link_relations() -> None:
     assert ("100", "thread_parent", "200") in relations
     assert ("200", "thread_child", "100") in relations
     assert ("100", "links_to_status", "300") in relations
+
+
+def test_extract_secondary_objects_reuses_one_url_candidate_helper() -> None:
+    root = make_tweet_result(
+        "100",
+        "root short text",
+        user_id="1000",
+        urls=[
+            make_url_entity(
+                "https://t.co/final",
+                "https://expanded.example.com/story?utm_source=x",
+                display_url="expanded.example.com/story",
+                unwound_url={
+                    "url": {"string_value": "https://final.example.com/story?utm_source=x&keep=1"},
+                    "title": "Final title",
+                    "description": "Final description",
+                    "site_name": "Final Site",
+                },
+            ),
+            {
+                "url": "https://t.co/shortonly",
+                "display_url": "t.co/shortonly",
+            },
+        ],
+    )
+
+    graph = extract_secondary_objects(root)
+    urls_by_canonical = {item.canonical_url: item for item in graph.urls.values()}
+
+    final = urls_by_canonical["https://final.example.com/story?keep=1"]
+    assert final.final_url == "https://final.example.com/story?utm_source=x&keep=1"
+    assert final.title == "Final title"
+    assert final.description == "Final description"
+    assert final.site_name == "Final Site"
+
+    short_only = next(
+        item for item in graph.url_refs.values() if item.short_url == "https://t.co/shortonly"
+    )
+    assert short_only.canonical_url == "https://t.co/shortonly"
+    short_only_resolved = urls_by_canonical["https://t.co/shortonly"]
+    assert short_only_resolved.final_url is None

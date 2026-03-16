@@ -416,13 +416,24 @@ def _tweet_urls(tweet: dict[str, Any]) -> list[dict[str, Any]]:
     return urls
 
 
-def _canonical_url_candidate(url_item: dict[str, Any]) -> str | None:
-    for key in ("unwound_url", "expanded_url", "url"):
-        found = _deep_first_string(url_item.get(key), ("url", "expanded_url", "string_value"))
+def _url_candidate(
+    url_item: dict[str, Any],
+    *,
+    keys: tuple[str, ...],
+    require_absolute: bool = False,
+) -> str | None:
+    for key in keys:
+        value = url_item.get(key)
+        found = _deep_first_string(
+            value,
+            ("url", "expanded_url", "string_value"),
+            absolute_url_only=require_absolute,
+        )
         if found:
             return found
-        value = url_item.get(key)
         if isinstance(value, str) and value:
+            if require_absolute and not value.startswith(("http://", "https://")):
+                continue
             return value
     return None
 
@@ -440,17 +451,6 @@ def _payload_url_metadata(url_item: dict[str, Any]) -> tuple[str | None, str | N
     return title, description, site_name
 
 
-def _final_url_candidate(url_item: dict[str, Any]) -> str | None:
-    for key in ("unwound_url", "expanded_url"):
-        found = _deep_first_string(url_item.get(key), ("url", "expanded_url", "string_value"))
-        if found:
-            return found
-        value = url_item.get(key)
-        if isinstance(value, str) and value.startswith(("http://", "https://")):
-            return value
-    return None
-
-
 def _url_entries(tweet: dict[str, Any]) -> tuple[list[UrlRefData], list[UrlData]]:
     tweet_id = tweet.get("rest_id")
     if not tweet_id:
@@ -460,8 +460,14 @@ def _url_entries(tweet: dict[str, Any]) -> tuple[list[UrlRefData], list[UrlData]
     for position, item in enumerate(_tweet_urls(tweet)):
         short_url = item.get("url")
         expanded_url = item.get("expanded_url")
-        final_url = _final_url_candidate(item)
-        canonical_url = canonicalize_url(_canonical_url_candidate(item))
+        final_url = _url_candidate(
+            item,
+            keys=("unwound_url", "expanded_url"),
+            require_absolute=True,
+        )
+        canonical_url = canonicalize_url(
+            _url_candidate(item, keys=("unwound_url", "expanded_url", "url"))
+        )
         url_hash = sha256(canonical_url.encode("utf-8")).hexdigest() if canonical_url else None
         refs.append(
             UrlRefData(

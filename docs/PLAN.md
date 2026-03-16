@@ -618,6 +618,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: extracted the shared locked-store lifecycle while keeping each runner’s current “optimize only when changed” behavior.
 - [x] Reduce boilerplate in the LanceDB record builders and centralize common time helpers.
   - Next cleanup items landed: added a small storage-record helper layer for coalescing/timestamp setup and moved the shared UTC timestamp helper into a proper utility module.
+- [x] Reduce extractor duplication in the URL candidate selection logic.
+  - Next cleanup item landed: replaced the parallel canonical/final URL candidate helpers with one shared helper that keeps their remaining behavioral differences explicit at the call sites.
 
 ## Open Questions (Remaining)
 
