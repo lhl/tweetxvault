@@ -702,6 +702,16 @@ def import_x_archive_command(
     archive: Annotated[
         Path, typer.Argument(help="Path to an X archive zip or extracted directory.")
     ],
+    regen: Annotated[
+        bool,
+        typer.Option(
+            "--regen",
+            help=(
+                "Clear archive-import-owned rows, manifests, and imported media files before "
+                "reimporting. Live-synced rows are kept."
+            ),
+        ),
+    ] = False,
     enrich: Annotated[
         bool,
         typer.Option(
@@ -724,6 +734,27 @@ def import_x_archive_command(
             ),
         ),
     ] = 0,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            min=1,
+            help=(
+                "Debug/sample mode: import at most N authored tweets, deleted tweets, likes, "
+                "and media files after full dataset load. Requires --debug."
+            ),
+        ),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option(
+            "--debug",
+            help=(
+                "Print detailed archive-import timing diagnostics. Interactive runs also show "
+                "tqdm-based progress bars."
+            ),
+        ),
+    ] = False,
     browser: SYNC_BROWSER_OPTION = None,
     profile: SYNC_PROFILE_OPTION = None,
     profile_path: SYNC_PROFILE_PATH_OPTION = None,
@@ -743,8 +774,11 @@ def import_x_archive_command(
         result = asyncio.run(
             import_x_archive(
                 archive,
+                regen=regen,
                 enrich=enrich,
                 detail_lookups=detail_lookups,
+                limit=limit,
+                debug=debug,
                 config=config,
                 paths=paths,
                 auth_bundle=auth_bundle,

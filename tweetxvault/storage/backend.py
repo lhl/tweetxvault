@@ -454,8 +454,9 @@ class ArchiveStore:
         raw_json: Any,
         *,
         source: str,
+        capture_key: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
-        capture_id = str(uuid.uuid4())
+        capture_id = capture_key or str(uuid.uuid4())
         return capture_id, self._record(
             row_key=f"raw_capture:{capture_id}",
             record_type="raw_capture",
@@ -477,10 +478,17 @@ class ArchiveStore:
         raw_json: Any,
         *,
         source: str = LIVE_SOURCE,
+        capture_key: str | None = None,
         cursor: _PageBuffer | None = None,
     ) -> str:
         capture_id, record = self._capture_record(
-            operation, cursor_in, cursor_out, http_status, raw_json, source=source
+            operation,
+            cursor_in,
+            cursor_out,
+            http_status,
+            raw_json,
+            source=source,
+            capture_key=capture_key,
         )
         self._queue_record(record, cursor=cursor)
         return capture_id
@@ -1837,6 +1845,41 @@ class ArchiveStore:
             "import_manifests": self.table.count_rows("record_type = 'import_manifest'"),
             "sync_state": self.table.count_rows("record_type = 'sync_state'"),
         }
+
+    def list_archive_import_media_paths(self) -> list[str]:
+        rows = (
+            self.table.search()
+            .where("record_type = 'media' AND provenance_source = 'x_archive'")
+            .select(["local_path", "thumbnail_local_path"])
+            .to_list()
+        )
+        relative_paths = {
+            path
+            for row in rows
+            for path in (row.get("local_path"), row.get("thumbnail_local_path"))
+            if isinstance(path, str) and path
+        }
+        return sorted(relative_paths)
+
+    def clear_archive_import_data(self) -> dict[str, int]:
+        deletions: dict[str, int] = {}
+        filters = {
+            "raw_captures": "record_type = 'raw_capture' AND source = 'x_archive'",
+            "tweets": "record_type = 'tweet' AND source = 'x_archive'",
+            "tweet_objects": "record_type = 'tweet_object' AND source = 'x_archive'",
+            "tweet_relations": "record_type = 'tweet_relation' AND source = 'x_archive'",
+            "media": "record_type = 'media' AND provenance_source = 'x_archive'",
+            "urls": "record_type = 'url' AND source = 'x_archive'",
+            "url_refs": "record_type = 'url_ref' AND source = 'x_archive'",
+            "articles": "record_type = 'article' AND source = 'x_archive'",
+            "import_manifests": "record_type = 'import_manifest'",
+        }
+        for key, expr in filters.items():
+            count = self.table.count_rows(expr)
+            if count:
+                self.table.delete(expr)
+            deletions[key] = count
+        return deletions
 
     def _flush_rehydrate_buffer(self, buffer: _PageBuffer) -> int:
         if not buffer.records:

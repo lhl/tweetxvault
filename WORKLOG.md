@@ -2,6 +2,21 @@
 
 ## 2026-03-17
 
+- Finished the queued archive-import hardening and recovery work:
+  - added `tweetxvault import x-archive --regen` to clear archive-import-owned rows, manifests, and copied archive media files before reimporting, while leaving live-owned rows untouched
+  - changed archive dataset `raw_capture` writes to use deterministic keys per `(archive_digest, operation, filename)` so interrupted reruns overwrite instead of duplicating archive captures
+  - changed archive import failure handling to mark the manifest `failed` even on `KeyboardInterrupt` / cancellation before re-raising
+  - upgraded interactive archive import/detail-enrichment progress to tqdm-backed bars with per-phase debug timing summaries, and added `--debug --limit N` sampled imports that skip automatic follow-up unless explicitly requested and do not mark the archive digest `completed`
+  - validation:
+    - `uv run pytest tests/test_archive_import.py tests/test_cli.py -q`
+    - `uv run ruff check tweetxvault/archive_import.py tweetxvault/storage/backend.py tweetxvault/cli.py tests/test_archive_import.py tests/test_cli.py`
+    - `uv run ruff format tweetxvault/archive_import.py tests/test_archive_import.py`
+
+- Profiled the new sampled/debug archive import path against the real 2026-03-16 archive ZIP in isolated temp XDG dirs:
+  - command: `XDG_CONFIG_HOME=/tmp/tvx-cfg XDG_CACHE_HOME=/tmp/tvx-cache XDG_DATA_HOME=/tmp/tvx-data uv run tweetxvault import x-archive "data/twitter-2026-03-16-03f914f9c88c72e4c5999be3e546dbd4197b271ca20c8be57d5d322b73871ea2.zip" --regen --limit 1000 --debug`
+  - measured phases on the sampled run: hash `1.04s`, dataset load `0.49s`, raw-capture persist `0.23s`, authored import `8.46s` (`118.2 tweets/s`), likes import `6.00s` (`166.6 likes/s`), media copy `0.25s`, optimize `0.07s`
+  - conclusion: on the sampled path the cost is dominated by per-row tweet/like ingest rather than archive hashing or raw-capture persistence; authored tweets are slower per row because they run the secondary-object extraction path, but likes still dominate full imports by volume (`109251` likes)
+
 - Captured the next archive-import follow-up tasks after the real interrupted-run report:
   - explicitly handle `KeyboardInterrupt` / cancellation during archive import so manifests are left in a clearer state
   - prevent or dedupe duplicate archive `raw_capture` rows after interrupted reruns

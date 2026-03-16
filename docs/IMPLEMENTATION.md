@@ -408,10 +408,11 @@ Fresh fixture status (2026-03-16):
   - `tweetxvault import x-archive` now prints immediate startup and phase/progress status on interactive TTY runs during archive hashing, dataset loading, bulk row import, media copy, and follow-up reconciliation/enrichment
   - `tweetxvault import enrich` uses the same TTY-gated follow-up status path
   - non-interactive runs stay quiet by default, so cron/piped runs do not inherit the new progress chatter
-- [ ] Follow-up hardening for interrupted/large archive imports:
-  - catch `KeyboardInterrupt` / cancellation explicitly so interrupted archive imports do not leave ambiguous `in_progress` manifests
-  - stop duplicate archive `raw_capture` rows from accumulating across interrupted reruns, or add a targeted dedupe/cleanup command for archive captures
-  - improve interactive archive-import progress from coarse phase updates to per-phase throughput/ETA output (likely `tqdm` or equivalent) so large like archives expose actual ingest speed
+- [x] Follow-up hardening for interrupted/large archive imports:
+  - interrupted archive imports now mark the manifest `failed` even on `KeyboardInterrupt` / cancellation before re-raising
+  - archive dataset `raw_capture` rows now use deterministic keys per `(archive_digest, operation, filename)` so interrupted reruns overwrite instead of duplicating archive captures
+  - added `tweetxvault import x-archive --regen` to clear archive-import-owned rows, manifests, and copied archive media files without touching live-owned rows
+  - upgraded interactive archive import progress from coarse phase markers to tqdm-backed rate/ETA output, and added `--debug --limit N` as a sampled diagnostic import path that does not poison normal `completed` manifests
 
 ## Review Cleanup
 

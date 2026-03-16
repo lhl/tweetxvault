@@ -648,8 +648,11 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
     async def fake_import_x_archive(
         archive,
         *,
+        regen=False,
         enrich=False,
         detail_lookups=0,
+        limit=None,
+        debug=False,
         config=None,
         paths=None,
         auth_bundle=None,
@@ -658,8 +661,11 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         captured.update(
             {
                 "archive": archive,
+                "regen": regen,
                 "enrich": enrich,
                 "detail_lookups": detail_lookups,
+                "limit": limit,
+                "debug": debug,
                 "auth_bundle": auth_bundle,
             }
         )
@@ -684,12 +690,15 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
     archive_path = tmp_path / "archive.zip"
     archive_path.write_bytes(b"placeholder")
 
-    cli.import_x_archive_command(archive_path, detail_lookups=25)
+    cli.import_x_archive_command(archive_path, regen=True, detail_lookups=25, limit=100, debug=True)
 
     assert captured == {
         "archive": archive_path,
+        "regen": True,
         "enrich": False,
         "detail_lookups": 25,
+        "limit": 100,
+        "debug": True,
         "auth_bundle": None,
     }
     output = buffer.getvalue()
@@ -713,8 +722,11 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
     async def fake_import_x_archive(
         archive,
         *,
+        regen=False,
         enrich=False,
         detail_lookups=0,
+        limit=None,
+        debug=False,
         config=None,
         paths=None,
         auth_bundle=None,
@@ -723,8 +735,11 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
         captured.update(
             {
                 "archive": archive,
+                "regen": regen,
                 "enrich": enrich,
                 "detail_lookups": detail_lookups,
+                "limit": limit,
+                "debug": debug,
             }
         )
         return SimpleNamespace(
@@ -752,8 +767,11 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
 
     assert captured == {
         "archive": archive_path,
+        "regen": False,
         "enrich": True,
         "detail_lookups": 0,
+        "limit": None,
+        "debug": False,
     }
     output = buffer.getvalue().replace("\n", " ")
     assert "already present; keeping existing imported data and running" in output

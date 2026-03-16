@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path, PurePosixPath
+from time import perf_counter
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -40,8 +41,6 @@ from tweetxvault.utils import resolve_query_ids, utc_now
 _YTD_ASSIGNMENT_RE = re.compile(r"^\s*window\.YTD\.[A-Za-z0-9_.]+\s*=\s*", re.DOTALL)
 _MANIFEST_ASSIGNMENT_RE = re.compile(r"^\s*window\.__THAR_CONFIG\s*=\s*", re.DOTALL)
 _IMPORT_BATCH_SIZE = 500
-_IMPORT_PROGRESS_EVERY = 5_000
-_MEDIA_PROGRESS_EVERY = 100
 
 
 @dataclass(slots=True)
@@ -97,16 +96,84 @@ def _emit_status(status: Callable[[str], None] | None, message: str) -> None:
         status(message)
 
 
-def _status_printer(console: Console, prefix: str) -> Callable[[str], None] | None:
-    if not console.is_terminal:
+def _status_printer(
+    console: Console, prefix: str, *, force: bool = False
+) -> Callable[[str], None] | None:
+    if not (force or console.is_terminal):
         return None
     return lambda message: _log_archive_phase(console, prefix, message)
 
 
-def _runner_console(console: Console) -> Console:
-    if console.is_terminal:
+def _runner_console(console: Console, *, force: bool = False) -> Console:
+    if force or console.is_terminal:
         return console
     return Console(file=StringIO(), force_terminal=False, color_system=None)
+
+
+def _format_debug_rate(processed: int | None, elapsed: float, *, unit: str) -> str | None:
+    if processed is None or processed <= 0 or elapsed <= 0:
+        return None
+    if unit == "bytes":
+        mib_per_second = processed / elapsed / (1024 * 1024)
+        return f"{mib_per_second:.1f} MiB/s"
+    suffix = unit if unit.endswith("/s") else f"{unit}/s"
+    return f"{processed / elapsed:.1f} {suffix}"
+
+
+def _record_debug_timing(
+    status: Callable[[str], None] | None,
+    summaries: list[str],
+    label: str,
+    started_at: float,
+    *,
+    processed: int | None = None,
+    unit: str = "items",
+) -> None:
+    elapsed = perf_counter() - started_at
+    summary = f"{label}: {elapsed:.2f}s"
+    rate = _format_debug_rate(processed, elapsed, unit=unit)
+    if rate is not None:
+        summary += f" ({rate})"
+    summaries.append(summary)
+    _emit_status(status, f"debug {summary}")
+
+
+@contextmanager
+def _progress_callback(
+    console: Console,
+    *,
+    label: str,
+    total: int,
+    unit: str,
+    leave: bool,
+):
+    if not console.is_terminal or total <= 0:
+        yield None
+        return
+    from tqdm import tqdm
+
+    progress_kwargs: dict[str, Any] = {
+        "total": total,
+        "desc": label,
+        "unit": unit,
+        "dynamic_ncols": True,
+        "leave": leave,
+        "file": console.file,
+    }
+    if unit == "B":
+        progress_kwargs["unit_scale"] = True
+        progress_kwargs["unit_divisor"] = 1024
+    with tqdm(**progress_kwargs) as progress_bar:
+        last_done = 0
+
+        def callback(done: int, _total: int) -> None:
+            nonlocal last_done
+            delta = done - last_done
+            if delta > 0:
+                progress_bar.update(delta)
+            last_done = done
+
+        yield callback
 
 
 class _ArchiveInput:
@@ -209,8 +276,7 @@ class _ArchiveInput:
                 items.extend(parsed)
         return items, parts
 
-    def digest(self) -> str:
-        digest = hashlib.sha256()
+    def _digest_paths(self) -> list[str]:
         relevant: set[str] = {"data/manifest.js"}
         for dataset_key in (
             "account",
@@ -226,11 +292,38 @@ class _ArchiveInput:
         media_directory = tweets_info.get("mediaDirectory")
         if isinstance(media_directory, str):
             relevant.update(self.iter_files(media_directory))
-        for relative_path in sorted(relevant):
+        return sorted(relevant)
+
+    def _file_size(self, relative_path: str) -> int:
+        normalized = self._normalize_name(relative_path)
+        if self._zip is not None:
+            return self._zip.getinfo(normalized).file_size
+        return self._directory_path(normalized).stat().st_size
+
+    def digest_total_bytes(self) -> int:
+        return sum(self._file_size(relative_path) for relative_path in self._digest_paths())
+
+    def digest(
+        self,
+        *,
+        progress: Callable[[int, int], None] | None = None,
+        total_bytes: int | None = None,
+    ) -> str:
+        digest = hashlib.sha256()
+        total_bytes = (
+            total_bytes
+            if progress is not None and total_bytes is not None
+            else (self.digest_total_bytes() if progress is not None else 0)
+        )
+        processed_bytes = 0
+        for relative_path in self._digest_paths():
             digest.update(relative_path.encode("utf-8"))
             with self.open_binary(relative_path) as handle:
                 for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                     digest.update(chunk)
+                    processed_bytes += len(chunk)
+                    if progress is not None:
+                        progress(processed_bytes, total_bytes)
         return digest.hexdigest()
 
 
@@ -459,7 +552,7 @@ def _import_authored_tweets(
             counts["authored_tweets"] += 1
         if len(buffer.records) >= _IMPORT_BATCH_SIZE:
             _flush_buffer(store, buffer)
-        if progress and (index % _IMPORT_PROGRESS_EVERY == 0 or index == total):
+        if progress:
             progress(index, total)
     _flush_buffer(store, buffer)
 
@@ -526,7 +619,7 @@ def _import_likes(
         counts["likes"] += 1
         if len(buffer.records) >= _IMPORT_BATCH_SIZE:
             _flush_buffer(store, buffer)
-        if progress and (index % _IMPORT_PROGRESS_EVERY == 0 or index == total):
+        if progress:
             progress(index, total)
     _flush_buffer(store, buffer)
 
@@ -590,10 +683,11 @@ def _copy_exported_media(
     counts: dict[str, int],
     warnings: list[str],
     progress: Callable[[int, int], None] | None = None,
+    limit: int | None = None,
 ) -> None:
     if not media_directory:
         return
-    files = source.iter_files(media_directory)
+    files = _slice_for_sample(source.iter_files(media_directory), limit=limit)
     if not files:
         return
 
@@ -693,7 +787,7 @@ def _copy_exported_media(
         if len(pending_updates) >= 100:
             store.merge_rows(list(pending_updates.values()))
             pending_updates.clear()
-        if progress and (index % _MEDIA_PROGRESS_EVERY == 0 or index == total):
+        if progress:
             progress(index, total)
     if pending_updates:
         store.merge_rows(list(pending_updates.values()))
@@ -839,76 +933,87 @@ async def _enrich_pending_rows(
         terminal = 0
         transient = 0
         try:
-            for row in rows:
-                tweet_id = row["tweet_id"]
+            with _progress_callback(
+                console,
+                label="archive enrich detail",
+                total=len(rows),
+                unit="tweets",
+                leave=False,
+            ) as detail_progress:
+                for index, row in enumerate(rows, start=1):
+                    tweet_id = row["tweet_id"]
 
-                async def refresh_once(tweet_id: str = tweet_id) -> str:
-                    refreshed = await refresh_query_ids(
-                        query_store,
-                        operations=["TweetDetail"],
-                        client=client,
-                    )
-                    query_ids.update(refreshed)
-                    return build_tweet_detail_url(query_ids["TweetDetail"], tweet_id)
+                    async def refresh_once(tweet_id: str = tweet_id) -> str:
+                        refreshed = await refresh_query_ids(
+                            query_store,
+                            operations=["TweetDetail"],
+                            client=client,
+                        )
+                        query_ids.update(refreshed)
+                        return build_tweet_detail_url(query_ids["TweetDetail"], tweet_id)
 
-                try:
-                    response = await fetch_page(
-                        client,
-                        build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
-                        config.sync,
-                        refresh_once=refresh_once,
-                        status=(
-                            (
-                                lambda message, tweet_id=tweet_id: _emit_status(
-                                    status, f"detail {tweet_id}: {message}"
+                    try:
+                        response = await fetch_page(
+                            client,
+                            build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
+                            config.sync,
+                            refresh_once=refresh_once,
+                            status=(
+                                (
+                                    lambda message, tweet_id=tweet_id: _emit_status(
+                                        status, f"detail {tweet_id}: {message}"
+                                    )
                                 )
+                                if status is not None
+                                else None
+                            ),
+                        )
+                        payload = response.json()
+                        tweet = parse_tweet_detail_response(payload, tweet_id)
+                        if tweet is None:
+                            raise ValueError(f"TweetDetail did not include focal tweet {tweet_id}.")
+                        store.persist_tweet_detail(
+                            tweet=tweet,
+                            raw_json=payload,
+                            http_status=response.status_code,
+                        )
+                        succeeded += 1
+                        job.mark_dirty()
+                    except APIResponseError as exc:
+                        if exc.status_code in {404, 410}:
+                            store.update_tweet_object_enrichment(
+                                tweet_id,
+                                enrichment_state="terminal_unavailable",
+                                enrichment_checked_at=utc_now(),
+                                enrichment_http_status=exc.status_code,
+                                enrichment_reason="not_found",
                             )
-                            if status is not None
-                            else None
-                        ),
-                    )
-                    payload = response.json()
-                    tweet = parse_tweet_detail_response(payload, tweet_id)
-                    if tweet is None:
-                        raise ValueError(f"TweetDetail did not include focal tweet {tweet_id}.")
-                    store.persist_tweet_detail(
-                        tweet=tweet,
-                        raw_json=payload,
-                        http_status=response.status_code,
-                    )
-                    succeeded += 1
-                    job.mark_dirty()
-                except APIResponseError as exc:
-                    if exc.status_code in {404, 410}:
+                            terminal += 1
+                            job.mark_dirty()
+                            if detail_progress:
+                                detail_progress(index, len(rows))
+                            continue
                         store.update_tweet_object_enrichment(
                             tweet_id,
-                            enrichment_state="terminal_unavailable",
+                            enrichment_state="transient_failure",
                             enrichment_checked_at=utc_now(),
                             enrichment_http_status=exc.status_code,
-                            enrichment_reason="not_found",
+                            enrichment_reason=exc.__class__.__name__,
                         )
-                        terminal += 1
+                        transient += 1
                         job.mark_dirty()
-                        continue
-                    store.update_tweet_object_enrichment(
-                        tweet_id,
-                        enrichment_state="transient_failure",
-                        enrichment_checked_at=utc_now(),
-                        enrichment_http_status=exc.status_code,
-                        enrichment_reason=exc.__class__.__name__,
-                    )
-                    transient += 1
-                    job.mark_dirty()
-                except Exception as exc:
-                    store.update_tweet_object_enrichment(
-                        tweet_id,
-                        enrichment_state="transient_failure",
-                        enrichment_checked_at=utc_now(),
-                        enrichment_http_status=None,
-                        enrichment_reason=exc.__class__.__name__,
-                    )
-                    transient += 1
-                    job.mark_dirty()
+                    except Exception as exc:
+                        store.update_tweet_object_enrichment(
+                            tweet_id,
+                            enrichment_state="transient_failure",
+                            enrichment_checked_at=utc_now(),
+                            enrichment_http_status=None,
+                            enrichment_reason=exc.__class__.__name__,
+                        )
+                        transient += 1
+                        job.mark_dirty()
+                    if detail_progress:
+                        detail_progress(index, len(rows))
         finally:
             await client.aclose()
         remaining = len(store.list_tweet_objects_for_enrichment())
@@ -922,8 +1027,9 @@ def _manifest_generation_date(manifest: dict[str, Any]) -> str | None:
 
 
 def _record_archive_capture(
-    store: ArchiveStore, operation: str, filename: str, payload: Any
+    store: ArchiveStore, operation: str, filename: str, payload: Any, *, archive_digest: str
 ) -> None:
+    capture_key = hashlib.sha256(f"{archive_digest}\0{operation}\0{filename}".encode()).hexdigest()
     store.append_raw_capture(
         operation,
         filename,
@@ -931,7 +1037,44 @@ def _record_archive_capture(
         200,
         payload,
         source=ARCHIVE_SOURCE,
+        capture_key=capture_key,
     )
+
+
+def _slice_for_sample(items: list[Any], *, limit: int | None) -> list[Any]:
+    if limit is None:
+        return items
+    return items[:limit]
+
+
+def _safe_relative_data_path(relative_path: str) -> Path | None:
+    relative = Path(relative_path)
+    if relative.is_absolute():
+        return None
+    if any(part == ".." for part in relative.parts):
+        return None
+    return relative
+
+
+def _remove_archive_owned_files(base_dir: Path, relative_paths: list[str]) -> int:
+    removed = 0
+    for relative_path in sorted(set(relative_paths)):
+        relative = _safe_relative_data_path(relative_path)
+        if relative is None:
+            continue
+        destination = base_dir / relative
+        if not destination.exists() or not destination.is_file():
+            continue
+        destination.unlink()
+        removed += 1
+        parent = destination.parent
+        while parent != base_dir:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
+    return removed
 
 
 def _initial_counts() -> dict[str, int]:
@@ -1025,6 +1168,9 @@ async def import_x_archive(
     *,
     detail_lookups: int = 0,
     enrich: bool = False,
+    regen: bool = False,
+    limit: int | None = None,
+    debug: bool = False,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
     auth_bundle: ResolvedAuthBundle | None = None,
@@ -1033,35 +1179,102 @@ async def import_x_archive(
 ) -> ArchiveImportResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
-    status = _status_printer(console, "archive import")
-    runner_console = _runner_console(console)
+    status = _status_printer(console, "archive import", force=debug)
+    runner_console = _runner_console(console, force=debug)
     if enrich and detail_lookups > 0:
         raise ConfigError("Use either --enrich or --detail-lookups, not both.")
+    if limit is not None and limit <= 0:
+        raise ConfigError("--limit must be greater than zero.")
+    if limit is not None and not debug:
+        raise ConfigError("--limit requires --debug because it runs a sampled diagnostic import.")
     _emit_status(status, f"opening {archive_path}")
+    debug_summaries: list[str] = []
     with _ArchiveInput(archive_path) as source:
         _emit_status(status, "hashing archive contents for idempotence check...")
-        digest = source.digest()
+        hash_started = perf_counter()
+        digest_total_bytes = source.digest_total_bytes() if (debug or console.is_terminal) else None
+        with _progress_callback(
+            console,
+            label="archive import hash",
+            total=digest_total_bytes or 0,
+            unit="B",
+            leave=debug,
+        ) as hash_progress:
+            digest = source.digest(progress=hash_progress, total_bytes=digest_total_bytes)
+        if debug:
+            _record_debug_timing(
+                status,
+                debug_summaries,
+                "archive hash",
+                hash_started,
+                processed=digest_total_bytes,
+                unit="bytes",
+            )
         generation_date = _manifest_generation_date(source.manifest)
         counts = _initial_counts()
         warnings: list[str] = []
+        sampled_import = limit is not None
+        final_status = "sampled" if sampled_import else "completed"
+        if sampled_import:
+            warnings.append(
+                f"sampled debug import: limiting authored tweets, deleted tweets, likes, and "
+                f"media files to {limit} items each after full dataset load"
+            )
+            warnings.append(
+                "sampled debug import still hashes and parses the full archive files before "
+                "slicing imported rows"
+            )
         _emit_status(status, "loading archive account metadata...")
+        account_started = perf_counter()
         account_items, account_parts = source.load_dataset("account")
+        if debug:
+            _record_debug_timing(
+                status,
+                debug_summaries,
+                "archive account metadata load",
+                account_started,
+                processed=len(account_parts),
+                unit="parts",
+            )
         identity = _archive_identity(source.manifest, account_items)
         existing_manifest: dict[str, Any] | None = None
         store: ArchiveStore | None = None
         import_started_at = utc_now()
         followup_requested = enrich or detail_lookups > 0
+        followup_performed = False
         import_performed = False
+        pending_after_import = 0
 
         lock = ProcessLock(paths.lock_file)
         lock.acquire()
         try:
             store = open_archive_store(paths, create=True)
             assert store is not None
+            store.ensure_archive_owner_id(identity.account_id)
+            if regen:
+                _emit_status(status, "clearing previously imported archive-owned rows...")
+                regen_started = perf_counter()
+                archive_media_paths = store.list_archive_import_media_paths()
+                cleared_rows = store.clear_archive_import_data()
+                cleared_files = _remove_archive_owned_files(paths.data_dir, archive_media_paths)
+                existing_manifest = None
+                _emit_status(
+                    status,
+                    f"regen cleared {sum(cleared_rows.values())} rows and {cleared_files} "
+                    "managed archive media files",
+                )
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "archive-only regen cleanup",
+                        regen_started,
+                        processed=sum(cleared_rows.values()) + cleared_files,
+                        unit="objects",
+                    )
             existing_manifest = store.get_import_manifest(digest)
             if existing_manifest and existing_manifest.get("status") == "completed":
                 counts = _manifest_counts(existing_manifest)
-                store.ensure_archive_owner_id(identity.account_id)
                 store.close()
                 if not followup_requested:
                     return ArchiveImportResult(
@@ -1071,9 +1284,9 @@ async def import_x_archive(
                         warnings=["archive already imported; skipping duplicate import"],
                     )
             else:
-                store.ensure_archive_owner_id(identity.account_id)
                 import_performed = True
                 _emit_status(status, "loading archive datasets...")
+                dataset_started = perf_counter()
 
                 store.set_import_manifest(
                     digest,
@@ -1084,10 +1297,20 @@ async def import_x_archive(
                     counts=counts,
                 )
                 _record_archive_capture(
-                    store, "XArchiveManifest", "data/manifest.js", source.manifest
+                    store,
+                    "XArchiveManifest",
+                    "data/manifest.js",
+                    source.manifest,
+                    archive_digest=digest,
                 )
                 for filename, payload in account_parts:
-                    _record_archive_capture(store, "XArchiveAccount", filename, payload)
+                    _record_archive_capture(
+                        store,
+                        "XArchiveAccount",
+                        filename,
+                        payload,
+                        archive_digest=digest,
+                    )
 
                 tweets_info = ((source.manifest.get("dataTypes") or {}).get("tweets")) or {}
                 if "bookmark" not in {
@@ -1102,81 +1325,239 @@ async def import_x_archive(
                 )
                 tweets, tweet_parts = source.load_dataset("tweets")
                 likes, like_parts = source.load_dataset("like")
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "archive dataset load",
+                        dataset_started,
+                        processed=(
+                            len(tweets)
+                            + len(deleted_tweets)
+                            + len(likes)
+                            + len(tweet_parts)
+                            + len(deleted_tweet_parts)
+                            + len(deleted_header_parts)
+                            + len(tweet_header_parts)
+                            + len(like_parts)
+                        ),
+                        unit="records",
+                    )
+                total_tweets = len(tweets)
+                total_deleted_tweets = len(deleted_tweets)
+                total_likes = len(likes)
+                tweets = _slice_for_sample(tweets, limit=limit)
+                deleted_tweets = _slice_for_sample(deleted_tweets, limit=limit)
+                likes = _slice_for_sample(likes, limit=limit)
                 _emit_status(
                     status,
-                    f"loaded {len(tweets)} tweets, "
-                    f"{len(deleted_tweets)} deleted tweets, "
-                    f"{len(likes)} likes",
+                    (
+                        f"loaded {total_tweets} tweets, "
+                        f"{total_deleted_tweets} deleted tweets, "
+                        f"{total_likes} likes"
+                        if not sampled_import
+                        else (
+                            f"loaded {total_tweets} tweets -> sampling {len(tweets)}, "
+                            f"{total_deleted_tweets} deleted tweets -> sampling "
+                            f"{len(deleted_tweets)}, {total_likes} likes -> sampling "
+                            f"{len(likes)}"
+                        )
+                    ),
                 )
 
+                capture_started = perf_counter()
                 for filename, payload in tweet_header_parts:
-                    _record_archive_capture(store, "XArchiveTweetHeaders", filename, payload)
+                    _record_archive_capture(
+                        store,
+                        "XArchiveTweetHeaders",
+                        filename,
+                        payload,
+                        archive_digest=digest,
+                    )
                 for filename, payload in deleted_header_parts:
-                    _record_archive_capture(store, "XArchiveDeletedTweetHeaders", filename, payload)
+                    _record_archive_capture(
+                        store,
+                        "XArchiveDeletedTweetHeaders",
+                        filename,
+                        payload,
+                        archive_digest=digest,
+                    )
                 for filename, payload in tweet_parts:
-                    _record_archive_capture(store, "XArchiveTweets", filename, payload)
+                    _record_archive_capture(
+                        store,
+                        "XArchiveTweets",
+                        filename,
+                        payload,
+                        archive_digest=digest,
+                    )
                 for filename, payload in deleted_tweet_parts:
-                    _record_archive_capture(store, "XArchiveDeletedTweets", filename, payload)
+                    _record_archive_capture(
+                        store,
+                        "XArchiveDeletedTweets",
+                        filename,
+                        payload,
+                        archive_digest=digest,
+                    )
                 for filename, payload in like_parts:
-                    _record_archive_capture(store, "XArchiveLikes", filename, payload)
+                    _record_archive_capture(
+                        store,
+                        "XArchiveLikes",
+                        filename,
+                        payload,
+                        archive_digest=digest,
+                    )
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "archive raw-capture persist",
+                        capture_started,
+                        processed=(
+                            2
+                            + len(tweet_header_parts)
+                            + len(deleted_header_parts)
+                            + len(tweet_parts)
+                            + len(deleted_tweet_parts)
+                            + len(like_parts)
+                        ),
+                        unit="rows",
+                    )
 
                 deleted_headers = _deleted_headers_map(deleted_headers_items)
                 _emit_status(status, f"importing {len(tweets)} authored tweets...")
-                _import_authored_tweets(
-                    store,
-                    tweets,
-                    identity,
-                    deleted_headers=deleted_headers,
-                    counts=counts,
-                    progress=lambda done, total: _emit_status(
-                        status, f"authored tweets {done}/{total} imported"
-                    ),
-                )
+                authored_started = perf_counter()
+                with _progress_callback(
+                    console,
+                    label="archive import authored",
+                    total=len(tweets),
+                    unit="tweets",
+                    leave=debug,
+                ) as authored_progress:
+                    _import_authored_tweets(
+                        store,
+                        tweets,
+                        identity,
+                        deleted_headers=deleted_headers,
+                        counts=counts,
+                        progress=authored_progress,
+                    )
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "authored tweet import",
+                        authored_started,
+                        processed=len(tweets),
+                        unit="tweets",
+                    )
                 _emit_status(status, f"importing {len(deleted_tweets)} deleted authored tweets...")
-                _import_authored_tweets(
-                    store,
-                    deleted_tweets,
-                    identity,
-                    deleted_headers=deleted_headers,
-                    counts=counts,
-                    progress=lambda done, total: _emit_status(
-                        status, f"deleted authored tweets {done}/{total} imported"
-                    ),
-                )
+                deleted_started = perf_counter()
+                with _progress_callback(
+                    console,
+                    label="archive import deleted",
+                    total=len(deleted_tweets),
+                    unit="tweets",
+                    leave=debug,
+                ) as deleted_progress:
+                    _import_authored_tweets(
+                        store,
+                        deleted_tweets,
+                        identity,
+                        deleted_headers=deleted_headers,
+                        counts=counts,
+                        progress=deleted_progress,
+                    )
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "deleted authored tweet import",
+                        deleted_started,
+                        processed=len(deleted_tweets),
+                        unit="tweets",
+                    )
                 _emit_status(status, f"importing {len(likes)} likes...")
-                _import_likes(
-                    store,
-                    likes,
-                    counts=counts,
-                    progress=lambda done, total: _emit_status(
-                        status, f"likes {done}/{total} imported"
-                    ),
-                )
+                likes_started = perf_counter()
+                with _progress_callback(
+                    console,
+                    label="archive import likes",
+                    total=len(likes),
+                    unit="likes",
+                    leave=debug,
+                ) as likes_progress:
+                    _import_likes(
+                        store,
+                        likes,
+                        counts=counts,
+                        progress=likes_progress,
+                    )
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "like import",
+                        likes_started,
+                        processed=len(likes),
+                        unit="likes",
+                    )
                 _emit_status(status, "copying exported media files...")
-                _copy_exported_media(
-                    source,
-                    store,
-                    paths,
-                    tweets_info.get("mediaDirectory") if isinstance(tweets_info, dict) else None,
-                    counts=counts,
-                    warnings=warnings,
-                    progress=lambda done, total: _emit_status(
-                        status, f"media files {done}/{total} processed"
-                    ),
+                media_directory = (
+                    tweets_info.get("mediaDirectory") if isinstance(tweets_info, dict) else None
                 )
+                media_total = 0
+                if isinstance(media_directory, str):
+                    media_total = len(
+                        _slice_for_sample(source.iter_files(media_directory), limit=limit)
+                    )
+                media_started = perf_counter()
+                with _progress_callback(
+                    console,
+                    label="archive import media",
+                    total=media_total,
+                    unit="files",
+                    leave=debug,
+                ) as media_progress:
+                    _copy_exported_media(
+                        source,
+                        store,
+                        paths,
+                        media_directory,
+                        counts=counts,
+                        warnings=warnings,
+                        progress=media_progress,
+                        limit=limit,
+                    )
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "archive media copy",
+                        media_started,
+                        processed=media_total,
+                        unit="files",
+                    )
+                pending_after_import = len(store.list_tweet_objects_for_enrichment())
                 store.set_import_manifest(
                     digest,
                     archive_generation_date=generation_date,
-                    status="completed",
+                    status=final_status,
                     import_started_at=import_started_at,
                     import_completed_at=utc_now(),
                     warnings=warnings,
                     counts=counts,
                 )
                 _emit_status(status, "optimizing archive storage...")
+                optimize_started = perf_counter()
                 store.optimize()
+                if debug:
+                    _record_debug_timing(
+                        status,
+                        debug_summaries,
+                        "archive optimize",
+                        optimize_started,
+                    )
             store.close()
-        except Exception:
+        except BaseException:
             try:
                 if store is not None and import_performed:
                     store.set_import_manifest(
@@ -1195,10 +1576,30 @@ async def import_x_archive(
         finally:
             lock.release()
 
+        if sampled_import and not followup_requested:
+            warnings.append(
+                "sampled debug import skipped automatic live reconciliation and detail "
+                "enrichment; rerun without --limit for normal follow-up"
+            )
+            final_counts = dict(counts)
+            final_counts["pending_enrichment"] = pending_after_import
+            if debug:
+                _emit_status(status, "debug summary:")
+                for summary in debug_summaries:
+                    _emit_status(status, f"  {summary}")
+            return ArchiveImportResult(
+                skipped=False,
+                followup_performed=False,
+                counts=final_counts,
+                warnings=warnings,
+                pending_enrichment=pending_after_import,
+            )
+
         # Bulk archive writes are complete at this point. The follow-up sync/enrichment helpers
         # reacquire the same process lock around their own writes, so we intentionally do not hold
         # the outer lock across potentially long network I/O.
         _emit_status(status, "running follow-up reconciliation and enrichment...")
+        followup_started = perf_counter()
         followup = await _run_archive_followup(
             collections=_followup_collections_from_counts(counts),
             detail_limit=None if enrich else detail_lookups,
@@ -1209,7 +1610,17 @@ async def import_x_archive(
             console=runner_console,
             status=status,
         )
+        followup_performed = True
         warnings.extend(followup.warnings)
+        if debug:
+            _record_debug_timing(
+                status,
+                debug_summaries,
+                "archive follow-up",
+                followup_started,
+                processed=followup.detail_lookups,
+                unit="details",
+            )
 
         lock = ProcessLock(paths.lock_file)
         lock.acquire()
@@ -1224,7 +1635,7 @@ async def import_x_archive(
             store.set_import_manifest(
                 digest,
                 archive_generation_date=generation_date,
-                status="completed",
+                status=final_status,
                 import_started_at=(
                     existing_manifest.get("import_started_at")
                     if existing_manifest and not import_performed
@@ -1238,9 +1649,14 @@ async def import_x_archive(
         finally:
             lock.release()
 
+        if debug:
+            _emit_status(status, "debug summary:")
+            for summary in debug_summaries:
+                _emit_status(status, f"  {summary}")
+
         return ArchiveImportResult(
             skipped=not import_performed,
-            followup_performed=True,
+            followup_performed=followup_performed,
             counts=final_counts,
             warnings=warnings,
             reconciled_collections=followup.reconciled_collections,
