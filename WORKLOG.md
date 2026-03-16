@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Fixed the Firefox live-profile auth-check hang introduced by the WAL-safe cookie snapshot refactor:
+  - Root cause: `tweetxvault/auth/firefox.py` switched to SQLite's backup API for `cookies.sqlite`, but that call can block indefinitely against an actively used Firefox Dev Edition profile even though the cookie DB itself is readable via a copied DB+WAL snapshot
+  - Replaced the snapshot helper with a temp copy of `cookies.sqlite` plus any live `-wal` / `-shm` / `-journal` sidecars, keeping the query path unchanged while restoring bounded auth checks against busy Firefox profiles
+  - Validation:
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_auth.py tests/test_cli.py -k auth`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check tweetxvault/auth/firefox.py tests/test_auth.py tests/test_cli.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/auth/firefox.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache timeout 12s uv run tweetxvault auth check --debug-auth`
+    - `UV_CACHE_DIR=/tmp/uv-cache timeout 12s uv run tweetxvault auth check`
+
 - Landed review cleanup item 14 for auth-resolution diagnostics:
   - Added auth-status callback plumbing in `tweetxvault/auth/cookies.py` / `tweetxvault/auth/firefox.py` so browser/profile probing steps can be surfaced without hard-coding print calls into the auth resolver
   - Added `--debug-auth` support in `tweetxvault/cli.py` for `tweetxvault threads expand` and `tweetxvault auth check`, so stalls before the archive job starts can now be traced to a specific browser/profile resolution step

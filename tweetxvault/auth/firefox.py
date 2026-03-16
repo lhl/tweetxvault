@@ -20,6 +20,7 @@ from tweetxvault.exceptions import AuthResolutionError
 FIREFOX_PROFILES_INI = Path.home() / ".mozilla/firefox/profiles.ini"
 COOKIE_NAMES = {"auth_token", "ct0", "twid"}
 COOKIE_HOSTS = {"x.com", ".x.com", "twitter.com", ".twitter.com"}
+SQLITE_SNAPSHOT_SUFFIXES = ("", "-wal", "-shm", "-journal")
 
 
 class FirefoxCookieBundle(BaseModel):
@@ -198,24 +199,26 @@ def discover_default_profile(
 def _sqlite_snapshot(cookies_db: Path) -> Iterator[Path]:
     temp_dir = Path(tempfile.mkdtemp(prefix="tweetxvault-firefox-"))
     target = temp_dir / cookies_db.name
-    source: sqlite3.Connection | None = None
-    snapshot: sqlite3.Connection | None = None
     try:
         try:
-            source = sqlite3.connect(f"file:{cookies_db}?mode=ro", uri=True, timeout=5.0)
-            snapshot = sqlite3.connect(target)
-            source.backup(snapshot)
-            snapshot.commit()
-        except sqlite3.Error as exc:
+            # SQLite's backup API can block indefinitely against a busy live Firefox
+            # profile. Copying the DB plus journal sidecars keeps cookie reads bounded.
+            for suffix in SQLITE_SNAPSHOT_SUFFIXES:
+                source = cookies_db if not suffix else Path(f"{cookies_db}{suffix}")
+                if suffix and not source.exists():
+                    continue
+                try:
+                    shutil.copy2(source, target if not suffix else Path(f"{target}{suffix}"))
+                except FileNotFoundError:
+                    if suffix:
+                        continue
+                    raise
+        except OSError as exc:
             raise AuthResolutionError(
                 f"Failed to snapshot Firefox cookies under {cookies_db.parent}: {exc}"
             ) from exc
         yield target
     finally:
-        if snapshot is not None:
-            snapshot.close()
-        if source is not None:
-            source.close()
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
