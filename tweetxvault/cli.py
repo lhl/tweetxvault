@@ -357,7 +357,7 @@ def _highlight_search_matches(text: str, query: str) -> Text:
         return rendered
     pattern = re.compile("|".join(re.escape(token) for token in tokens), re.IGNORECASE)
     for match in pattern.finditer(text):
-        rendered.stylize("reverse", match.start(), match.end())
+        rendered.stylize("black on yellow", match.start(), match.end())
     return rendered
 
 

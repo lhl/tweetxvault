@@ -117,9 +117,9 @@ def test_highlight_search_matches_marks_query_terms() -> None:
 
     assert rendered.plain == "Machine learning beats keyword search for search-heavy tasks."
     spans = {(span.start, span.end, span.style) for span in rendered.spans}
-    assert (8, 16, "reverse") in spans
-    assert (31, 37, "reverse") in spans
-    assert (42, 48, "reverse") in spans
+    assert (8, 16, "black on yellow") in spans
+    assert (31, 37, "black on yellow") in spans
+    assert (42, 48, "black on yellow") in spans
 
 
 def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path: Path) -> None:

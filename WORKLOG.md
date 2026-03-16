@@ -3,7 +3,7 @@
 ## 2026-03-16
 
 - Improved CLI search readability by highlighting literal query matches in result text:
-  - Updated `tweetxvault/cli.py` so `tweetxvault search` now applies reverse-video highlighting to case-insensitive matches for the query terms in the rendered text column
+  - Updated `tweetxvault/cli.py` so `tweetxvault search` now applies a yellow background highlight to case-insensitive matches for the query terms in the rendered text column
   - Kept the change local to output rendering only; it does not alter FTS/vector/hybrid retrieval logic or ranking
   - Added focused CLI coverage in `tests/test_cli.py` for the highlight span generation
   - Validation:
