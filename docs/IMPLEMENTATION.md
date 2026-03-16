@@ -14,7 +14,8 @@ Definition of done: passes `uv run ruff format --check`, `uv run ruff check`, an
 Planning note (2026-03-15):
 - The sections below describe the completed SQLite-backed MVP.
 - The SQLite -> LanceDB migration landed on 2026-03-15.
-- The active next milestone is capture expansion: canonical tweet objects, media/attached-tweet extraction, URL unfurls, article support, and a stubbed X-archive import path.
+- Capture expansion landed after the LanceDB migration.
+- The active next milestone is turning the X-archive import stub into a real importer using the fresh 2026-03-16 archive fixture.
 
 ---
 
@@ -343,18 +344,28 @@ This is separate from attached-tweet extraction. The current extractor already s
   - idempotent repeated expansion runs
   - preserving collection-scoped membership boundaries while adding global thread/context rows
 
-## Task 16: X Archive Import Stub
+## Task 16: X Archive Import
 
-We do not have a fresh archive fixture yet, so this task starts as interface + provenance planning only.
+Fresh fixture status (2026-03-16):
+- Real sample cataloged in `docs/ANALYSIS-archive-import.md`.
+- Confirmed overlap: `tweets.js`, `tweet-headers.js`, `deleted-tweets.js`, `deleted-tweet-headers.js`, `like.js`, and `tweets_media/`.
+- Confirmed gaps in this sample: no bookmark dataset; `article.js`, `article-metadata.js`, `note-tweet.js`, and `community-tweet.js` are present but empty.
 
+- [x] Catalog the real archive shape and record overlap findings.
+- [x] Lock first-pass precedence rules from the sample:
+  - Live GraphQL wins for richer normalized tweet/media/url/article fields when both sources overlap.
+  - `x_archive` wins for deleted authored tweets and already-exported media binaries.
+  - `like.js` imports are sparse membership/provenance rows until live sync enriches them.
+  - Do not rely on the current new-non-empty-wins coalescing semantics for live/archive merges.
 - [ ] Reserve CLI shape:
   - `tweetxvault import x-archive <zip-or-dir>`
 - [ ] Add an import manifest record type or equivalent metadata row so archive imports are resumable/idempotent.
 - [ ] Define source-provenance semantics (`live_graphql` vs `x_archive`) for normalized rows.
-- [ ] Once a real archive is available:
-  - identify the bookmark/like/media files
-  - map them into the existing extractor layer instead of building a second data model
-  - add regression fixtures/tests for repeated imports and live+archive merges
+- [ ] Add a zip/directory loader for `manifest.js` plus YTD `data/*.js` parts.
+- [ ] Import authored tweets from `tweets.js` / `deleted-tweets.js` through a YTD-to-internal adapter instead of a second tweet model.
+- [ ] Import `like.js` into collection rows with archive-order fallback and raw provenance, without pretending it contains full tweet objects.
+- [ ] Register `tweets_media/` exports against `media.local_path` / `download_state` so we do not re-download binaries we already have.
+- [ ] Add regression fixtures/tests for repeated imports, live+archive merges, and archive-after-live precedence behavior.
 
 ## Review Cleanup
 

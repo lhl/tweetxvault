@@ -16,6 +16,7 @@
 ## Analysis
 
 - `ANALYSIS-db.md` — Database choice comparison (SQLite, DuckDB, LanceDB, SeekDB), schema design, vector indexing, embedding models, and LanceDB backend notes
+- `ANALYSIS-archive-import.md` — Fresh X archive sample inventory, overlap with live GraphQL crawl data, and proposed import precedence rules
 - `ANALYSIS-db.py` — Reproducible Task 0 benchmark harness for SQLite, SeekDB, and LanceDB startup/footprint probes
 - `ANALYSIS-agents.md` — Survey of AGENTS.md patterns across repos; informs this project's conventions
 

@@ -498,7 +498,7 @@ Unfurling should use GraphQL payloads first and network fetches second.
 
 ### Archive Import Requirements
 
-We want a second ingestion path for downloaded X account archives, but we do not yet have a fresh archive fixture to lock the exact file mapping. Stub the requirements now:
+We want a second ingestion path for downloaded X account archives. A fresh sample is available locally in `data/`; see `docs/ANALYSIS-archive-import.md` for the concrete file inventory and merge notes.
 
 - Reserve a future CLI surface:
   - `tweetxvault import x-archive <zip-or-dir>`
@@ -507,6 +507,29 @@ We want a second ingestion path for downloaded X account archives, but we do not
 - Archive import should map into the same `tweet_object`, collection-scoped `tweet`, `media`, `url`, and `article` rows so search/export code does not care where data came from.
 - Never delete or downgrade richer live-captured data when importing thinner archive data later.
 - Record one manifest row per imported archive (path/hash, imported-at, warnings, source export timestamp) so repeated imports can short-circuit safely.
+
+Current sample-driven scope:
+
+- Overlap confirmed in this sample:
+  - `tweets.js` / `tweet-headers.js` for authored tweets
+  - `deleted-tweets.js` / `deleted-tweet-headers.js` for deleted authored tweets
+  - `like.js` for likes
+  - `tweets_media/` for exported authored-tweet media binaries
+- Not present in this sample:
+  - no bookmark dataset in `manifest.js` or `data/`
+- Present but empty in this sample:
+  - `article.js`
+  - `article-metadata.js`
+  - `note-tweet.js`
+  - `community-tweet.js`
+
+Concrete merge rules from the first real fixture:
+
+- `tweets.js` rows are close enough to Twitter legacy tweet payloads that archive import should adapt them into the existing tweet/extractor path rather than inventing a second tweet model.
+- `like.js` rows are intentionally much thinner (`tweetId`, `fullText`, `expandedUrl` only), so likes import should create sparse collection/provenance rows and let later live sync upgrade tweet metadata when available.
+- `tweets_media/` should register existing exported binaries against `media` rows via `local_path` / `download_state`, preferring the already-exported file over a later re-download.
+- Live GraphQL stays authoritative for richer normalized tweet/media/url/article metadata when both sources overlap; archive data fills null gaps and covers deleted/offline-only content.
+- Because the current extractor/storage coalescing behavior prefers the newest non-empty value, archive import must add explicit source-aware merge logic instead of relying on naive re-use of the existing upsert path.
 
 ### Parser Boundary
 
@@ -657,7 +680,7 @@ Reserved for future (not implemented in MVP):
 4. **Articles endpoint shape**: authenticated `TweetDetail` returned full article `plain_text` on 2026-03-16; remaining question is whether `UserArticlesTweets` adds anything we need beyond the current targeted refresh path.
 5. **URL snapshot runner**: inline CLI commands landed for the first pass (`tweetxvault media download`, `tweetxvault unfurl`); decide later whether ArchiveBox/snapshotting needs a queue table or can stay command-driven.
 6. **Thread-expansion trigger**: do we keep thread/context capture as an explicit follow-on command, or add an opt-in sync-time expansion flag after the first stable implementation?
-7. **Archive export mapping**: once we have a fresh X archive, which files contain bookmarks/likes/media manifests, and what minimum provenance do we need to preserve from that format?
+7. **Bookmark archive coverage**: the 2026-03-16 X archive sample contains likes, authored tweets, deleted tweets, and exported media, but no bookmark dataset. Is bookmarks export unsupported by X, or just absent from this specific archive?
 
 ## Dependencies (Planned)
 

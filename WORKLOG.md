@@ -2,6 +2,13 @@
 
 ## 2026-03-16
 
+- Cataloged the fresh X archive sample in `data/` and updated the archive-import docs:
+  - Inspected `data/manifest.js`, `tweets.js`, `deleted-tweets.js`, `tweet-headers.js`, `like.js`, and media directories directly from the ZIP via `unzip -Z1 ...` plus small Python `zipfile`/JSON summary scripts
+  - Recorded the concrete inventory in `docs/ANALYSIS-archive-import.md`: authored tweets (`6521`), deleted authored tweets (`1`), likes (`109251`), and exported tweet-media files (`762` across `664` tweet ids)
+  - Verified this sample has no bookmark dataset at all, while `article.js`, `article-metadata.js`, `note-tweet.js`, and `community-tweet.js` are present but empty
+  - Locked the first-pass precedence decision in `docs/PLAN.md` / `docs/IMPLEMENTATION.md`: live GraphQL stays authoritative for richer normalized metadata, archive data fills deleted/offline gaps, and archive likes import as sparse membership/provenance only
+  - Implementation note captured: current storage/extractor coalescing is “new non-empty wins”, so the importer needs explicit source-aware merge logic instead of naïvely reusing existing upsert paths
+
 - Improved CLI search readability by highlighting literal query matches in result text:
   - Updated `tweetxvault/cli.py` so `tweetxvault search` now applies a yellow background highlight to case-insensitive matches for the query terms in the rendered text column
   - Kept the change local to output rendering only; it does not alter FTS/vector/hybrid retrieval logic or ranking
