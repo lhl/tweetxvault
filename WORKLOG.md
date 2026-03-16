@@ -2,6 +2,11 @@
 
 ## 2026-03-17
 
+- Captured the next archive-import follow-up tasks after the real interrupted-run report:
+  - explicitly handle `KeyboardInterrupt` / cancellation during archive import so manifests are left in a clearer state
+  - prevent or dedupe duplicate archive `raw_capture` rows after interrupted reruns
+  - upgrade interactive import progress from coarse phase markers to rate/ETA-aware output for large like archives
+
 - Restored long-running UX feedback for archive import jobs and codified the rule in the plan:
   - Updated `docs/PLAN.md` to make interactive progress visibility a hard requirement for long-running CLI features, while keeping non-interactive runs quiet by default
   - Added TTY-gated phase/progress logging to `tweetxvault import x-archive` across archive hashing, dataset loading, authored/likes import, media copy, and follow-up reconciliation/enrichment
