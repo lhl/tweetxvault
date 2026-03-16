@@ -58,6 +58,7 @@ def _counts(**overrides: int) -> dict[str, int]:
         "urls": 0,
         "url_refs": 0,
         "articles": 0,
+        "import_manifests": 0,
         "sync_state": 0,
     }
     counts.update(overrides)

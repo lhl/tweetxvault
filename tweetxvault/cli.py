@@ -20,6 +20,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
+from tweetxvault.archive_import import import_x_archive
 from tweetxvault.articles import refresh_articles
 from tweetxvault.auth import (
     BrowserCandidate,
@@ -46,6 +47,7 @@ app = typer.Typer(no_args_is_help=True)
 article_app = typer.Typer(no_args_is_help=True)
 auth_app = typer.Typer(no_args_is_help=True)
 export_app = typer.Typer(no_args_is_help=True)
+import_app = typer.Typer(no_args_is_help=True)
 media_app = typer.Typer(no_args_is_help=True)
 sync_app = typer.Typer(no_args_is_help=True)
 thread_app = typer.Typer(no_args_is_help=True)
@@ -54,6 +56,7 @@ view_app = typer.Typer(no_args_is_help=True)
 app.add_typer(article_app, name="articles")
 app.add_typer(auth_app, name="auth")
 app.add_typer(export_app, name="export")
+app.add_typer(import_app, name="import")
 app.add_typer(media_app, name="media")
 app.add_typer(sync_app, name="sync")
 app.add_typer(thread_app, name="threads")
@@ -675,6 +678,82 @@ def export_html(
     finally:
         store.close()
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
+
+
+@import_app.command("x-archive")
+def import_x_archive_command(
+    archive: Annotated[
+        Path, typer.Argument(help="Path to an X archive zip or extracted directory.")
+    ],
+    detail_lookups: Annotated[
+        int,
+        typer.Option(
+            "--detail-lookups",
+            min=0,
+            help=(
+                "Maximum number of pending sparse tweets to enrich via "
+                "TweetDetail after bulk live syncs."
+            ),
+        ),
+    ] = 0,
+    browser: SYNC_BROWSER_OPTION = None,
+    profile: SYNC_PROFILE_OPTION = None,
+    profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    debug_auth: DEBUG_AUTH_OPTION = False,
+) -> None:
+    console = _configure_logging()
+    try:
+        config, paths = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+            debug_auth=debug_auth,
+        )
+        result = asyncio.run(
+            import_x_archive(
+                archive,
+                detail_lookups=detail_lookups,
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    if result.skipped:
+        console.print("archive import skipped: already imported")
+        return
+
+    console.print(
+        "archive import: "
+        f"{result.counts.get('authored_tweets', 0)} authored, "
+        f"{result.counts.get('deleted_authored_tweets', 0)} deleted authored, "
+        f"{result.counts.get('likes', 0)} likes, "
+        f"{result.counts.get('media_files_copied', 0)} media files copied"
+    )
+    if result.reconciled_collections:
+        console.print(
+            "live reconciliation: " + ", ".join(result.reconciled_collections),
+            highlight=False,
+        )
+    console.print(
+        "detail enrichment: "
+        f"{result.detail_lookups} refreshed, "
+        f"{result.detail_terminal_unavailable} terminal, "
+        f"{result.detail_transient_failures} transient failures, "
+        f"{result.pending_enrichment} pending"
+    )
+    for warning in result.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
 
 
 @media_app.command("download")

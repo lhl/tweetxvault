@@ -114,9 +114,14 @@ ARCHIVE_SCHEMA = pa.schema(
         pa.field("author_username", pa.string()),
         pa.field("author_display_name", pa.large_string()),
         pa.field("created_at", pa.string()),
+        pa.field("deleted_at", pa.string()),
         pa.field("conversation_id", pa.string()),
         pa.field("lang", pa.string()),
         pa.field("note_tweet_text", pa.large_string()),
+        pa.field("enrichment_state", pa.string()),
+        pa.field("enrichment_checked_at", pa.string()),
+        pa.field("enrichment_http_status", pa.int32()),
+        pa.field("enrichment_reason", pa.string()),
         pa.field("raw_json", pa.large_string()),
         pa.field("first_seen_at", pa.string()),
         pa.field("last_seen_at", pa.string()),
@@ -135,6 +140,7 @@ ARCHIVE_SCHEMA = pa.schema(
         pa.field("variants_json", pa.large_string()),
         pa.field("download_state", pa.string()),
         pa.field("local_path", pa.string()),
+        pa.field("provenance_source", pa.string()),
         pa.field("sha256", pa.string()),
         pa.field("byte_size", pa.int64()),
         pa.field("content_type", pa.string()),
@@ -161,6 +167,12 @@ ARCHIVE_SCHEMA = pa.schema(
         pa.field("content_text", pa.large_string()),
         pa.field("published_at", pa.string()),
         pa.field("status", pa.string()),
+        pa.field("archive_digest", pa.string()),
+        pa.field("archive_generation_date", pa.string()),
+        pa.field("import_started_at", pa.string()),
+        pa.field("import_completed_at", pa.string()),
+        pa.field("warnings_json", pa.large_string()),
+        pa.field("counts_json", pa.large_string()),
         pa.field("last_head_tweet_id", pa.string()),
         pa.field("backfill_cursor", pa.string()),
         pa.field("backfill_incomplete", pa.bool_()),
@@ -173,6 +185,8 @@ ARCHIVE_SCHEMA = pa.schema(
 
 EMBEDDING_DIM = 384
 SECONDARY_RECORD_TYPES = ("tweet_object", "tweet_relation", "media", "url", "url_ref", "article")
+LIVE_SOURCE = "live_graphql"
+ARCHIVE_SOURCE = "x_archive"
 
 
 class ArchiveStore:
@@ -260,6 +274,9 @@ class ArchiveStore:
 
     def _row_key_for_metadata(self, key: str) -> str:
         return f"metadata:{key}"
+
+    def _row_key_for_import_manifest(self, archive_digest: str) -> str:
+        return f"import_manifest:{archive_digest}"
 
     def _row_key_for_tweet_object(self, tweet_id: str) -> str:
         return f"tweet_object:{tweet_id}"
@@ -371,13 +388,74 @@ class ArchiveStore:
             synced_at=context.now,
         )
 
+    def _normalized_source(self, value: str | None) -> str:
+        return value or LIVE_SOURCE
+
+    def _prefer_incoming_source(
+        self,
+        context: _RecordContext,
+        incoming_source: str,
+        *,
+        source_field: str = "source",
+        deleted_at: str | None = None,
+    ) -> bool:
+        if context.existing is None:
+            return True
+        existing_source = self._normalized_source(self._existing_value(context, source_field))
+        if incoming_source == existing_source:
+            return True
+        if deleted_at and incoming_source == ARCHIVE_SOURCE:
+            return True
+        return incoming_source == LIVE_SOURCE and existing_source != LIVE_SOURCE
+
+    def _merge_by_source_precedence(
+        self,
+        context: _RecordContext,
+        field_name: str,
+        incoming: Any,
+        *,
+        prefer_incoming: bool,
+    ) -> Any:
+        existing = self._existing_value(context, field_name)
+        if prefer_incoming:
+            return self._coalesce_value(incoming, existing)
+        return self._coalesce_value(existing, incoming)
+
+    def _merged_source_value(
+        self,
+        context: _RecordContext,
+        incoming_source: str,
+        *,
+        prefer_incoming: bool,
+        field_name: str = "source",
+    ) -> str:
+        if prefer_incoming:
+            return incoming_source
+        return self._normalized_source(self._existing_value(context, field_name))
+
+    def _merged_deleted_at(
+        self,
+        context: _RecordContext,
+        incoming_deleted_at: str | None,
+        *,
+        prefer_incoming: bool,
+        incoming_source: str,
+    ) -> str | None:
+        if prefer_incoming and incoming_source == LIVE_SOURCE:
+            return incoming_deleted_at
+        return self._coalesce_value(
+            incoming_deleted_at, self._existing_value(context, "deleted_at")
+        )
+
     def _capture_record(
         self,
         operation: str,
         cursor_in: str | None,
         cursor_out: str | None,
         http_status: int,
-        raw_json: dict[str, Any],
+        raw_json: Any,
+        *,
+        source: str,
     ) -> tuple[str, dict[str, Any]]:
         capture_id = str(uuid.uuid4())
         return capture_id, self._record(
@@ -388,7 +466,7 @@ class ArchiveStore:
             cursor_out=cursor_out,
             captured_at=utc_now(),
             http_status=http_status,
-            source="api",
+            source=source,
             raw_json=json.dumps(raw_json, sort_keys=True),
         )
 
@@ -398,12 +476,13 @@ class ArchiveStore:
         cursor_in: str | None,
         cursor_out: str | None,
         http_status: int,
-        raw_json: dict[str, Any],
+        raw_json: Any,
         *,
+        source: str = LIVE_SOURCE,
         cursor: _PageBuffer | None = None,
     ) -> str:
         capture_id, record = self._capture_record(
-            operation, cursor_in, cursor_out, http_status, raw_json
+            operation, cursor_in, cursor_out, http_status, raw_json, source=source
         )
         self._queue_record(record, cursor=cursor)
         return capture_id
@@ -421,6 +500,8 @@ class ArchiveStore:
         tweet: TimelineTweet,
         collection_type: str,
         *,
+        source: str = LIVE_SOURCE,
+        deleted_at: str | None = None,
         sort_index: str | None = None,
         folder_id: str | None = None,
         cursor: _PageBuffer | None = None,
@@ -428,6 +509,11 @@ class ArchiveStore:
         row_key = self._row_key_for_tweet(tweet.tweet_id, collection_type, folder_id)
         legacy = tweet.raw_json.get("legacy") or {}
         context = self._record_context(row_key, cursor=cursor)
+        prefer_incoming = self._prefer_incoming_source(
+            context,
+            source,
+            deleted_at=deleted_at,
+        )
         return self._record_with_context(
             context,
             row_key=row_key,
@@ -436,34 +522,66 @@ class ArchiveStore:
             collection_type=collection_type,
             folder_id=_folder_key(folder_id),
             sort_index=sort_index,
-            text=self._coalesce_existing(context, "text", tweet.text),
-            author_id=self._coalesce_existing(context, "author_id", tweet.author_id),
-            author_username=self._coalesce_existing(
+            source=self._merged_source_value(context, source, prefer_incoming=prefer_incoming),
+            text=self._merge_by_source_precedence(
+                context,
+                "text",
+                tweet.text,
+                prefer_incoming=prefer_incoming,
+            ),
+            author_id=self._merge_by_source_precedence(
+                context,
+                "author_id",
+                tweet.author_id,
+                prefer_incoming=prefer_incoming,
+            ),
+            author_username=self._merge_by_source_precedence(
                 context,
                 "author_username",
                 tweet.author_username,
+                prefer_incoming=prefer_incoming,
             ),
-            author_display_name=self._coalesce_existing(
+            author_display_name=self._merge_by_source_precedence(
                 context,
                 "author_display_name",
                 tweet.author_display_name,
+                prefer_incoming=prefer_incoming,
             ),
-            created_at=self._coalesce_existing(context, "created_at", tweet.created_at),
-            conversation_id=self._coalesce_existing(
+            created_at=self._merge_by_source_precedence(
+                context,
+                "created_at",
+                tweet.created_at,
+                prefer_incoming=prefer_incoming,
+            ),
+            deleted_at=self._merged_deleted_at(
+                context,
+                deleted_at,
+                prefer_incoming=prefer_incoming,
+                incoming_source=source,
+            ),
+            conversation_id=self._merge_by_source_precedence(
                 context,
                 "conversation_id",
                 legacy.get("conversation_id_str"),
+                prefer_incoming=prefer_incoming,
             ),
-            lang=self._coalesce_existing(context, "lang", legacy.get("lang")),
-            note_tweet_text=self._coalesce_existing(
+            lang=self._merge_by_source_precedence(
+                context,
+                "lang",
+                legacy.get("lang"),
+                prefer_incoming=prefer_incoming,
+            ),
+            note_tweet_text=self._merge_by_source_precedence(
                 context,
                 "note_tweet_text",
                 extract_note_tweet_text(tweet.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
-            raw_json=self._coalesce_existing(
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(tweet.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
@@ -472,6 +590,8 @@ class ArchiveStore:
         tweet_id: str,
         collection_type: str,
         *,
+        source: str = LIVE_SOURCE,
+        deleted_at: str | None = None,
         sort_index: str | None = None,
         folder_id: str | None = None,
         cursor: _PageBuffer | None = None,
@@ -491,6 +611,8 @@ class ArchiveStore:
             self._tweet_record(
                 tweet,
                 collection_type,
+                source=source,
+                deleted_at=deleted_at,
                 sort_index=sort_index,
                 folder_id=folder_id,
                 cursor=cursor,
@@ -589,47 +711,161 @@ class ArchiveStore:
         if existing is None:
             self.set_archive_owner_id(user_id)
 
+    def get_import_manifest(self, archive_digest: str) -> dict[str, Any] | None:
+        return self._get_row(self._row_key_for_import_manifest(archive_digest))
+
+    def set_import_manifest(
+        self,
+        archive_digest: str,
+        *,
+        archive_generation_date: str | None,
+        status: str,
+        import_started_at: str | None = None,
+        import_completed_at: str | None = None,
+        warnings: list[str] | None = None,
+        counts: dict[str, Any] | None = None,
+    ) -> None:
+        existing = self.get_import_manifest(archive_digest)
+        self.merge_rows(
+            [
+                self._record(
+                    row_key=self._row_key_for_import_manifest(archive_digest),
+                    record_type="import_manifest",
+                    archive_digest=archive_digest,
+                    archive_generation_date=archive_generation_date
+                    or (existing.get("archive_generation_date") if existing else None),
+                    import_started_at=import_started_at
+                    or (existing.get("import_started_at") if existing else None)
+                    or utc_now(),
+                    import_completed_at=import_completed_at,
+                    status=status,
+                    warnings_json=self._json_value(warnings or []),
+                    counts_json=self._json_value(counts or {}),
+                    updated_at=utc_now(),
+                )
+            ]
+        )
+
     def _tweet_object_record(
         self,
         tweet: Any,
         *,
+        source: str = LIVE_SOURCE,
+        deleted_at: str | None = None,
+        enrichment_state: str | None = None,
+        enrichment_checked_at: str | None = None,
+        enrichment_http_status: int | None = None,
+        enrichment_reason: str | None = None,
         cursor: _PageBuffer | None = None,
     ) -> dict[str, Any]:
         row_key = self._row_key_for_tweet_object(tweet.tweet_id)
         context = self._record_context(row_key, cursor=cursor)
+        prefer_incoming = self._prefer_incoming_source(
+            context,
+            source,
+            deleted_at=deleted_at,
+        )
+        if source == LIVE_SOURCE:
+            enrichment_state = enrichment_state or "done"
+            enrichment_checked_at = enrichment_checked_at or context.now
+            enrichment_http_status = (
+                200 if enrichment_http_status is None else enrichment_http_status
+            )
+            enrichment_reason = None
+        elif deleted_at and enrichment_state is None:
+            enrichment_state = "terminal_unavailable"
+            enrichment_checked_at = enrichment_checked_at or context.now
+            enrichment_reason = enrichment_reason or "deleted"
         return self._record_with_context(
             context,
             row_key=row_key,
             record_type="tweet_object",
             tweet_id=tweet.tweet_id,
-            text=self._coalesce_existing(context, "text", tweet.text) or "",
-            author_id=self._coalesce_existing(context, "author_id", tweet.author_id),
-            author_username=self._coalesce_existing(
+            source=self._merged_source_value(context, source, prefer_incoming=prefer_incoming),
+            text=self._merge_by_source_precedence(
+                context,
+                "text",
+                tweet.text,
+                prefer_incoming=prefer_incoming,
+            )
+            or "",
+            author_id=self._merge_by_source_precedence(
+                context,
+                "author_id",
+                tweet.author_id,
+                prefer_incoming=prefer_incoming,
+            ),
+            author_username=self._merge_by_source_precedence(
                 context,
                 "author_username",
                 tweet.author_username,
+                prefer_incoming=prefer_incoming,
             ),
-            author_display_name=self._coalesce_existing(
+            author_display_name=self._merge_by_source_precedence(
                 context,
                 "author_display_name",
                 tweet.author_display_name,
+                prefer_incoming=prefer_incoming,
             ),
-            created_at=self._coalesce_existing(context, "created_at", tweet.created_at),
-            conversation_id=self._coalesce_existing(
+            created_at=self._merge_by_source_precedence(
+                context,
+                "created_at",
+                tweet.created_at,
+                prefer_incoming=prefer_incoming,
+            ),
+            deleted_at=self._merged_deleted_at(
+                context,
+                deleted_at,
+                prefer_incoming=prefer_incoming,
+                incoming_source=source,
+            ),
+            conversation_id=self._merge_by_source_precedence(
                 context,
                 "conversation_id",
                 tweet.conversation_id,
+                prefer_incoming=prefer_incoming,
             ),
-            lang=self._coalesce_existing(context, "lang", tweet.lang),
-            note_tweet_text=self._coalesce_existing(
+            lang=self._merge_by_source_precedence(
+                context,
+                "lang",
+                tweet.lang,
+                prefer_incoming=prefer_incoming,
+            ),
+            note_tweet_text=self._merge_by_source_precedence(
                 context,
                 "note_tweet_text",
                 tweet.note_tweet_text,
+                prefer_incoming=prefer_incoming,
             ),
-            raw_json=self._coalesce_existing(
+            enrichment_state=self._merge_by_source_precedence(
+                context,
+                "enrichment_state",
+                enrichment_state,
+                prefer_incoming=prefer_incoming,
+            ),
+            enrichment_checked_at=self._merge_by_source_precedence(
+                context,
+                "enrichment_checked_at",
+                enrichment_checked_at,
+                prefer_incoming=prefer_incoming,
+            ),
+            enrichment_http_status=self._merge_by_source_precedence(
+                context,
+                "enrichment_http_status",
+                enrichment_http_status,
+                prefer_incoming=prefer_incoming,
+            ),
+            enrichment_reason=self._merge_by_source_precedence(
+                context,
+                "enrichment_reason",
+                enrichment_reason,
+                prefer_incoming=prefer_incoming,
+            ),
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(tweet.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
@@ -637,6 +873,7 @@ class ArchiveStore:
         self,
         relation: Any,
         *,
+        source: str = LIVE_SOURCE,
         cursor: _PageBuffer | None = None,
     ) -> dict[str, Any]:
         row_key = self._row_key_for_tweet_relation(
@@ -645,6 +882,7 @@ class ArchiveStore:
             relation.target_tweet_id,
         )
         context = self._record_context(row_key, cursor=cursor)
+        prefer_incoming = self._prefer_incoming_source(context, source)
         return self._record_with_context(
             context,
             row_key=row_key,
@@ -652,43 +890,95 @@ class ArchiveStore:
             tweet_id=relation.source_tweet_id,
             relation_type=relation.relation_type,
             target_tweet_id=relation.target_tweet_id,
-            raw_json=self._coalesce_existing(
+            source=self._merged_source_value(context, source, prefer_incoming=prefer_incoming),
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(relation.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
-    def _media_record(self, media: Any, *, cursor: _PageBuffer | None = None) -> dict[str, Any]:
+    def _media_record(
+        self,
+        media: Any,
+        *,
+        provenance_source: str = LIVE_SOURCE,
+        cursor: _PageBuffer | None = None,
+    ) -> dict[str, Any]:
         row_key = self._row_key_for_media(media.tweet_id, media.media_key)
         context = self._record_context(row_key, cursor=cursor)
+        prefer_incoming = self._prefer_incoming_source(
+            context,
+            provenance_source,
+            source_field="provenance_source",
+        )
         return self._record_with_context(
             context,
             row_key=row_key,
             record_type="media",
             tweet_id=media.tweet_id,
-            source=self._coalesce_existing(context, "source", media.source),
-            article_id=self._coalesce_existing(context, "article_id", media.article_id),
+            source=self._merge_by_source_precedence(
+                context,
+                "source",
+                media.source,
+                prefer_incoming=prefer_incoming,
+            ),
+            provenance_source=self._merged_source_value(
+                context,
+                provenance_source,
+                prefer_incoming=prefer_incoming,
+                field_name="provenance_source",
+            ),
+            article_id=self._merge_by_source_precedence(
+                context,
+                "article_id",
+                media.article_id,
+                prefer_incoming=prefer_incoming,
+            ),
             position=media.position,
             media_key=media.media_key,
-            media_type=self._coalesce_existing(context, "media_type", media.media_type),
-            media_url=self._coalesce_existing(context, "media_url", media.media_url),
-            thumbnail_url=self._coalesce_existing(
+            media_type=self._merge_by_source_precedence(
+                context,
+                "media_type",
+                media.media_type,
+                prefer_incoming=prefer_incoming,
+            ),
+            media_url=self._merge_by_source_precedence(
+                context,
+                "media_url",
+                media.media_url,
+                prefer_incoming=prefer_incoming,
+            ),
+            thumbnail_url=self._merge_by_source_precedence(
                 context,
                 "thumbnail_url",
                 media.thumbnail_url,
+                prefer_incoming=prefer_incoming,
             ),
-            width=self._coalesce_existing(context, "width", media.width),
-            height=self._coalesce_existing(context, "height", media.height),
-            duration_millis=self._coalesce_existing(
+            width=self._merge_by_source_precedence(
+                context,
+                "width",
+                media.width,
+                prefer_incoming=prefer_incoming,
+            ),
+            height=self._merge_by_source_precedence(
+                context,
+                "height",
+                media.height,
+                prefer_incoming=prefer_incoming,
+            ),
+            duration_millis=self._merge_by_source_precedence(
                 context,
                 "duration_millis",
                 media.duration_millis,
+                prefer_incoming=prefer_incoming,
             ),
-            variants_json=self._coalesce_existing(
+            variants_json=self._merge_by_source_precedence(
                 context,
                 "variants_json",
                 self._json_value(media.variants) if media.variants else None,
+                prefer_incoming=prefer_incoming,
             ),
             download_state=self._coalesce_value(
                 self._existing_value(context, "download_state"),
@@ -704,71 +994,133 @@ class ArchiveStore:
             thumbnail_content_type=self._existing_value(context, "thumbnail_content_type"),
             downloaded_at=self._existing_value(context, "downloaded_at"),
             download_error=self._existing_value(context, "download_error"),
-            raw_json=self._coalesce_existing(
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(media.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
-    def _url_record(self, url: Any, *, cursor: _PageBuffer | None = None) -> dict[str, Any]:
+    def _url_record(
+        self,
+        url: Any,
+        *,
+        source: str = LIVE_SOURCE,
+        cursor: _PageBuffer | None = None,
+    ) -> dict[str, Any]:
         row_key = self._row_key_for_url(url.url_hash)
         context = self._record_context(row_key, cursor=cursor)
+        prefer_incoming = self._prefer_incoming_source(context, source)
         return self._record_with_context(
             context,
             row_key=row_key,
             record_type="url",
             url_hash=url.url_hash,
             url=url.canonical_url,
-            expanded_url=self._coalesce_existing(context, "expanded_url", url.expanded_url),
-            final_url=self._coalesce_existing(context, "final_url", url.final_url),
+            source=self._merged_source_value(context, source, prefer_incoming=prefer_incoming),
+            expanded_url=self._merge_by_source_precedence(
+                context,
+                "expanded_url",
+                url.expanded_url,
+                prefer_incoming=prefer_incoming,
+            ),
+            final_url=self._merge_by_source_precedence(
+                context,
+                "final_url",
+                url.final_url,
+                prefer_incoming=prefer_incoming,
+            ),
             canonical_url=url.canonical_url,
-            url_host=self._coalesce_existing(context, "url_host", url.host),
-            title=self._coalesce_existing(context, "title", url.title),
-            description=self._coalesce_existing(context, "description", url.description),
-            site_name=self._coalesce_existing(context, "site_name", url.site_name),
+            url_host=self._merge_by_source_precedence(
+                context,
+                "url_host",
+                url.host,
+                prefer_incoming=prefer_incoming,
+            ),
+            title=self._merge_by_source_precedence(
+                context,
+                "title",
+                url.title,
+                prefer_incoming=prefer_incoming,
+            ),
+            description=self._merge_by_source_precedence(
+                context,
+                "description",
+                url.description,
+                prefer_incoming=prefer_incoming,
+            ),
+            site_name=self._merge_by_source_precedence(
+                context,
+                "site_name",
+                url.site_name,
+                prefer_incoming=prefer_incoming,
+            ),
             unfurl_state=self._coalesce_value(
                 self._existing_value(context, "unfurl_state"),
                 "pending",
             ),
             last_fetched_at=self._existing_value(context, "last_fetched_at"),
-            raw_json=self._coalesce_existing(
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(url.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
-    def _url_ref_record(self, url_ref: Any, *, cursor: _PageBuffer | None = None) -> dict[str, Any]:
+    def _url_ref_record(
+        self,
+        url_ref: Any,
+        *,
+        source: str = LIVE_SOURCE,
+        cursor: _PageBuffer | None = None,
+    ) -> dict[str, Any]:
         row_key = self._row_key_for_url_ref(url_ref.tweet_id, url_ref.position)
         context = self._record_context(row_key, cursor=cursor)
+        prefer_incoming = self._prefer_incoming_source(context, source)
         return self._record_with_context(
             context,
             row_key=row_key,
             record_type="url_ref",
             tweet_id=url_ref.tweet_id,
             position=url_ref.position,
-            url_hash=self._coalesce_existing(context, "url_hash", url_ref.url_hash),
-            url=self._coalesce_existing(context, "url", url_ref.short_url),
-            expanded_url=self._coalesce_existing(
+            source=self._merged_source_value(context, source, prefer_incoming=prefer_incoming),
+            url_hash=self._merge_by_source_precedence(
+                context,
+                "url_hash",
+                url_ref.url_hash,
+                prefer_incoming=prefer_incoming,
+            ),
+            url=self._merge_by_source_precedence(
+                context,
+                "url",
+                url_ref.short_url,
+                prefer_incoming=prefer_incoming,
+            ),
+            expanded_url=self._merge_by_source_precedence(
                 context,
                 "expanded_url",
                 url_ref.expanded_url,
+                prefer_incoming=prefer_incoming,
             ),
-            canonical_url=self._coalesce_existing(
+            canonical_url=self._merge_by_source_precedence(
                 context,
                 "canonical_url",
                 url_ref.canonical_url,
+                prefer_incoming=prefer_incoming,
             ),
-            display_url=self._coalesce_existing(
+            display_url=self._merge_by_source_precedence(
                 context,
                 "display_url",
                 url_ref.display_url,
+                prefer_incoming=prefer_incoming,
             ),
-            raw_json=self._coalesce_existing(
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(url_ref.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
@@ -776,11 +1128,18 @@ class ArchiveStore:
         self,
         article: Any,
         *,
+        source: str = LIVE_SOURCE,
         cursor: _PageBuffer | None = None,
     ) -> dict[str, Any]:
         row_key = self._row_key_for_article(article.tweet_id)
         context = self._record_context(row_key, cursor=cursor)
-        content_text = self._coalesce_existing(context, "content_text", article.content_text)
+        prefer_incoming = self._prefer_incoming_source(context, source)
+        content_text = self._merge_by_source_precedence(
+            context,
+            "content_text",
+            article.content_text,
+            prefer_incoming=prefer_incoming,
+        )
         status = (
             "body_present"
             if content_text
@@ -795,29 +1154,44 @@ class ArchiveStore:
             row_key=row_key,
             record_type="article",
             tweet_id=article.tweet_id,
-            article_id=self._coalesce_existing(context, "article_id", article.article_id),
-            title=self._coalesce_existing(context, "title", article.title),
-            summary_text=self._coalesce_existing(
+            source=self._merged_source_value(context, source, prefer_incoming=prefer_incoming),
+            article_id=self._merge_by_source_precedence(
+                context,
+                "article_id",
+                article.article_id,
+                prefer_incoming=prefer_incoming,
+            ),
+            title=self._merge_by_source_precedence(
+                context,
+                "title",
+                article.title,
+                prefer_incoming=prefer_incoming,
+            ),
+            summary_text=self._merge_by_source_precedence(
                 context,
                 "summary_text",
                 article.summary_text,
+                prefer_incoming=prefer_incoming,
             ),
             content_text=content_text,
-            canonical_url=self._coalesce_existing(
+            canonical_url=self._merge_by_source_precedence(
                 context,
                 "canonical_url",
                 article.canonical_url,
+                prefer_incoming=prefer_incoming,
             ),
-            published_at=self._coalesce_existing(
+            published_at=self._merge_by_source_precedence(
                 context,
                 "published_at",
                 article.published_at,
+                prefer_incoming=prefer_incoming,
             ),
             status=status,
-            raw_json=self._coalesce_existing(
+            raw_json=self._merge_by_source_precedence(
                 context,
                 "raw_json",
                 self._json_value(article.raw_json),
+                prefer_incoming=prefer_incoming,
             ),
         )
 
@@ -825,31 +1199,48 @@ class ArchiveStore:
         self,
         graph: ExtractedTweetGraph,
         *,
+        source: str = LIVE_SOURCE,
         cursor: _PageBuffer,
     ) -> None:
         for item in graph.tweet_objects.values():
-            self._queue_record(self._tweet_object_record(item, cursor=cursor), cursor=cursor)
+            self._queue_record(
+                self._tweet_object_record(item, source=source, cursor=cursor),
+                cursor=cursor,
+            )
         for item in graph.relations.values():
-            self._queue_record(self._tweet_relation_record(item, cursor=cursor), cursor=cursor)
+            self._queue_record(
+                self._tweet_relation_record(item, source=source, cursor=cursor),
+                cursor=cursor,
+            )
         for item in graph.media.values():
-            self._queue_record(self._media_record(item, cursor=cursor), cursor=cursor)
+            self._queue_record(
+                self._media_record(item, provenance_source=source, cursor=cursor),
+                cursor=cursor,
+            )
         for item in graph.urls.values():
-            self._queue_record(self._url_record(item, cursor=cursor), cursor=cursor)
+            self._queue_record(self._url_record(item, source=source, cursor=cursor), cursor=cursor)
         for item in graph.url_refs.values():
-            self._queue_record(self._url_ref_record(item, cursor=cursor), cursor=cursor)
+            self._queue_record(
+                self._url_ref_record(item, source=source, cursor=cursor),
+                cursor=cursor,
+            )
         for item in graph.articles.values():
-            self._queue_record(self._article_record(item, cursor=cursor), cursor=cursor)
+            self._queue_record(
+                self._article_record(item, source=source, cursor=cursor),
+                cursor=cursor,
+            )
 
     def _buffer_secondary_objects(
         self,
         tweets: list[TimelineTweet],
         *,
+        source: str = LIVE_SOURCE,
         cursor: _PageBuffer,
     ) -> None:
         graph = ExtractedTweetGraph()
         for tweet in tweets:
             graph.merge(extract_secondary_objects(tweet.raw_json))
-        self._buffer_secondary_graph(graph, cursor=cursor)
+        self._buffer_secondary_graph(graph, source=source, cursor=cursor)
 
     def persist_page(
         self,
@@ -872,6 +1263,7 @@ class ArchiveStore:
             cursor_out,
             http_status,
             raw_json,
+            source=LIVE_SOURCE,
             cursor=buffer,
         )
         for tweet in tweets:
@@ -879,10 +1271,11 @@ class ArchiveStore:
             self.upsert_membership(
                 tweet.tweet_id,
                 collection_type,
+                source=LIVE_SOURCE,
                 sort_index=tweet.sort_index,
                 cursor=buffer,
             )
-        self._buffer_secondary_objects(tweets, cursor=buffer)
+        self._buffer_secondary_objects(tweets, source=LIVE_SOURCE, cursor=buffer)
         self.set_sync_state(
             collection_type,
             last_head_tweet_id=last_head_tweet_id,
@@ -1101,6 +1494,46 @@ class ArchiveStore:
             for row in self.list_article_rows(preview_only=preview_only, limit=limit)
         ]
 
+    def list_tweet_objects_for_enrichment(
+        self, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        rows = (
+            self.table.search()
+            .where(
+                "record_type = 'tweet_object' "
+                "AND (enrichment_state = 'pending' OR enrichment_state = 'transient_failure')"
+            )
+            .to_list()
+        )
+        rows.sort(
+            key=lambda row: (row.get("enrichment_checked_at") or "", row.get("tweet_id") or "")
+        )
+        return rows[:limit] if limit is not None else rows
+
+    def update_tweet_object_enrichment(
+        self,
+        tweet_id: str,
+        *,
+        enrichment_state: str,
+        enrichment_checked_at: str | None,
+        enrichment_http_status: int | None,
+        enrichment_reason: str | None,
+    ) -> None:
+        row = self._get_row(self._row_key_for_tweet_object(tweet_id))
+        if row is None:
+            raise KeyError(f"Tweet object row not found: {tweet_id}")
+        updated = dict(row)
+        updated.update(
+            {
+                "enrichment_state": enrichment_state,
+                "enrichment_checked_at": enrichment_checked_at,
+                "enrichment_http_status": enrichment_http_status,
+                "enrichment_reason": enrichment_reason,
+                "updated_at": utc_now(),
+            }
+        )
+        self.merge_rows([updated])
+
     def _refresh_tweet_records_for_detail(
         self,
         tweet: TimelineTweet,
@@ -1132,6 +1565,8 @@ class ArchiveStore:
                 extract_note_tweet_text(tweet.raw_json),
                 row.get("note_tweet_text"),
             )
+            updated["source"] = LIVE_SOURCE
+            updated["deleted_at"] = None
             updated["raw_json"] = self._json_value(tweet.raw_json)
             updated["last_seen_at"] = now
             updated["synced_at"] = now
@@ -1160,10 +1595,15 @@ class ArchiveStore:
             None,
             http_status,
             raw_json,
+            source=LIVE_SOURCE,
             cursor=buffer,
         )
         self._refresh_tweet_records_for_details([tweet], cursor=buffer)
-        self._buffer_secondary_graph(extract_secondary_objects(tweet.raw_json), cursor=buffer)
+        self._buffer_secondary_graph(
+            extract_secondary_objects(tweet.raw_json),
+            source=LIVE_SOURCE,
+            cursor=buffer,
+        )
         self._merge_records(list(buffer.records.values()))
 
     def persist_thread_detail(
@@ -1181,11 +1621,13 @@ class ArchiveStore:
             None,
             http_status,
             raw_json,
+            source=LIVE_SOURCE,
             cursor=buffer,
         )
         self._refresh_tweet_records_for_details(tweets, cursor=buffer)
         self._buffer_secondary_graph(
             extract_thread_objects([tweet.raw_json for tweet in tweets]),
+            source=LIVE_SOURCE,
             cursor=buffer,
         )
         self._merge_records(list(buffer.records.values()))
@@ -1394,6 +1836,7 @@ class ArchiveStore:
             "urls": self.table.count_rows("record_type = 'url'"),
             "url_refs": self.table.count_rows("record_type = 'url_ref'"),
             "articles": self.table.count_rows("record_type = 'article'"),
+            "import_manifests": self.table.count_rows("record_type = 'import_manifest'"),
             "sync_state": self.table.count_rows("record_type = 'sync_state'"),
         }
 
@@ -1445,6 +1888,7 @@ class ArchiveStore:
                     updated_row.get("conversation_id"),
                 ),
                 "lang": self._coalesce_value(legacy.get("lang"), updated_row.get("lang")),
+                "source": updated_row.get("source") or LIVE_SOURCE,
             }
             desired_updates["note_tweet_text"] = self._coalesce_value(
                 extract_note_tweet_text(raw),
@@ -1457,7 +1901,11 @@ class ArchiveStore:
             if changed:
                 buffer.records[updated_row["row_key"]] = updated_row
                 result.tweets_updated += 1
-            self._buffer_secondary_graph(extract_secondary_objects(raw), cursor=buffer)
+            self._buffer_secondary_graph(
+                extract_secondary_objects(raw),
+                source=self._normalized_source(row.get("source")),
+                cursor=buffer,
+            )
             if progress:
                 progress(1)
             if len(buffer.records) >= batch_size:
@@ -1481,6 +1929,7 @@ class ArchiveStore:
                 continue
             self._buffer_secondary_graph(
                 extract_thread_objects([tweet.raw_json for tweet in detail_tweets]),
+                source=self._normalized_source(row.get("source")),
                 cursor=buffer,
             )
             if len(buffer.records) >= batch_size:

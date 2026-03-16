@@ -553,6 +553,7 @@ Concrete merge rules from the first real fixture:
 - Import `like.js` with a stable synthetic archive-order `sort_index` encoded as negative numeric strings (`-1`, `-2`, ... in file order) so the values stay compatible with current integer-based sorting and fall behind real live timeline sort keys in newest-first views.
 - Import deleted authored tweets into the normal `tweets` collection membership and surface nullable `deleted_at` on both the membership `tweet` row and the normalized `tweet_object` row rather than inventing a separate tombstone collection.
 - Do not perform an unconditional per-item GraphQL fetch inline during import; instead, run normal bulk collection syncs first, then targeted per-item lookups only for rows that remain sparse after import.
+- Shipped import behavior: if auth is available, `tweetxvault import x-archive ...` runs the bulk `tweets` / `likes` follow-up automatically, but explicit per-item `TweetDetail` lookups stay operator-bounded via `--detail-lookups` (default `0`) so large archives do not fan out into an unbounded reconciliation crawl.
 - Track per-tweet live-enrichment status/result so explicit terminal misses stop retrying; only item-level lookup failures should mark `terminal_unavailable`.
 - Absence from a later live likes/bookmarks collection does **not** by itself mean the tweet is unavailable or that archive provenance should be removed.
 
@@ -590,8 +591,8 @@ tweetxvault threads expand --refresh TWEET_ID  # re-fetch an explicit target
 tweetxvault auth check                # run shared preflight, report local + remote readiness
 tweetxvault auth refresh-ids          # force query id refresh
 
-# reserved for a later ingest path
 tweetxvault import x-archive ARCHIVE  # zip or extracted directory
+tweetxvault import x-archive ARCHIVE --detail-lookups 100
 ```
 
 `--limit N` limits persisted sync pagination to N pages per collection (useful for testing or cautious first runs).

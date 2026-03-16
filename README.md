@@ -164,6 +164,18 @@ If the `[embed]` extra is installed, new tweets are automatically embedded after
 `--article-backfill` updates stored `raw_json` and normalized secondary rows inline, so it does not require a follow-up `tweetxvault rehydrate`.
 `tweetxvault sync all` still covers bookmarks + likes only; authored tweets stay opt-in via `tweetxvault sync tweets`.
 
+### Importing an X archive
+
+```bash
+# Import an official X archive ZIP or extracted directory
+uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip
+
+# Run a bounded TweetDetail follow-up after the automatic bulk tweets/likes reconciliation
+uv run tweetxvault import x-archive ~/Downloads/twitter-archive --detail-lookups 100
+```
+
+The importer maps authored tweets, deleted authored tweets, likes, and exported `tweets_media/` files into the same LanceDB archive used by live sync. It applies the same archive-owner guardrail as sync, short-circuits repeated imports of the same archive digest, runs bulk live `tweets` / `likes` reconciliation automatically when auth is available, and leaves sparse archive-only rows in a tracked pending state until you choose how many per-tweet `TweetDetail` lookups to allow with `--detail-lookups` (default `0`).
+
 ### Viewing your archive
 
 ```bash

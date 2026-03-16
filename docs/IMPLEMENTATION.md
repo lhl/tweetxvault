@@ -358,28 +358,29 @@ Fresh fixture status (2026-03-16):
   - `x_archive` wins for deleted authored tweets and already-exported media binaries.
   - `like.js` imports are sparse membership/provenance rows until live sync enriches them.
   - Do not rely on the current new-non-empty-wins coalescing semantics for live/archive merges.
-- [ ] Reserve CLI shape:
+- [x] Reserve CLI shape:
   - `tweetxvault import x-archive <zip-or-dir>`
-- [ ] Add storage-layer source-aware merge logic in `ArchiveStore`, using the normalized row `source` field as the winning-source marker instead of caller-side ad hoc merges.
+- [x] Add storage-layer source-aware merge logic in `ArchiveStore`, using the normalized row `source` field as the winning-source marker instead of caller-side ad hoc merges.
   - Treat pre-existing `source = NULL` rows as `live_graphql` for backward compatibility until a later backfill/migration populates them explicitly.
   - Start writing `source = "live_graphql"` from live sync and `source = "x_archive"` from archive import.
-- [ ] Add a dedicated `import_manifest` record type keyed by archive digest with generation date, status, warnings, and per-dataset counts.
-- [ ] Validate archive ownership before import writes by comparing `account.js.account.accountId` against the stored archive owner metadata.
-- [ ] Add a generic `parse_ytd_js(...)` / zip-directory loader for `manifest.js` plus `window.YTD.*` `data/*.js` parts, then layer per-file adapters on top.
-- [ ] Import authored tweets from `tweets.js` / `deleted-tweets.js` through a YTD-to-internal adapter, including nullable `deleted_at` support on both membership `tweet` rows and normalized `tweet_object` rows.
-- [ ] Import `like.js` into collection rows with a synthetic archive-order `sort_index` and raw provenance, while also seeding sparse global tweet placeholders for later enrichment.
+- [x] Add a dedicated `import_manifest` record type keyed by archive digest with generation date, status, warnings, and per-dataset counts.
+- [x] Validate archive ownership before import writes by comparing `account.js.account.accountId` against the stored archive owner metadata.
+- [x] Add a generic `parse_ytd_js(...)` / zip-directory loader for `manifest.js` plus `window.YTD.*` `data/*.js` parts, then layer per-file adapters on top.
+- [x] Import authored tweets from `tweets.js` / `deleted-tweets.js` through a YTD-to-internal adapter, including nullable `deleted_at` support on both membership `tweet` rows and normalized `tweet_object` rows.
+- [x] Import `like.js` into collection rows with a synthetic archive-order `sort_index` and raw provenance, while also seeding sparse global tweet placeholders for later enrichment.
   - Encode synthetic archive ordering as negative numeric-string sort indexes (`-1`, `-2`, ...) so existing integer-based ordering code keeps working.
-- [ ] Copy `tweets_media/` exports into the managed tweetxvault media layout, then register them on `media.local_path` / `download_state`.
-- [ ] Add post-import live reconciliation:
+- [x] Copy `tweets_media/` exports into the managed tweetxvault media layout, then register them on `media.local_path` / `download_state`.
+- [x] Add post-import live reconciliation:
   - run normal bulk live syncs first (`tweets`, `likes`, later bookmarks if available) to upgrade overlapping rows cheaply
   - run targeted per-item GraphQL lookups only for rows that remain sparse after the bulk pass
-- [ ] Track per-tweet live-enrichment fields on sparse `tweet_object` rows:
+  - Shipped behavior: bulk syncs run automatically when auth is available; per-item `TweetDetail` lookups stay explicitly bounded via `--detail-lookups` (default `0`) so huge like archives do not fan out into an unbounded follow-up crawl.
+- [x] Track per-tweet live-enrichment fields on sparse `tweet_object` rows:
   - `enrichment_state`
   - `enrichment_checked_at`
   - `enrichment_http_status`
   - `enrichment_reason`
-- [ ] Keep archive provenance even when a later live likes/bookmarks sync no longer includes that item; collection absence is not by itself a terminal lookup result.
-- [ ] Add regression fixtures/tests for repeated imports, live+archive merges, and archive-after-live precedence behavior.
+- [x] Keep archive provenance even when a later live likes/bookmarks sync no longer includes that item; collection absence is not by itself a terminal lookup result.
+- [x] Add regression fixtures/tests for repeated imports, live+archive merges, and archive-after-live precedence behavior.
 
 ## Review Cleanup
 

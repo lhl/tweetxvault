@@ -634,6 +634,67 @@ def test_expand_archive_threads_debug_auth_passes_status_callback(paths, monkeyp
     assert "threads: 0 processed, 0 expanded, 0 skipped, 0 failed" in output
 
 
+def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Path) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, None),
+    )
+    captured = {}
+
+    async def fake_import_x_archive(
+        archive,
+        *,
+        detail_lookups=0,
+        config=None,
+        paths=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        captured.update(
+            {
+                "archive": archive,
+                "detail_lookups": detail_lookups,
+                "auth_bundle": auth_bundle,
+            }
+        )
+        return SimpleNamespace(
+            skipped=False,
+            counts={
+                "authored_tweets": 2,
+                "deleted_authored_tweets": 1,
+                "likes": 3,
+                "media_files_copied": 4,
+            },
+            warnings=["archive does not contain a bookmark dataset"],
+            reconciled_collections=["tweets", "likes"],
+            detail_lookups=5,
+            detail_terminal_unavailable=1,
+            detail_transient_failures=2,
+            pending_enrichment=9,
+        )
+
+    monkeypatch.setattr(cli, "import_x_archive", fake_import_x_archive)
+    archive_path = tmp_path / "archive.zip"
+    archive_path.write_bytes(b"placeholder")
+
+    cli.import_x_archive_command(archive_path, detail_lookups=25)
+
+    assert captured == {
+        "archive": archive_path,
+        "detail_lookups": 25,
+        "auth_bundle": None,
+    }
+    output = buffer.getvalue()
+    assert "archive import: 2 authored, 1 deleted authored, 3 likes, 4 media files copied" in output
+    assert "live reconciliation: tweets, likes" in output
+    assert "detail enrichment: 5 refreshed, 1 terminal, 2 transient failures, 9 pending" in output
+    assert "archive does not contain a bookmark dataset" in output
+
+
 def test_expand_archive_threads_refresh_requires_targets(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)

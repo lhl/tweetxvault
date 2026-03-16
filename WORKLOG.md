@@ -2,6 +2,17 @@
 
 ## 2026-03-17
 
+- Implemented Task 16 end-to-end for official X archive ingestion:
+  - Added `tweetxvault/archive_import.py` plus `tweetxvault import x-archive <zip-or-dir>` in `tweetxvault/cli.py`
+  - Added content-based archive digest manifests, archive-owner validation, generic `parse_ytd_js(...)` loading for zip/directory inputs, authored/deleted tweet import, sparse `like.js` placeholders, and archive media copy-in to the managed `media/` layout
+  - Extended `tweetxvault/storage/backend.py` with source-aware live-vs-archive merge semantics, `deleted_at`, `import_manifest` rows, and sparse-tweet enrichment state fields (`enrichment_state`, `enrichment_checked_at`, `enrichment_http_status`, `enrichment_reason`)
+  - Wired post-import reconciliation so bulk live `tweets` / `likes` syncs run automatically when auth is available, while explicit per-item `TweetDetail` lookups stay bounded by `--detail-lookups` (default `0`) to avoid unbounded follow-up crawls on huge like archives
+  - Added regression coverage in `tests/test_archive_import.py`, `tests/test_cli.py`, and `tests/test_storage.py` for end-to-end import, zip-vs-dir idempotence, live/archive precedence in both directions, sparse placeholder handling, media copy registration, and CLI forwarding
+  - Validation:
+    - `uv run ruff check`
+    - `uv run ruff format --check`
+    - `uv run pytest -q`
+
 - Tightened the archive-import docs again before implementation handoff:
   - Added concrete enrichment field names in `docs/PLAN.md` (`enrichment_state`, `enrichment_checked_at`, `enrichment_http_status`, `enrichment_reason`) instead of leaving “last-checked/result metadata” implicit
   - Added `import_manifest` to the archive-model section in `docs/PLAN.md` so the planned record type is listed alongside the other row types
