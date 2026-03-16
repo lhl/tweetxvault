@@ -368,3 +368,11 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Landed approach: added a shared `locked_archive_job(...)` async context plus `resolve_job_context(...)` in `tweetxvault/jobs.py`, and moved the four runners onto that helper while keeping auth resolution outside the lock where needed.
   - Optimize semantics preserved: media/unfurl mark the job dirty after any processed rows; articles/threads only mark dirty after successful updates/expansions.
   - Coverage: direct helper tests now cover close/error/conditional-optimize behavior, and the existing media/unfurl/articles/threads runner tests still pass on top.
+- [x] Review item 3: reduce the repeated coalesce/timestamp boilerplate in `tweetxvault/storage/backend.py`.
+  - Current problem: each secondary `_..._record` builder repeats the same row timestamp setup and `existing[\"field\"] if existing else None` coalescing pattern.
+  - Landed approach: added a small internal `_RecordContext` helper plus `_coalesce_existing(...)` / `_record_with_context(...)` so the record builders share row/timestamp setup without turning into a generic mapper.
+  - Coverage: storage now has a regression proving a later thinner secondary payload does not wipe richer existing media/article fields.
+- [x] Review item 4: centralize the duplicate `utc_now` helper into a shared utility module.
+  - Current problem: identical `_utc_now()` helpers exist in `media.py`, `unfurl.py`, and `storage/backend.py`.
+  - Landed approach: moved the shared timestamp helper into `tweetxvault/utils.py` and reused it from storage, media, and unfurl.
+  - Coverage: the existing storage/media/unfurl tests stayed green after the helper move.

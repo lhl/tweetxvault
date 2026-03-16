@@ -616,6 +616,8 @@ Reserved for future (not implemented in MVP):
   - First cleanup item landed: de-duplicate the `sync bookmarks|likes|tweets|all` command implementations while preserving the existing CLI UX and option set.
 - [x] Reduce repetition across the post-sync batch runners (`media`, `unfurl`, `articles`, `threads`).
   - Next cleanup item landed: extracted the shared locked-store lifecycle while keeping each runner’s current “optimize only when changed” behavior.
+- [x] Reduce boilerplate in the LanceDB record builders and centralize common time helpers.
+  - Next cleanup items landed: added a small storage-record helper layer for coalescing/timestamp setup and moved the shared UTC timestamp helper into a proper utility module.
 
 ## Open Questions (Remaining)
 

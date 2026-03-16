@@ -6,7 +6,6 @@ import mimetypes
 import re
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -16,6 +15,7 @@ from rich.console import Console
 
 from tweetxvault.config import DEFAULT_USER_AGENT, AppConfig, XDGPaths
 from tweetxvault.jobs import locked_archive_job
+from tweetxvault.utils import utc_now
 
 _CONTENT_TYPE_EXTENSIONS = {
     "image/gif": ".gif",
@@ -33,10 +33,6 @@ class MediaDownloadResult:
     downloaded: int = 0
     skipped: int = 0
     failed: int = 0
-
-
-def _utc_now() -> str:
-    return datetime.now(tz=UTC).isoformat()
 
 
 def _safe_media_stem(value: str) -> str:
@@ -259,7 +255,7 @@ async def download_media(
                         thumbnail_sha256=state["thumbnail_sha256"],
                         thumbnail_byte_size=state["thumbnail_byte_size"],
                         thumbnail_content_type=state["thumbnail_content_type"],
-                        downloaded_at=_utc_now(),
+                        downloaded_at=utc_now(),
                         download_error=None,
                     )
                     result.downloaded += 1

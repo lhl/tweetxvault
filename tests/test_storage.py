@@ -412,6 +412,90 @@ def test_rehydrate_from_raw_json_rebuilds_secondary_rows(paths) -> None:
     store.close()
 
 
+def test_persist_page_preserves_richer_secondary_values_from_existing_rows(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    rich_tweet = _complex_tweet()
+    thin_quoted = make_tweet_result(
+        "200",
+        "quoted short",
+        user_id="2000",
+        media=[{"media_key": "7_quoted", "type": "video"}],
+    )
+    thin_raw = make_tweet_result(
+        "100",
+        "root short",
+        user_id="1000",
+        urls=[
+            make_url_entity(
+                "https://t.co/root",
+                "https://example.com/story",
+                display_url="example.com/story",
+            )
+        ],
+        media=[{"media_key": "3_root", "type": "photo"}],
+        quoted_tweet=thin_quoted,
+        article=make_article_result(
+            "article-1",
+            title="Article title",
+            preview_text="Article preview",
+            plain_text=None,
+            url=None,
+        ),
+    )
+    thin_tweet = TimelineTweet(
+        tweet_id="100",
+        text="root short",
+        author_id="1000",
+        author_username="user1000",
+        author_display_name="User 1000",
+        created_at="Sat Mar 14 00:00:00 +0000 2026",
+        sort_index="10",
+        raw_json=thin_raw,
+    )
+
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[rich_tweet],
+        last_head_tweet_id="100",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[thin_tweet],
+        last_head_tweet_id="100",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    article_row = store.table.search().where("record_type = 'article'").limit(1).to_list()[0]
+    assert article_row["content_text"] == "Article body"
+    assert article_row["canonical_url"] == "https://x.com/i/article/123"
+    assert article_row["status"] == "body_present"
+
+    media_rows = store.table.search().where("record_type = 'media'").to_list()
+    media_by_key = {row["media_key"]: row for row in media_rows}
+    assert media_by_key["3_root"]["media_url"] == "https://pbs.twimg.com/media/root.jpg"
+    assert (
+        media_by_key["7_quoted"]["media_url"]
+        == "https://video.twimg.com/ext_tw_video/quoted-hd.mp4"
+    )
+    assert media_by_key["7_quoted"]["variants_json"] is not None
+    store.close()
+
+
 def test_persist_thread_detail_keeps_context_tweets_out_of_memberships(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

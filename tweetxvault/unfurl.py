@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from html import unescape
 
 import httpx
@@ -13,6 +12,7 @@ from rich.console import Console
 from tweetxvault.config import DEFAULT_USER_AGENT, AppConfig, XDGPaths
 from tweetxvault.extractor import canonicalize_url
 from tweetxvault.jobs import locked_archive_job
+from tweetxvault.utils import utc_now
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _CANONICAL_RE = re.compile(
@@ -30,10 +30,6 @@ class UrlUnfurlResult:
     processed: int = 0
     updated: int = 0
     failed: int = 0
-
-
-def _utc_now() -> str:
-    return datetime.now(tz=UTC).isoformat()
 
 
 def _clean_html_text(value: str | None) -> str | None:
@@ -110,7 +106,7 @@ async def unfurl_urls(
                         site_name=row.get("site_name"),
                         content_type=row.get("content_type"),
                         unfurl_state="failed",
-                        last_fetched_at=_utc_now(),
+                        last_fetched_at=utc_now(),
                         download_error="missing URL to unfurl",
                     )
                     result.failed += 1
@@ -153,7 +149,7 @@ async def unfurl_urls(
                         site_name=site_name,
                         content_type=content_type,
                         unfurl_state="done",
-                        last_fetched_at=_utc_now(),
+                        last_fetched_at=utc_now(),
                         download_error=None,
                     )
                     result.updated += 1
@@ -168,7 +164,7 @@ async def unfurl_urls(
                         site_name=row.get("site_name"),
                         content_type=row.get("content_type"),
                         unfurl_state="failed",
-                        last_fetched_at=_utc_now(),
+                        last_fetched_at=utc_now(),
                         download_error=str(exc),
                     )
                     result.failed += 1

@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Landed review cleanup items 3 and 4 for storage record-builder boilerplate and duplicate time helpers:
+  - Added `tweetxvault/utils.py` with the shared `utc_now()` helper and switched `tweetxvault/storage/backend.py`, `tweetxvault/media.py`, and `tweetxvault/unfurl.py` over to it
+  - Refactored the LanceDB record builders in `tweetxvault/storage/backend.py` around a small `_RecordContext` helper plus `_coalesce_existing(...)` / `_record_with_context(...)` so row timestamp setup and existing-value coalescing are shared
+  - Kept the storage refactor intentionally local to the backend instead of introducing a generic record-mapping abstraction
+  - Added a storage regression proving a later thinner payload still preserves richer existing media/article secondary values
+  - Validation:
+    - `uv run pytest tests/test_storage.py tests/test_media.py tests/test_unfurl.py`
+    - `uv run ruff check tweetxvault/storage/backend.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/utils.py tests/test_storage.py`
+    - `uv run ruff format --check tweetxvault/storage/backend.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/utils.py tests/test_storage.py`
+
 - Landed review cleanup item 2 for runner lifecycle repetition:
   - Added `tweetxvault/jobs.py` with `resolve_job_context(...)` and `locked_archive_job(...)` so the shared config/path resolution, archive lock, store open/close, and conditional optimize flow lives in one place
   - Moved `tweetxvault/media.py`, `tweetxvault/unfurl.py`, `tweetxvault/articles.py`, and `tweetxvault/threads.py` onto the shared helper while preserving their existing optimize triggers

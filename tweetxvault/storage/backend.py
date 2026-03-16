@@ -11,7 +11,7 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -30,10 +30,7 @@ from tweetxvault.extractor import (
     extract_secondary_objects,
     extract_thread_objects,
 )
-
-
-def utc_now() -> str:
-    return datetime.now(tz=UTC).isoformat()
+from tweetxvault.utils import utc_now
 
 
 def _folder_key(folder_id: str | None) -> str:
@@ -58,6 +55,14 @@ class _PageBuffer:
     records: dict[str, dict[str, Any]] = field(default_factory=dict)
     pending_tweets: dict[str, TimelineTweet] = field(default_factory=dict)
     existing_rows: dict[str, dict[str, Any] | None] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class _RecordContext:
+    existing: dict[str, Any] | None
+    now: str
+    first_seen_at: str
+    added_at: str
 
 
 @dataclass(slots=True)
@@ -297,6 +302,48 @@ class ArchiveStore:
         added_at = existing["added_at"] if existing else stamp
         return existing, first_seen_at, added_at
 
+    def _record_context(
+        self,
+        row_key: str,
+        *,
+        cursor: _PageBuffer | None = None,
+    ) -> _RecordContext:
+        now = utc_now()
+        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
+        return _RecordContext(
+            existing=existing,
+            now=now,
+            first_seen_at=first_seen_at,
+            added_at=added_at,
+        )
+
+    @staticmethod
+    def _existing_value(context: _RecordContext, field_name: str) -> Any:
+        if context.existing is None:
+            return None
+        return context.existing.get(field_name)
+
+    def _coalesce_existing(
+        self,
+        context: _RecordContext,
+        field_name: str,
+        *values: Any,
+    ) -> Any:
+        return self._coalesce_value(*values, self._existing_value(context, field_name))
+
+    def _record_with_context(
+        self,
+        context: _RecordContext,
+        **overrides: Any,
+    ) -> dict[str, Any]:
+        return self._record(
+            **overrides,
+            first_seen_at=context.first_seen_at,
+            last_seen_at=context.now,
+            added_at=context.added_at,
+            synced_at=context.now,
+        )
+
     def _capture_record(
         self,
         operation: str,
@@ -353,44 +400,44 @@ class ArchiveStore:
     ) -> dict[str, Any]:
         row_key = self._row_key_for_tweet(tweet.tweet_id, collection_type, folder_id)
         legacy = tweet.raw_json.get("legacy") or {}
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor)
-        now = utc_now()
-        return self._record(
+        context = self._record_context(row_key, cursor=cursor)
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="tweet",
             tweet_id=tweet.tweet_id,
             collection_type=collection_type,
             folder_id=_folder_key(folder_id),
             sort_index=sort_index,
-            text=self._coalesce_value(tweet.text, existing["text"] if existing else None),
-            author_id=self._coalesce_value(
-                tweet.author_id, existing["author_id"] if existing else None
+            text=self._coalesce_existing(context, "text", tweet.text),
+            author_id=self._coalesce_existing(context, "author_id", tweet.author_id),
+            author_username=self._coalesce_existing(
+                context,
+                "author_username",
+                tweet.author_username,
             ),
-            author_username=self._coalesce_value(
-                tweet.author_username, existing["author_username"] if existing else None
+            author_display_name=self._coalesce_existing(
+                context,
+                "author_display_name",
+                tweet.author_display_name,
             ),
-            author_display_name=self._coalesce_value(
-                tweet.author_display_name, existing["author_display_name"] if existing else None
-            ),
-            created_at=self._coalesce_value(
-                tweet.created_at, existing["created_at"] if existing else None
-            ),
-            conversation_id=self._coalesce_value(
+            created_at=self._coalesce_existing(context, "created_at", tweet.created_at),
+            conversation_id=self._coalesce_existing(
+                context,
+                "conversation_id",
                 legacy.get("conversation_id_str"),
-                existing["conversation_id"] if existing else None,
             ),
-            lang=self._coalesce_value(legacy.get("lang"), existing["lang"] if existing else None),
-            note_tweet_text=self._coalesce_value(
+            lang=self._coalesce_existing(context, "lang", legacy.get("lang")),
+            note_tweet_text=self._coalesce_existing(
+                context,
+                "note_tweet_text",
                 extract_note_tweet_text(tweet.raw_json),
-                existing["note_tweet_text"] if existing else None,
             ),
-            raw_json=self._coalesce_value(
-                self._json_value(tweet.raw_json), existing["raw_json"] if existing else None
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(tweet.raw_json),
             ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def upsert_membership(
@@ -522,39 +569,41 @@ class ArchiveStore:
         cursor: _PageBuffer | None = None,
     ) -> dict[str, Any]:
         row_key = self._row_key_for_tweet_object(tweet.tweet_id)
-        now = utc_now()
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
-        return self._record(
+        context = self._record_context(row_key, cursor=cursor)
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="tweet_object",
             tweet_id=tweet.tweet_id,
-            text=self._coalesce_value(tweet.text, existing["text"] if existing else None) or "",
-            author_id=self._coalesce_value(
-                tweet.author_id, existing["author_id"] if existing else None
+            text=self._coalesce_existing(context, "text", tweet.text) or "",
+            author_id=self._coalesce_existing(context, "author_id", tweet.author_id),
+            author_username=self._coalesce_existing(
+                context,
+                "author_username",
+                tweet.author_username,
             ),
-            author_username=self._coalesce_value(
-                tweet.author_username, existing["author_username"] if existing else None
+            author_display_name=self._coalesce_existing(
+                context,
+                "author_display_name",
+                tweet.author_display_name,
             ),
-            author_display_name=self._coalesce_value(
-                tweet.author_display_name, existing["author_display_name"] if existing else None
+            created_at=self._coalesce_existing(context, "created_at", tweet.created_at),
+            conversation_id=self._coalesce_existing(
+                context,
+                "conversation_id",
+                tweet.conversation_id,
             ),
-            created_at=self._coalesce_value(
-                tweet.created_at, existing["created_at"] if existing else None
+            lang=self._coalesce_existing(context, "lang", tweet.lang),
+            note_tweet_text=self._coalesce_existing(
+                context,
+                "note_tweet_text",
+                tweet.note_tweet_text,
             ),
-            conversation_id=self._coalesce_value(
-                tweet.conversation_id, existing["conversation_id"] if existing else None
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(tweet.raw_json),
             ),
-            lang=self._coalesce_value(tweet.lang, existing["lang"] if existing else None),
-            note_tweet_text=self._coalesce_value(
-                tweet.note_tweet_text, existing["note_tweet_text"] if existing else None
-            ),
-            raw_json=self._coalesce_value(
-                self._json_value(tweet.raw_json), existing["raw_json"] if existing else None
-            ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def _tweet_relation_record(
@@ -568,145 +617,132 @@ class ArchiveStore:
             relation.relation_type,
             relation.target_tweet_id,
         )
-        now = utc_now()
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
-        return self._record(
+        context = self._record_context(row_key, cursor=cursor)
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="tweet_relation",
             tweet_id=relation.source_tweet_id,
             relation_type=relation.relation_type,
             target_tweet_id=relation.target_tweet_id,
-            raw_json=self._coalesce_value(
-                self._json_value(relation.raw_json), existing["raw_json"] if existing else None
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(relation.raw_json),
             ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def _media_record(self, media: Any, *, cursor: _PageBuffer | None = None) -> dict[str, Any]:
         row_key = self._row_key_for_media(media.tweet_id, media.media_key)
-        now = utc_now()
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
-        return self._record(
+        context = self._record_context(row_key, cursor=cursor)
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="media",
             tweet_id=media.tweet_id,
-            source=self._coalesce_value(media.source, existing["source"] if existing else None),
-            article_id=self._coalesce_value(
-                media.article_id, existing["article_id"] if existing else None
-            ),
+            source=self._coalesce_existing(context, "source", media.source),
+            article_id=self._coalesce_existing(context, "article_id", media.article_id),
             position=media.position,
             media_key=media.media_key,
-            media_type=self._coalesce_value(
-                media.media_type, existing["media_type"] if existing else None
+            media_type=self._coalesce_existing(context, "media_type", media.media_type),
+            media_url=self._coalesce_existing(context, "media_url", media.media_url),
+            thumbnail_url=self._coalesce_existing(
+                context,
+                "thumbnail_url",
+                media.thumbnail_url,
             ),
-            media_url=self._coalesce_value(
-                media.media_url, existing["media_url"] if existing else None
+            width=self._coalesce_existing(context, "width", media.width),
+            height=self._coalesce_existing(context, "height", media.height),
+            duration_millis=self._coalesce_existing(
+                context,
+                "duration_millis",
+                media.duration_millis,
             ),
-            thumbnail_url=self._coalesce_value(
-                media.thumbnail_url, existing["thumbnail_url"] if existing else None
-            ),
-            width=self._coalesce_value(media.width, existing["width"] if existing else None),
-            height=self._coalesce_value(media.height, existing["height"] if existing else None),
-            duration_millis=self._coalesce_value(
-                media.duration_millis, existing["duration_millis"] if existing else None
-            ),
-            variants_json=self._coalesce_value(
+            variants_json=self._coalesce_existing(
+                context,
+                "variants_json",
                 self._json_value(media.variants) if media.variants else None,
-                existing["variants_json"] if existing else None,
             ),
             download_state=self._coalesce_value(
-                existing["download_state"] if existing else None,
+                self._existing_value(context, "download_state"),
                 "pending",
             ),
-            local_path=existing["local_path"] if existing else None,
-            sha256=existing["sha256"] if existing else None,
-            byte_size=existing["byte_size"] if existing else None,
-            content_type=existing["content_type"] if existing else None,
-            thumbnail_local_path=existing["thumbnail_local_path"] if existing else None,
-            thumbnail_sha256=existing["thumbnail_sha256"] if existing else None,
-            thumbnail_byte_size=existing["thumbnail_byte_size"] if existing else None,
-            thumbnail_content_type=existing["thumbnail_content_type"] if existing else None,
-            downloaded_at=existing["downloaded_at"] if existing else None,
-            download_error=existing["download_error"] if existing else None,
-            raw_json=self._coalesce_value(
-                self._json_value(media.raw_json), existing["raw_json"] if existing else None
+            local_path=self._existing_value(context, "local_path"),
+            sha256=self._existing_value(context, "sha256"),
+            byte_size=self._existing_value(context, "byte_size"),
+            content_type=self._existing_value(context, "content_type"),
+            thumbnail_local_path=self._existing_value(context, "thumbnail_local_path"),
+            thumbnail_sha256=self._existing_value(context, "thumbnail_sha256"),
+            thumbnail_byte_size=self._existing_value(context, "thumbnail_byte_size"),
+            thumbnail_content_type=self._existing_value(context, "thumbnail_content_type"),
+            downloaded_at=self._existing_value(context, "downloaded_at"),
+            download_error=self._existing_value(context, "download_error"),
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(media.raw_json),
             ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def _url_record(self, url: Any, *, cursor: _PageBuffer | None = None) -> dict[str, Any]:
         row_key = self._row_key_for_url(url.url_hash)
-        now = utc_now()
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
-        return self._record(
+        context = self._record_context(row_key, cursor=cursor)
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="url",
             url_hash=url.url_hash,
             url=url.canonical_url,
-            expanded_url=self._coalesce_value(
-                url.expanded_url, existing["expanded_url"] if existing else None
-            ),
-            final_url=self._coalesce_value(
-                url.final_url, existing["final_url"] if existing else None
-            ),
+            expanded_url=self._coalesce_existing(context, "expanded_url", url.expanded_url),
+            final_url=self._coalesce_existing(context, "final_url", url.final_url),
             canonical_url=url.canonical_url,
-            url_host=self._coalesce_value(url.host, existing["url_host"] if existing else None),
-            title=self._coalesce_value(url.title, existing["title"] if existing else None),
-            description=self._coalesce_value(
-                url.description, existing["description"] if existing else None
-            ),
-            site_name=self._coalesce_value(
-                url.site_name, existing["site_name"] if existing else None
-            ),
+            url_host=self._coalesce_existing(context, "url_host", url.host),
+            title=self._coalesce_existing(context, "title", url.title),
+            description=self._coalesce_existing(context, "description", url.description),
+            site_name=self._coalesce_existing(context, "site_name", url.site_name),
             unfurl_state=self._coalesce_value(
-                existing["unfurl_state"] if existing else None,
+                self._existing_value(context, "unfurl_state"),
                 "pending",
             ),
-            last_fetched_at=existing["last_fetched_at"] if existing else None,
-            raw_json=self._coalesce_value(
-                self._json_value(url.raw_json), existing["raw_json"] if existing else None
+            last_fetched_at=self._existing_value(context, "last_fetched_at"),
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(url.raw_json),
             ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def _url_ref_record(self, url_ref: Any, *, cursor: _PageBuffer | None = None) -> dict[str, Any]:
         row_key = self._row_key_for_url_ref(url_ref.tweet_id, url_ref.position)
-        now = utc_now()
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
-        return self._record(
+        context = self._record_context(row_key, cursor=cursor)
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="url_ref",
             tweet_id=url_ref.tweet_id,
             position=url_ref.position,
-            url_hash=self._coalesce_value(
-                url_ref.url_hash, existing["url_hash"] if existing else None
+            url_hash=self._coalesce_existing(context, "url_hash", url_ref.url_hash),
+            url=self._coalesce_existing(context, "url", url_ref.short_url),
+            expanded_url=self._coalesce_existing(
+                context,
+                "expanded_url",
+                url_ref.expanded_url,
             ),
-            url=self._coalesce_value(url_ref.short_url, existing["url"] if existing else None),
-            expanded_url=self._coalesce_value(
-                url_ref.expanded_url, existing["expanded_url"] if existing else None
+            canonical_url=self._coalesce_existing(
+                context,
+                "canonical_url",
+                url_ref.canonical_url,
             ),
-            canonical_url=self._coalesce_value(
-                url_ref.canonical_url, existing["canonical_url"] if existing else None
+            display_url=self._coalesce_existing(
+                context,
+                "display_url",
+                url_ref.display_url,
             ),
-            display_url=self._coalesce_value(
-                url_ref.display_url, existing["display_url"] if existing else None
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(url_ref.raw_json),
             ),
-            raw_json=self._coalesce_value(
-                self._json_value(url_ref.raw_json), existing["raw_json"] if existing else None
-            ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def _article_record(
@@ -716,46 +752,46 @@ class ArchiveStore:
         cursor: _PageBuffer | None = None,
     ) -> dict[str, Any]:
         row_key = self._row_key_for_article(article.tweet_id)
-        now = utc_now()
-        existing, first_seen_at, added_at = self._row_timestamps(row_key, cursor=cursor, now=now)
-        content_text = self._coalesce_value(
-            article.content_text, existing["content_text"] if existing else None
-        )
+        context = self._record_context(row_key, cursor=cursor)
+        content_text = self._coalesce_existing(context, "content_text", article.content_text)
         status = (
             "body_present"
             if content_text
             else self._coalesce_value(
                 article.status,
-                existing["status"] if existing else None,
+                self._existing_value(context, "status"),
                 "preview_only",
             )
         )
-        return self._record(
+        return self._record_with_context(
+            context,
             row_key=row_key,
             record_type="article",
             tweet_id=article.tweet_id,
-            article_id=self._coalesce_value(
-                article.article_id, existing["article_id"] if existing else None
-            ),
-            title=self._coalesce_value(article.title, existing["title"] if existing else None),
-            summary_text=self._coalesce_value(
-                article.summary_text, existing["summary_text"] if existing else None
+            article_id=self._coalesce_existing(context, "article_id", article.article_id),
+            title=self._coalesce_existing(context, "title", article.title),
+            summary_text=self._coalesce_existing(
+                context,
+                "summary_text",
+                article.summary_text,
             ),
             content_text=content_text,
-            canonical_url=self._coalesce_value(
-                article.canonical_url, existing["canonical_url"] if existing else None
+            canonical_url=self._coalesce_existing(
+                context,
+                "canonical_url",
+                article.canonical_url,
             ),
-            published_at=self._coalesce_value(
-                article.published_at, existing["published_at"] if existing else None
+            published_at=self._coalesce_existing(
+                context,
+                "published_at",
+                article.published_at,
             ),
             status=status,
-            raw_json=self._coalesce_value(
-                self._json_value(article.raw_json), existing["raw_json"] if existing else None
+            raw_json=self._coalesce_existing(
+                context,
+                "raw_json",
+                self._json_value(article.raw_json),
             ),
-            first_seen_at=first_seen_at,
-            last_seen_at=now,
-            added_at=added_at,
-            synced_at=now,
         )
 
     def _buffer_secondary_graph(
