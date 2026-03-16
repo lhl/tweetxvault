@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from io import StringIO
+
 import httpx
 import pytest
+from rich.console import Console
 
 from tests.conftest import make_tweet_detail_response, make_tweet_result, make_url_entity
 from tweetxvault.client.timelines import TimelineTweet
@@ -230,3 +233,48 @@ async def test_expand_threads_respects_limit_before_linked_status_pass(
         assert store.list_raw_capture_target_ids("ThreadExpandDetail") == ["100"]
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_expand_threads_logs_rate_limit_progress(
+    paths,
+    config,
+    auth_bundle,
+) -> None:
+    _seed_thread_archive(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, color_system=None)
+    limited_config = config.model_copy(
+        update={
+            "sync": config.sync.model_copy(
+                update={
+                    "max_retries": 1,
+                    "backoff_base": 0.1,
+                    "cooldown_threshold": 1,
+                    "cooldown_duration": 0.0,
+                }
+            )
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, request=request)
+
+    result = await expand_threads(
+        targets=["100"],
+        config=limited_config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+        console=console,
+    )
+
+    assert result.processed == 1
+    assert result.expanded == 0
+    assert result.failed == 1
+    text = output.getvalue()
+    assert "threads: explicit target pass over 1 targets" in text
+    assert "thread 100: rate limited (HTTP 429), retry 1/1 in 0.1s" in text
+    assert "thread 100: rate limited repeatedly, cooling down for 0.0s" in text
+    assert "thread 100: failed (Rate limit persisted after retries and cooldown.)" in text

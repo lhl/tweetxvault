@@ -87,6 +87,7 @@ async def request_with_backoff(
     sync_config: SyncConfig,
     *,
     refresh_once: Callable[[], Awaitable[str]] | None = None,
+    status: Callable[[str], None] | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> httpx.Response:
     retries = 0
@@ -103,12 +104,22 @@ async def request_with_backoff(
             consecutive_429 += 1
             if retries < sync_config.max_retries:
                 delay = sync_config.backoff_base * (2**retries)
+                if status:
+                    status(
+                        "rate limited (HTTP 429), "
+                        f"retry {retries + 1}/{sync_config.max_retries} in {delay:.1f}s"
+                    )
                 retries += 1
                 await sleep(delay)
                 continue
             if consecutive_429 >= sync_config.cooldown_threshold and not used_cooldown:
                 used_cooldown = True
                 retries = 0
+                if status:
+                    status(
+                        "rate limited repeatedly, "
+                        f"cooling down for {sync_config.cooldown_duration:.1f}s"
+                    )
                 await sleep(sync_config.cooldown_duration)
                 continue
             raise RateLimitExhaustedError(
@@ -117,6 +128,8 @@ async def request_with_backoff(
 
         if is_stale_query_id(response) and refresh_once and not used_refresh:
             used_refresh = True
+            if status:
+                status("query ID stale (HTTP 404), refreshing once")
             url = await refresh_once()
             continue
 

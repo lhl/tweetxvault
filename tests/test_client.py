@@ -144,6 +144,7 @@ async def test_fetch_page_refreshes_once_on_404() -> None:
         return responses.popleft()
 
     refreshed = {"count": 0}
+    messages: list[str] = []
 
     async def refresh_once() -> str:
         refreshed["count"] += 1
@@ -152,13 +153,18 @@ async def test_fetch_page_refreshes_once_on_404() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     try:
         response = await fetch_page(
-            client, "https://example.com/one", SyncConfig(), refresh_once=refresh_once
+            client,
+            "https://example.com/one",
+            SyncConfig(),
+            refresh_once=refresh_once,
+            status=messages.append,
         )
     finally:
         await client.aclose()
 
     assert response.status_code == 200
     assert refreshed["count"] == 1
+    assert messages == ["query ID stale (HTTP 404), refreshing once"]
 
 
 @pytest.mark.asyncio
@@ -168,6 +174,7 @@ async def test_fetch_page_raises_after_repeated_429() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     delays: list[float] = []
+    messages: list[str] = []
 
     async def fake_sleep(delay: float) -> None:
         delays.append(delay)
@@ -180,9 +187,15 @@ async def test_fetch_page_raises_after_repeated_429() -> None:
                 SyncConfig(
                     max_retries=1, backoff_base=0.1, cooldown_threshold=1, cooldown_duration=0.2
                 ),
+                status=messages.append,
                 sleep=fake_sleep,
             )
     finally:
         await client.aclose()
 
     assert delays == [0.1, 0.2, 0.1]
+    assert messages == [
+        "rate limited (HTTP 429), retry 1/1 in 0.1s",
+        "rate limited repeatedly, cooling down for 0.2s",
+        "rate limited (HTTP 429), retry 1/1 in 0.1s",
+    ]

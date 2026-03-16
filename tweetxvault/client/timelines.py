@@ -116,6 +116,7 @@ async def fetch_page(
     sync_config: SyncConfig,
     *,
     refresh_once: Callable[[], Awaitable[str]] | None = None,
+    status: Callable[[str], None] | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> httpx.Response:
     return await request_with_backoff(
@@ -123,6 +124,7 @@ async def fetch_page(
         url,
         sync_config,
         refresh_once=refresh_once,
+        status=status,
         sleep=sleep,
     )
 

@@ -632,6 +632,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: locked down the graph-level merge precedence rules with focused unit tests instead of relying only on extraction/storage integrations.
 - [x] Batch media/unfurl row merges for LanceDB and clean up nearby minor issues.
   - Next cleanup item landed: stopped doing one merge per media/url update in the runners, and folded in the small readability/safety fixes in `cli.py` and `extractor.py`.
+- [x] Improve long-running runner observability where network retries make the CLI look stalled.
+  - Next cleanup item landed: `tweetxvault threads expand` now prints phase/progress output plus visible 429 retry/cooldown diagnostics so large thread-expansion jobs no longer look dead while the HTTP layer is backing off.
 
 ## Open Questions (Remaining)
 

@@ -404,3 +404,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `media` and `unfurl` currently do a LanceDB read + merge per item via `update_media_download(...)` / `update_url_unfurl(...)`, which is unnecessarily expensive at larger archive sizes.
   - Landed approach: added reusable row-update builders plus `ArchiveStore.merge_rows(...)`, switched media/unfurl to flush updated rows in batches, and folded in the low-risk CLI-parentheses + media-URL safety fixes while touching those files.
   - Coverage: media/unfurl tests now prove the batched merge path is actually used, and the existing state-transition coverage stayed green on top.
+- [x] Review item 12: improve long-running thread-expansion observability.
+  - Current problem: `tweetxvault threads expand` only emits per-target failures plus the final summary, so long runs can appear hung while they are retrying, cooling down on 429s, or scanning a large archive.
+  - Landed approach: added a shared request-status callback path in the HTTP client, then wired `threads expand` to print pass-level progress plus tweet-scoped 429 retry/cooldown and query-id-refresh messages.
+  - Coverage: client tests now lock in retry/cooldown and 404-refresh status messages, and thread tests now cover visible rate-limit diagnostics during an explicit-target expansion failure.

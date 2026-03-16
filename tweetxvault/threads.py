@@ -23,6 +23,8 @@ from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore
 from tweetxvault.sync import _resolve_query_ids
 
+_SCAN_PROGRESS_EVERY = 100
+
 
 @dataclass(slots=True)
 class ThreadExpandResult:
@@ -47,6 +49,30 @@ def _dedupe_targets(values: list[str]) -> tuple[list[str], int]:
     return unique, len(values) - len(unique)
 
 
+def _log_thread_status(console: Console, tweet_id: str, message: str) -> None:
+    console.print(f"thread {tweet_id}: {message}", highlight=False)
+
+
+def _log_scan_progress(
+    console: Console,
+    *,
+    phase: str,
+    scanned: int,
+    total: int,
+    result: ThreadExpandResult,
+) -> None:
+    if scanned % _SCAN_PROGRESS_EVERY != 0 and scanned != total:
+        return
+    console.print(
+        f"threads: {phase} {scanned}/{total} scanned, "
+        f"{result.processed} processed, "
+        f"{result.expanded} expanded, "
+        f"{result.skipped} skipped, "
+        f"{result.failed} failed",
+        highlight=False,
+    )
+
+
 async def _fetch_detail(
     *,
     tweet_id: str,
@@ -54,6 +80,7 @@ async def _fetch_detail(
     query_store: QueryIdStore,
     client: httpx.AsyncClient,
     config: AppConfig,
+    console: Console,
 ) -> tuple[dict[str, object], list]:
     async def refresh_once() -> str:
         refreshed = await refresh_query_ids(
@@ -69,6 +96,7 @@ async def _fetch_detail(
         build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
         config.sync,
         refresh_once=refresh_once,
+        status=lambda message: _log_thread_status(console, tweet_id, message),
     )
     payload = response.json()
     tweets = parse_tweet_detail_tweets(payload)
@@ -86,6 +114,7 @@ async def _expand_target(
     query_store: QueryIdStore,
     client: httpx.AsyncClient,
     config: AppConfig,
+    console: Console,
 ) -> list[str]:
     payload, tweets = await _fetch_detail(
         tweet_id=tweet_id,
@@ -93,6 +122,7 @@ async def _expand_target(
         query_store=query_store,
         client=client,
         config=config,
+        console=console,
     )
     store.persist_thread_detail(
         focal_tweet_id=tweet_id,
@@ -124,10 +154,11 @@ async def _try_expand_target(
             query_store=query_store,
             client=client,
             config=config,
+            console=console,
         )
     except Exception as exc:
         result.failed += 1
-        console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
+        _log_thread_status(console, tweet_id, f"failed ({exc})")
         return
 
     expanded_targets.add(tweet_id)
@@ -175,7 +206,11 @@ async def expand_threads(
                 )
                 result.skipped += duplicate_count
                 target_ids = requested[:limit] if limit is not None else requested
-                for tweet_id in target_ids:
+                console.print(
+                    f"threads: explicit target pass over {len(target_ids)} targets",
+                    highlight=False,
+                )
+                for scanned, tweet_id in enumerate(target_ids, start=1):
                     await _try_expand_target(
                         tweet_id=tweet_id,
                         store=store,
@@ -188,12 +223,32 @@ async def expand_threads(
                         result=result,
                         console=console,
                     )
+                    _log_scan_progress(
+                        console,
+                        phase="explicit",
+                        scanned=scanned,
+                        total=len(target_ids),
+                        result=result,
+                    )
             else:
-                for tweet_id in membership_ids:
+                console.print(
+                    "threads: membership pass over "
+                    f"{len(membership_ids)} archived tweets "
+                    f"({len(expanded_targets)} already expanded)",
+                    highlight=False,
+                )
+                for scanned, tweet_id in enumerate(membership_ids, start=1):
                     if limit is not None and result.processed >= limit:
                         break
                     if tweet_id in expanded_targets:
                         result.skipped += 1
+                        _log_scan_progress(
+                            console,
+                            phase="membership",
+                            scanned=scanned,
+                            total=len(membership_ids),
+                            result=result,
+                        )
                         continue
                     await _try_expand_target(
                         tweet_id=tweet_id,
@@ -207,9 +262,21 @@ async def expand_threads(
                         result=result,
                         console=console,
                     )
+                    _log_scan_progress(
+                        console,
+                        phase="membership",
+                        scanned=scanned,
+                        total=len(membership_ids),
+                        result=result,
+                    )
 
                 if limit is None or result.processed < limit:
-                    for row in store.list_url_ref_rows():
+                    url_ref_rows = store.list_url_ref_rows()
+                    console.print(
+                        f"threads: linked-status pass over {len(url_ref_rows)} archived url refs",
+                        highlight=False,
+                    )
+                    for scanned, row in enumerate(url_ref_rows, start=1):
                         if limit is not None and result.processed >= limit:
                             break
                         target_id = None
@@ -220,6 +287,13 @@ async def expand_threads(
                                 if target_id:
                                     break
                         if not target_id:
+                            _log_scan_progress(
+                                console,
+                                phase="linked-status",
+                                scanned=scanned,
+                                total=len(url_ref_rows),
+                                result=result,
+                            )
                             continue
                         source_tweet_id = row.get("tweet_id")
                         if (
@@ -228,6 +302,13 @@ async def expand_threads(
                             or target_id in known_tweet_ids
                         ):
                             result.skipped += 1
+                            _log_scan_progress(
+                                console,
+                                phase="linked-status",
+                                scanned=scanned,
+                                total=len(url_ref_rows),
+                                result=result,
+                            )
                             continue
                         await _try_expand_target(
                             tweet_id=target_id,
@@ -240,6 +321,13 @@ async def expand_threads(
                             known_tweet_ids=known_tweet_ids,
                             result=result,
                             console=console,
+                        )
+                        _log_scan_progress(
+                            console,
+                            phase="linked-status",
+                            scanned=scanned,
+                            total=len(url_ref_rows),
+                            result=result,
                         )
         finally:
             await client.aclose()

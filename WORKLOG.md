@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 12 for long-running thread-expansion observability:
+  - Added a shared request-status callback path in `tweetxvault/client/base.py` / `tweetxvault/client/timelines.py` so callers can surface 429 retry, cooldown, and query-id refresh events without hard-coding that logic into each runner
+  - Updated `tweetxvault/threads.py` to print phase-level progress (`explicit`, `membership`, `linked-status`) plus tweet-scoped retry/cooldown/failure messages, so `tweetxvault threads expand` no longer looks hung during long backoff windows
+  - Added client regressions in `tests/test_client.py` for 404 refresh-status and 429 retry/cooldown messages, plus a thread-runner regression in `tests/test_threads.py` that locks in visible rate-limit diagnostics for an explicit-target failure
+  - Validation:
+    - `uv run pytest`
+    - `uv run ruff check tweetxvault/client/base.py tweetxvault/client/timelines.py tweetxvault/threads.py tests/test_client.py tests/test_threads.py`
+    - `uv run ruff format --check tweetxvault/client/base.py tweetxvault/client/timelines.py tweetxvault/threads.py tests/test_client.py tests/test_threads.py`
+
 - Landed review cleanup item 11 for LanceDB batch updates in media/unfurl:
   - Added `ArchiveStore.merge_rows(...)` plus reusable media/url row-update builders in `tweetxvault/storage/backend.py`, then switched `tweetxvault/media.py` and `tweetxvault/unfurl.py` to flush row updates in batches instead of merging one item at a time
   - Added proof tests in `tests/test_media.py` and `tests/test_unfurl.py` that count `merge_rows(...)` calls so the new batched path is explicitly covered
