@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 2 for runner lifecycle repetition:
+  - Added `tweetxvault/jobs.py` with `resolve_job_context(...)` and `locked_archive_job(...)` so the shared config/path resolution, archive lock, store open/close, and conditional optimize flow lives in one place
+  - Moved `tweetxvault/media.py`, `tweetxvault/unfurl.py`, `tweetxvault/articles.py`, and `tweetxvault/threads.py` onto the shared helper while preserving their existing optimize triggers
+  - Kept auth resolution outside the archive lock for `articles` and `threads`, matching the pre-refactor behavior
+  - Added direct helper coverage in `tests/test_jobs.py` for conditional optimize, store close, and missing-archive failure handling
+  - Validation:
+    - `uv run pytest tests/test_jobs.py tests/test_media.py tests/test_unfurl.py tests/test_articles.py tests/test_threads.py`
+    - `uv run ruff check tweetxvault/jobs.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/articles.py tweetxvault/threads.py tests/test_jobs.py`
+    - `uv run ruff format --check tweetxvault/jobs.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/articles.py tweetxvault/threads.py tests/test_jobs.py`
+
 - Landed review cleanup item 1 for sync CLI repetition:
   - Refactored `tweetxvault/cli.py` so `sync bookmarks`, `sync likes`, and `sync tweets` are registered through one command factory and share one config/auth/error-handling helper with `sync all`
   - Kept the existing CLI command names, options, and output format stable while removing the copy-pasted sync command bodies

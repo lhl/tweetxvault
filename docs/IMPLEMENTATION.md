@@ -363,3 +363,8 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `sync bookmarks`, `sync likes`, `sync tweets`, and `sync all` repeat the same config/auth/error-handling flow.
   - Landed approach: registered the per-collection sync commands through one factory and moved shared config/auth/error handling into one helper, while keeping the existing command names and options unchanged.
   - Coverage: CLI forwarding now exercises `sync bookmarks`, `sync likes`, `sync tweets`, and `sync all` against the shared path.
+- [x] Review item 2: extract the shared locked-store batch-job skeleton used by `media.py`, `unfurl.py`, `articles.py`, and `threads.py`.
+  - Current problem: each runner repeats the same config/path resolution, archive lock acquisition, store open/close handling, and conditional optimize flow.
+  - Landed approach: added a shared `locked_archive_job(...)` async context plus `resolve_job_context(...)` in `tweetxvault/jobs.py`, and moved the four runners onto that helper while keeping auth resolution outside the lock where needed.
+  - Optimize semantics preserved: media/unfurl mark the job dirty after any processed rows; articles/threads only mark dirty after successful updates/expansions.
+  - Coverage: direct helper tests now cover close/error/conditional-optimize behavior, and the existing media/unfurl/articles/threads runner tests still pass on top.

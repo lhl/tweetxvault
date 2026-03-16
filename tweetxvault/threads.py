@@ -15,12 +15,13 @@ from tweetxvault.client.timelines import (
     parse_tweet_detail_response,
     parse_tweet_detail_tweets,
 )
-from tweetxvault.config import AppConfig, XDGPaths, ensure_paths, load_config
+from tweetxvault.config import AppConfig, XDGPaths
 from tweetxvault.exceptions import ConfigError
 from tweetxvault.extractor import extract_status_id_from_url
+from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
-from tweetxvault.storage import ArchiveStore, open_archive_store
-from tweetxvault.sync import ProcessLock, _resolve_query_ids
+from tweetxvault.storage import ArchiveStore
+from tweetxvault.sync import _resolve_query_ids
 
 
 @dataclass(slots=True)
@@ -111,135 +112,120 @@ async def expand_threads(
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
 ) -> ThreadExpandResult:
-    if config is None or paths is None:
-        loaded_config, loaded_paths = load_config()
-        config = config or loaded_config
-        paths = paths or loaded_paths
-    assert config is not None
-    assert paths is not None
-    paths = ensure_paths(paths)
+    config, paths = resolve_job_context(config=config, paths=paths)
     auth_bundle = auth_bundle or resolve_auth_bundle(config)
     console = console or Console(stderr=True)
 
-    lock = ProcessLock(paths.lock_file)
-    lock.acquire()
-    try:
-        store = open_archive_store(paths, create=False)
-        if store is None:
-            raise ConfigError("No local archive found.")
+    async with locked_archive_job(config=config, paths=paths) as job:
+        store = job.store
+        query_store = QueryIdStore(paths)
+        query_ids = await _resolve_query_ids(
+            query_store,
+            ["TweetDetail"],
+            force_refresh=not query_store.is_fresh(),
+            transport=transport,
+        )
+        result = ThreadExpandResult()
+        client = build_async_client(
+            auth_bundle,
+            timeout=config.sync.timeout,
+            transport=transport,
+        )
         try:
-            query_store = QueryIdStore(paths)
-            query_ids = await _resolve_query_ids(
-                query_store,
-                ["TweetDetail"],
-                force_refresh=not query_store.is_fresh(),
-                transport=transport,
-            )
-            result = ThreadExpandResult()
-            client = build_async_client(
-                auth_bundle,
-                timeout=config.sync.timeout,
-                transport=transport,
-            )
-            try:
-                expanded_targets = set(store.list_raw_capture_target_ids("ThreadExpandDetail"))
-                known_tweet_ids = store.list_known_tweet_ids()
-                membership_ids = store.list_membership_tweet_ids()
+            expanded_targets = set(store.list_raw_capture_target_ids("ThreadExpandDetail"))
+            known_tweet_ids = store.list_known_tweet_ids()
+            membership_ids = store.list_membership_tweet_ids()
 
-                if targets:
-                    requested, duplicate_count = _dedupe_targets(
-                        [normalize_thread_target(target) for target in targets]
-                    )
-                    result.skipped += duplicate_count
-                    target_ids = requested[:limit] if limit is not None else requested
-                    for tweet_id in target_ids:
-                        result.processed += 1
-                        try:
-                            discovered_ids = await _expand_target(
-                                tweet_id=tweet_id,
-                                store=store,
-                                query_ids=query_ids,
-                                query_store=query_store,
-                                client=client,
-                                config=config,
-                            )
-                            expanded_targets.add(tweet_id)
-                            known_tweet_ids.update(discovered_ids)
-                            result.expanded += 1
-                        except Exception as exc:
-                            result.failed += 1
-                            console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
-                else:
-                    for tweet_id in membership_ids:
+            if targets:
+                requested, duplicate_count = _dedupe_targets(
+                    [normalize_thread_target(target) for target in targets]
+                )
+                result.skipped += duplicate_count
+                target_ids = requested[:limit] if limit is not None else requested
+                for tweet_id in target_ids:
+                    result.processed += 1
+                    try:
+                        discovered_ids = await _expand_target(
+                            tweet_id=tweet_id,
+                            store=store,
+                            query_ids=query_ids,
+                            query_store=query_store,
+                            client=client,
+                            config=config,
+                        )
+                        expanded_targets.add(tweet_id)
+                        known_tweet_ids.update(discovered_ids)
+                        result.expanded += 1
+                    except Exception as exc:
+                        result.failed += 1
+                        console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
+            else:
+                for tweet_id in membership_ids:
+                    if limit is not None and result.processed >= limit:
+                        break
+                    if tweet_id in expanded_targets:
+                        result.skipped += 1
+                        continue
+                    result.processed += 1
+                    try:
+                        discovered_ids = await _expand_target(
+                            tweet_id=tweet_id,
+                            store=store,
+                            query_ids=query_ids,
+                            query_store=query_store,
+                            client=client,
+                            config=config,
+                        )
+                        expanded_targets.add(tweet_id)
+                        known_tweet_ids.update(discovered_ids)
+                        result.expanded += 1
+                    except Exception as exc:
+                        result.failed += 1
+                        console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
+
+                if limit is None or result.processed < limit:
+                    for row in store.list_url_ref_rows():
                         if limit is not None and result.processed >= limit:
                             break
-                        if tweet_id in expanded_targets:
+                        target_id = None
+                        for field_name in ("canonical_url", "expanded_url", "url"):
+                            candidate = row.get(field_name)
+                            if isinstance(candidate, str):
+                                target_id = extract_status_id_from_url(candidate)
+                                if target_id:
+                                    break
+                        if not target_id:
+                            continue
+                        source_tweet_id = row.get("tweet_id")
+                        if (
+                            target_id == source_tweet_id
+                            or target_id in expanded_targets
+                            or target_id in known_tweet_ids
+                        ):
                             result.skipped += 1
                             continue
                         result.processed += 1
                         try:
                             discovered_ids = await _expand_target(
-                                tweet_id=tweet_id,
+                                tweet_id=target_id,
                                 store=store,
                                 query_ids=query_ids,
                                 query_store=query_store,
                                 client=client,
                                 config=config,
                             )
-                            expanded_targets.add(tweet_id)
+                            expanded_targets.add(target_id)
                             known_tweet_ids.update(discovered_ids)
                             result.expanded += 1
                         except Exception as exc:
                             result.failed += 1
-                            console.print(f"thread {tweet_id}: failed ({exc})", highlight=False)
-
-                    if limit is None or result.processed < limit:
-                        for row in store.list_url_ref_rows():
-                            if limit is not None and result.processed >= limit:
-                                break
-                            target_id = None
-                            for field_name in ("canonical_url", "expanded_url", "url"):
-                                candidate = row.get(field_name)
-                                if isinstance(candidate, str):
-                                    target_id = extract_status_id_from_url(candidate)
-                                    if target_id:
-                                        break
-                            if not target_id:
-                                continue
-                            source_tweet_id = row.get("tweet_id")
-                            if (
-                                target_id == source_tweet_id
-                                or target_id in expanded_targets
-                                or target_id in known_tweet_ids
-                            ):
-                                result.skipped += 1
-                                continue
-                            result.processed += 1
-                            try:
-                                discovered_ids = await _expand_target(
-                                    tweet_id=target_id,
-                                    store=store,
-                                    query_ids=query_ids,
-                                    query_store=query_store,
-                                    client=client,
-                                    config=config,
-                                )
-                                expanded_targets.add(target_id)
-                                known_tweet_ids.update(discovered_ids)
-                                result.expanded += 1
-                            except Exception as exc:
-                                result.failed += 1
-                                console.print(
-                                    f"thread {target_id}: failed ({exc})",
-                                    highlight=False,
-                                )
-            finally:
-                await client.aclose()
-
-            if result.expanded > 0:
-                store.optimize()
-            return result
+                            console.print(
+                                f"thread {target_id}: failed ({exc})",
+                                highlight=False,
+                            )
         finally:
-            store.close()
-    finally:
-        lock.release()
+            await client.aclose()
+
+        if result.expanded > 0:
+            job.mark_dirty()
+        return result

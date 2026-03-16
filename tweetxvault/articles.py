@@ -15,11 +15,11 @@ from tweetxvault.client.timelines import (
     fetch_page,
     parse_tweet_detail_response,
 )
-from tweetxvault.config import AppConfig, XDGPaths, ensure_paths, load_config
+from tweetxvault.config import AppConfig, XDGPaths
 from tweetxvault.exceptions import ConfigError
+from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
-from tweetxvault.storage import open_archive_store
-from tweetxvault.sync import ProcessLock, _resolve_query_ids
+from tweetxvault.sync import _resolve_query_ids
 
 _STATUS_URL_RE = re.compile(r"/status/(\d+)")
 
@@ -52,82 +52,65 @@ async def refresh_articles(
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
 ) -> ArticleRefreshResult:
-    if config is None or paths is None:
-        loaded_config, loaded_paths = load_config()
-        config = config or loaded_config
-        paths = paths or loaded_paths
-    assert config is not None
-    assert paths is not None
-    paths = ensure_paths(paths)
+    config, paths = resolve_job_context(config=config, paths=paths)
     auth_bundle = auth_bundle or resolve_auth_bundle(config)
     console = console or Console(stderr=True)
 
-    lock = ProcessLock(paths.lock_file)
-    lock.acquire()
-    try:
-        store = open_archive_store(paths, create=False)
-        if store is None:
-            raise ConfigError("No local archive found.")
-        try:
-            if targets:
-                tweet_ids = [normalize_article_target(target) for target in targets]
-            else:
-                tweet_ids = store.get_article_tweet_ids(preview_only=preview_only, limit=limit)
-            result = ArticleRefreshResult()
-            if not tweet_ids:
-                return result
-
-            query_store = QueryIdStore(paths)
-            query_ids = await _resolve_query_ids(
-                query_store,
-                ["TweetDetail"],
-                force_refresh=not query_store.is_fresh(),
-                transport=transport,
-            )
-            client = build_async_client(
-                auth_bundle, timeout=config.sync.timeout, transport=transport
-            )
-            try:
-                for tweet_id in tweet_ids:
-                    result.processed += 1
-
-                    async def refresh_once(tweet_id: str = tweet_id) -> str:
-                        refreshed = await refresh_query_ids(
-                            query_store,
-                            operations=["TweetDetail"],
-                            client=client,
-                        )
-                        query_ids.update(refreshed)
-                        return build_tweet_detail_url(query_ids["TweetDetail"], tweet_id)
-
-                    try:
-                        response = await fetch_page(
-                            client,
-                            build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
-                            config.sync,
-                            refresh_once=refresh_once,
-                        )
-                        payload = response.json()
-                        tweet = parse_tweet_detail_response(payload, tweet_id)
-                        if tweet is None:
-                            raise ValueError(f"TweetDetail did not include focal tweet {tweet_id}.")
-                        store.persist_tweet_detail(
-                            tweet=tweet,
-                            raw_json=payload,
-                            http_status=response.status_code,
-                        )
-                        result.updated += 1
-                    except Exception as exc:
-                        result.failed += 1
-                        if console:
-                            console.print(f"article {tweet_id}: failed ({exc})", highlight=False)
-            finally:
-                await client.aclose()
-
-            if result.updated > 0:
-                store.optimize()
+    async with locked_archive_job(config=config, paths=paths) as job:
+        store = job.store
+        if targets:
+            tweet_ids = [normalize_article_target(target) for target in targets]
+        else:
+            tweet_ids = store.get_article_tweet_ids(preview_only=preview_only, limit=limit)
+        result = ArticleRefreshResult()
+        if not tweet_ids:
             return result
+
+        query_store = QueryIdStore(paths)
+        query_ids = await _resolve_query_ids(
+            query_store,
+            ["TweetDetail"],
+            force_refresh=not query_store.is_fresh(),
+            transport=transport,
+        )
+        client = build_async_client(auth_bundle, timeout=config.sync.timeout, transport=transport)
+        try:
+            for tweet_id in tweet_ids:
+                result.processed += 1
+
+                async def refresh_once(tweet_id: str = tweet_id) -> str:
+                    refreshed = await refresh_query_ids(
+                        query_store,
+                        operations=["TweetDetail"],
+                        client=client,
+                    )
+                    query_ids.update(refreshed)
+                    return build_tweet_detail_url(query_ids["TweetDetail"], tweet_id)
+
+                try:
+                    response = await fetch_page(
+                        client,
+                        build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
+                        config.sync,
+                        refresh_once=refresh_once,
+                    )
+                    payload = response.json()
+                    tweet = parse_tweet_detail_response(payload, tweet_id)
+                    if tweet is None:
+                        raise ValueError(f"TweetDetail did not include focal tweet {tweet_id}.")
+                    store.persist_tweet_detail(
+                        tweet=tweet,
+                        raw_json=payload,
+                        http_status=response.status_code,
+                    )
+                    result.updated += 1
+                except Exception as exc:
+                    result.failed += 1
+                    if console:
+                        console.print(f"article {tweet_id}: failed ({exc})", highlight=False)
         finally:
-            store.close()
-    finally:
-        lock.release()
+            await client.aclose()
+
+        if result.updated > 0:
+            job.mark_dirty()
+        return result

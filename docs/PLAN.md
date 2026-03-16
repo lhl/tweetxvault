@@ -614,6 +614,8 @@ Reserved for future (not implemented in MVP):
 
 - [x] Reduce command-layer repetition after the content-expansion milestone.
   - First cleanup item landed: de-duplicate the `sync bookmarks|likes|tweets|all` command implementations while preserving the existing CLI UX and option set.
+- [x] Reduce repetition across the post-sync batch runners (`media`, `unfurl`, `articles`, `threads`).
+  - Next cleanup item landed: extracted the shared locked-store lifecycle while keeping each runner’s current “optimize only when changed” behavior.
 
 ## Open Questions (Remaining)
 
