@@ -762,6 +762,53 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
     assert "detail enrichment: 7 refreshed, 0 terminal, 1 transient failures, 5 pending" in output
 
 
+def test_import_enrich_runs_followup_for_existing_imports(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, None),
+    )
+    captured = {}
+
+    async def fake_enrich_imported_archive(
+        *,
+        limit=None,
+        config=None,
+        paths=None,
+        auth_bundle=None,
+        transport=None,
+        console=None,
+    ):
+        captured.update(
+            {
+                "limit": limit,
+                "auth_bundle": auth_bundle,
+            }
+        )
+        return SimpleNamespace(
+            warnings=["detail enrichment failed: upstream 429"],
+            reconciled_collections=["tweets", "likes"],
+            detail_lookups=9,
+            detail_terminal_unavailable=2,
+            detail_transient_failures=1,
+            pending_enrichment=4,
+        )
+
+    monkeypatch.setattr(cli, "enrich_imported_archive", fake_enrich_imported_archive)
+
+    cli.import_archive_enrich(limit=50)
+
+    assert captured == {"limit": 50, "auth_bundle": None}
+    output = buffer.getvalue()
+    assert "archive enrich: existing imported archive data" in output
+    assert "live reconciliation: tweets, likes" in output
+    assert "detail enrichment: 9 refreshed, 2 terminal, 1 transient failures, 4 pending" in output
+    assert "detail enrichment failed: upstream 429" in output
+
+
 def test_expand_archive_threads_refresh_requires_targets(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)

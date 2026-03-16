@@ -175,6 +175,12 @@ uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip --enrich
 
 # Run a bounded TweetDetail follow-up after the automatic bulk tweets/likes reconciliation
 uv run tweetxvault import x-archive ~/Downloads/twitter-archive --detail-lookups 100
+
+# Continue pending TweetDetail follow-up later without re-reading the archive ZIP
+uv run tweetxvault import enrich
+
+# Or run the follow-up in bounded batches
+uv run tweetxvault import enrich --limit 500
 ```
 
 The importer maps authored tweets, deleted authored tweets, likes, and exported `tweets_media/` files into the same LanceDB archive used by live sync. It applies the same archive-owner guardrail as sync, runs bulk live `tweets` / `likes` reconciliation automatically when auth is available, and keeps sparse archive-only rows in a tracked pending state until you choose how much per-tweet follow-up to run.
@@ -186,7 +192,8 @@ Import follow-up options:
 - `--detail-lookups N` runs a bounded TweetDetail pass for at most `N` pending sparse tweets after the bulk live syncs.
 - `--enrich` runs the TweetDetail pass for **all** currently pending sparse tweets after the bulk live syncs.
 - If the same archive digest was already imported, a plain re-run still short-circuits, but `--enrich` reuses the existing import and runs only the follow-up enrichment instead of re-importing the ZIP contents.
-- If you want broader TweetDetail-based context capture later, `uv run tweetxvault threads expand` is the follow-up command for that.
+- `tweetxvault import enrich` reruns that same archive-specific follow-up later against already imported archive data, without needing the original ZIP or directory path again.
+- `tweetxvault threads expand` is the broader TweetDetail-based context/thread capture command; use it when you want parents, replies, and linked status URLs beyond the archive-placeholder follow-up.
 
 ### Viewing your archive
 

@@ -2,6 +2,17 @@
 
 ## 2026-03-17
 
+- Added a standalone archive follow-up command so users can finish pending TweetDetail work after import without the original ZIP path:
+  - Added `tweetxvault import enrich [--limit N]` as the rerunnable archive-specific follow-up job, while keeping `tweetxvault import x-archive --enrich` as the one-shot import-and-finish path
+  - Reused the shared archive reconciliation/pending-row enrichment runner for both entry points and restricted standalone enrich discovery to completed import manifests
+  - Clarified the README/implementation notes around when to use `import enrich` versus the broader `tweetxvault threads expand` command
+  - Added focused archive/CLI regressions for missing-completed-import handling, standalone enrich forwarding, and standalone enrich result reporting
+  - Validation:
+    - `uv run pytest tests/test_archive_import.py tests/test_cli.py -q`
+    - `uv run ruff check`
+    - `uv run ruff format --check`
+    - `uv run pytest -q`
+
 - Smoothed the archive-import follow-up UX after the operator review:
   - Added `tweetxvault import x-archive --enrich` so users can rerun the same archive digest and perform the pending TweetDetail follow-up without re-importing the ZIP contents
   - Kept plain repeated imports digest-idempotent, but changed repeated imports with `--enrich` to reuse the existing import manifest/counts and run the follow-up reconciliation/enrichment path instead of short-circuiting immediately

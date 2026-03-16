@@ -20,7 +20,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from tweetxvault.archive_import import import_x_archive
+from tweetxvault.archive_import import enrich_imported_archive, import_x_archive
 from tweetxvault.articles import refresh_articles
 from tweetxvault.auth import (
     BrowserCandidate,
@@ -231,6 +231,23 @@ def _with_auto_optimize(store, paths, console: Console, fn):
             console.print("[red]Archive optimize is blocked while another job is writing.[/red]")
             raise typer.Exit(2) from lock_exc
         return fn(store)
+
+
+def _print_archive_followup(console: Console, result: Any) -> None:
+    if result.reconciled_collections:
+        console.print(
+            "live reconciliation: " + ", ".join(result.reconciled_collections),
+            highlight=False,
+        )
+    console.print(
+        "detail enrichment: "
+        f"{result.detail_lookups} refreshed, "
+        f"{result.detail_terminal_unavailable} terminal, "
+        f"{result.detail_transient_failures} transient failures, "
+        f"{result.pending_enrichment} pending"
+    )
+    for warning in result.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
 
 
 def _run_sync_command(
@@ -758,20 +775,56 @@ def import_x_archive_command(
         f"{result.counts.get('likes', 0)} likes, "
         f"{result.counts.get('media_files_copied', 0)} media files copied"
     )
-    if result.reconciled_collections:
-        console.print(
-            "live reconciliation: " + ", ".join(result.reconciled_collections),
-            highlight=False,
+    _print_archive_followup(console, result)
+
+
+@import_app.command("enrich")
+def import_archive_enrich(
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            min=1,
+            help=(
+                "Maximum number of pending sparse archive tweets to enrich via X's "
+                "per-tweet TweetDetail API after bulk live syncs."
+            ),
+        ),
+    ] = None,
+    browser: SYNC_BROWSER_OPTION = None,
+    profile: SYNC_PROFILE_OPTION = None,
+    profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    debug_auth: DEBUG_AUTH_OPTION = False,
+) -> None:
+    console = _configure_logging()
+    try:
+        config, paths = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+            debug_auth=debug_auth,
         )
-    console.print(
-        "detail enrichment: "
-        f"{result.detail_lookups} refreshed, "
-        f"{result.detail_terminal_unavailable} terminal, "
-        f"{result.detail_transient_failures} transient failures, "
-        f"{result.pending_enrichment} pending"
-    )
-    for warning in result.warnings:
-        console.print(f"[yellow]{warning}[/yellow]")
+        result = asyncio.run(
+            enrich_imported_archive(
+                limit=limit,
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                console=console,
+            )
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    console.print("archive enrich: existing imported archive data", highlight=False)
+    _print_archive_followup(console, result)
 
 
 @media_app.command("download")

@@ -10,7 +10,7 @@ import pytest
 from rich.console import Console
 
 import tweetxvault.archive_import as archive_import
-from tweetxvault.archive_import import import_x_archive
+from tweetxvault.archive_import import enrich_imported_archive, import_x_archive
 from tweetxvault.auth import ResolvedAuthBundle
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
@@ -440,6 +440,63 @@ def test_repeated_import_can_reuse_existing_archive_for_enrich_followup(
     assert manifest_counts["detail_lookups"] == 3
     assert manifest_counts["pending_enrichment"] == 4
     store.close()
+
+
+def test_enrich_imported_archive_requires_completed_import(paths) -> None:
+    with pytest.raises(ConfigError, match="No completed X archive import found"):
+        asyncio.run(
+            enrich_imported_archive(
+                config=AppConfig(),
+                paths=paths,
+                console=_console(),
+            )
+        )
+
+
+def test_enrich_imported_archive_reuses_existing_import_state(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+
+    asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    captured: dict[str, object] = {}
+
+    async def fake_reconciliation(**kwargs):
+        captured["collections"] = kwargs["collections"]
+        return ["tweets", "likes"], ["bulk reconciliation warning"], _auth_bundle()
+
+    async def fake_enrich_pending_rows(**kwargs):
+        captured["limit"] = kwargs["limit"]
+        return 4, 1, 2, 3
+
+    monkeypatch.setattr(archive_import, "_run_live_reconciliation", fake_reconciliation)
+    monkeypatch.setattr(archive_import, "_enrich_pending_rows", fake_enrich_pending_rows)
+
+    result = asyncio.run(
+        enrich_imported_archive(
+            limit=25,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert captured == {"collections": ["tweets", "likes"], "limit": 25}
+    assert result.reconciled_collections == ["tweets", "likes"]
+    assert result.warnings == ["bulk reconciliation warning"]
+    assert result.detail_lookups == 4
+    assert result.detail_terminal_unavailable == 1
+    assert result.detail_transient_failures == 2
+    assert result.pending_enrichment == 3
 
 
 def test_archive_import_does_not_downgrade_existing_live_tweet_object(

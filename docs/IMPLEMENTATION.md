@@ -396,6 +396,10 @@ Fresh fixture status (2026-03-16):
   - added `tweetxvault import x-archive --enrich` as the “do the rest” path for pending sparse archive tweets
   - changed repeated imports so a plain rerun still short-circuits by digest, but `--enrich` reuses the existing import and runs the follow-up enrichment instead of skipping outright
   - documented `tweetxvault threads expand` as the broader incremental TweetDetail/context follow-up command after import
+- [x] Added a standalone archive follow-up command:
+  - added `tweetxvault import enrich [--limit N]` so pending archive-placeholder enrichment can be resumed later without the original ZIP/directory path
+  - routed both `import x-archive --enrich` and `import enrich` through the same reconciliation + pending-row follow-up runner
+  - restricted standalone enrich discovery to completed archive imports so stale failed manifests do not masquerade as resumable archive state
 
 ## Review Cleanup
 

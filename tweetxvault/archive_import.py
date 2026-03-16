@@ -74,6 +74,16 @@ class ArchiveImportResult:
     pending_enrichment: int = 0
 
 
+@dataclass(slots=True)
+class ArchiveEnrichResult:
+    warnings: list[str] = field(default_factory=list)
+    reconciled_collections: list[str] = field(default_factory=list)
+    detail_lookups: int = 0
+    detail_terminal_unavailable: int = 0
+    detail_transient_failures: int = 0
+    pending_enrichment: int = 0
+
+
 class _ArchiveInput:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -604,9 +614,18 @@ def _copy_exported_media(
         warnings.append(f"{unmatched} archive media files did not match normalized media rows.")
 
 
+def _followup_collections_from_counts(counts: dict[str, int]) -> list[str]:
+    collections: list[str] = []
+    if counts.get("authored_tweets") or counts.get("deleted_authored_tweets"):
+        collections.append("tweets")
+    if counts.get("likes"):
+        collections.append("likes")
+    return collections
+
+
 async def _run_live_reconciliation(
     *,
-    counts: dict[str, int],
+    collections: list[str],
     config: AppConfig,
     paths: XDGPaths,
     auth_bundle: ResolvedAuthBundle | None,
@@ -620,11 +639,6 @@ async def _run_live_reconciliation(
         warnings.append(f"live reconciliation skipped: {exc}")
         return [], warnings, None
 
-    collections: list[str] = []
-    if counts.get("authored_tweets") or counts.get("deleted_authored_tweets"):
-        collections.append("tweets")
-    if counts.get("likes"):
-        collections.append("likes")
     completed: list[str] = []
     for collection in collections:
         try:
@@ -642,6 +656,61 @@ async def _run_live_reconciliation(
         except Exception as exc:
             warnings.append(f"{collection} reconciliation failed: {exc}")
     return completed, warnings, resolved_auth
+
+
+async def _run_archive_followup(
+    *,
+    collections: list[str],
+    detail_limit: int | None,
+    config: AppConfig,
+    paths: XDGPaths,
+    auth_bundle: ResolvedAuthBundle | None,
+    transport: httpx.AsyncBaseTransport | None,
+    console: Console,
+) -> ArchiveEnrichResult:
+    reconciled_collections, reconcile_warnings, resolved_auth = await _run_live_reconciliation(
+        collections=collections,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=transport,
+        console=console,
+    )
+    warnings = list(reconcile_warnings)
+    detail_succeeded = 0
+    detail_terminal = 0
+    detail_transient = 0
+    pending = 0
+    if resolved_auth is not None:
+        try:
+            (
+                detail_succeeded,
+                detail_terminal,
+                detail_transient,
+                pending,
+            ) = await _enrich_pending_rows(
+                limit=detail_limit,
+                config=config,
+                paths=paths,
+                auth_bundle=resolved_auth,
+                transport=transport,
+                console=console,
+            )
+        except Exception as exc:
+            warnings.append(f"detail enrichment failed: {exc}")
+            async with locked_archive_job(config=config, paths=paths) as job:
+                pending = len(job.store.list_tweet_objects_for_enrichment())
+    else:
+        async with locked_archive_job(config=config, paths=paths) as job:
+            pending = len(job.store.list_tweet_objects_for_enrichment())
+    return ArchiveEnrichResult(
+        warnings=warnings,
+        reconciled_collections=reconciled_collections,
+        detail_lookups=detail_succeeded,
+        detail_terminal_unavailable=detail_terminal,
+        detail_transient_failures=detail_transient,
+        pending_enrichment=pending,
+    )
 
 
 async def _enrich_pending_rows(
@@ -789,6 +858,59 @@ def _manifest_counts(manifest_row: dict[str, Any] | None) -> dict[str, int]:
     return counts
 
 
+def _list_import_manifest_rows(store: ArchiveStore) -> list[dict[str, Any]]:
+    return (
+        store.table.search()
+        .where("record_type = 'import_manifest' AND status = 'completed'")
+        .to_list()
+    )
+
+
+def _aggregate_import_counts(manifest_rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = _initial_counts()
+    for row in manifest_rows:
+        parsed = _manifest_counts(row)
+        for key, value in parsed.items():
+            counts[key] += value
+    return counts
+
+
+async def enrich_imported_archive(
+    *,
+    limit: int | None = None,
+    config: AppConfig | None = None,
+    paths: XDGPaths | None = None,
+    auth_bundle: ResolvedAuthBundle | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+    console: Console | None = None,
+) -> ArchiveEnrichResult:
+    config, paths = resolve_job_context(config=config, paths=paths)
+    console = console or Console(stderr=True)
+    try:
+        async with locked_archive_job(config=config, paths=paths) as job:
+            manifest_rows = _list_import_manifest_rows(job.store)
+            if not manifest_rows:
+                raise ConfigError(
+                    "No completed X archive import found. Run 'tweetxvault import x-archive' first."
+                )
+            counts = _aggregate_import_counts(manifest_rows)
+    except ConfigError as exc:
+        if str(exc) == "No local archive found.":
+            raise ConfigError(
+                "No completed X archive import found. Run 'tweetxvault import x-archive' first."
+            ) from exc
+        raise
+    return await _run_archive_followup(
+        collections=_followup_collections_from_counts(counts),
+        detail_limit=limit,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=transport,
+        console=console,
+    )
+
+
 async def import_x_archive(
     archive_path: Path,
     *,
@@ -930,42 +1052,16 @@ async def import_x_archive(
         # Bulk archive writes are complete at this point. The follow-up sync/enrichment helpers
         # reacquire the same process lock around their own writes, so we intentionally do not hold
         # the outer lock across potentially long network I/O.
-        reconciled_collections, reconcile_warnings, resolved_auth = await _run_live_reconciliation(
-            counts=counts,
+        followup = await _run_archive_followup(
+            collections=_followup_collections_from_counts(counts),
+            detail_limit=None if enrich else detail_lookups,
             config=config,
             paths=paths,
             auth_bundle=auth_bundle,
             transport=transport,
             console=console,
         )
-        warnings.extend(reconcile_warnings)
-        detail_succeeded = 0
-        detail_terminal = 0
-        detail_transient = 0
-        pending = 0
-        detail_limit: int | None = None if enrich else detail_lookups
-        if resolved_auth is not None:
-            try:
-                (
-                    detail_succeeded,
-                    detail_terminal,
-                    detail_transient,
-                    pending,
-                ) = await _enrich_pending_rows(
-                    limit=detail_limit,
-                    config=config,
-                    paths=paths,
-                    auth_bundle=resolved_auth,
-                    transport=transport,
-                    console=console,
-                )
-            except Exception as exc:
-                warnings.append(f"detail enrichment failed after import: {exc}")
-                async with locked_archive_job(config=config, paths=paths) as job:
-                    pending = len(job.store.list_tweet_objects_for_enrichment())
-        else:
-            async with locked_archive_job(config=config, paths=paths) as job:
-                pending = len(job.store.list_tweet_objects_for_enrichment())
+        warnings.extend(followup.warnings)
 
         lock = ProcessLock(paths.lock_file)
         lock.acquire()
@@ -973,10 +1069,10 @@ async def import_x_archive(
             store = open_archive_store(paths, create=False)
             assert store is not None
             final_counts = dict(counts)
-            final_counts["detail_lookups"] = detail_succeeded
-            final_counts["detail_terminal_unavailable"] = detail_terminal
-            final_counts["detail_transient_failures"] = detail_transient
-            final_counts["pending_enrichment"] = pending
+            final_counts["detail_lookups"] = followup.detail_lookups
+            final_counts["detail_terminal_unavailable"] = followup.detail_terminal_unavailable
+            final_counts["detail_transient_failures"] = followup.detail_transient_failures
+            final_counts["pending_enrichment"] = followup.pending_enrichment
             store.set_import_manifest(
                 digest,
                 archive_generation_date=generation_date,
@@ -999,9 +1095,9 @@ async def import_x_archive(
             followup_performed=True,
             counts=final_counts,
             warnings=warnings,
-            reconciled_collections=reconciled_collections,
-            detail_lookups=detail_succeeded,
-            detail_terminal_unavailable=detail_terminal,
-            detail_transient_failures=detail_transient,
-            pending_enrichment=pending,
+            reconciled_collections=followup.reconciled_collections,
+            detail_lookups=followup.detail_lookups,
+            detail_terminal_unavailable=followup.detail_terminal_unavailable,
+            detail_transient_failures=followup.detail_transient_failures,
+            pending_enrichment=followup.pending_enrichment,
         )
