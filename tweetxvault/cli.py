@@ -92,9 +92,9 @@ def _configure_logging() -> Console:
     return Console(stderr=True)
 
 
-def _browser_only_env() -> dict[str, str]:
+def _browser_cookie_only_env() -> dict[str, str]:
     env = dict(os.environ)
-    for key in ("TWEETXVAULT_AUTH_TOKEN", "TWEETXVAULT_CT0", "TWEETXVAULT_USER_ID"):
+    for key in ("TWEETXVAULT_AUTH_TOKEN", "TWEETXVAULT_CT0"):
         env.pop(key, None)
     return env
 
@@ -166,7 +166,6 @@ def _prepare_auth_override(
         update={
             "auth_token": None,
             "ct0": None,
-            "user_id": None,
             "browser": browser,
             "browser_profile": profile,
             "browser_profile_path": str(profile_path) if profile_path is not None else None,
@@ -176,7 +175,7 @@ def _prepare_auth_override(
     forced_config = config.model_copy(update={"auth": auth})
     auth_bundle = resolve_auth_bundle(
         forced_config,
-        env=_browser_only_env(),
+        env=_browser_cookie_only_env(),
         status=_auth_status_callback(console, enabled=debug_auth),
     )
     return forced_config, auth_bundle
@@ -544,6 +543,13 @@ def expand_archive_threads(
         Path | None,
         typer.Option("--profile-path", help="Explicit browser profile directory path."),
     ] = None,
+    refresh: Annotated[
+        bool,
+        typer.Option(
+            "--refresh",
+            help="Re-fetch explicit thread targets even if they were already expanded.",
+        ),
+    ] = False,
     debug_auth: DEBUG_AUTH_OPTION = False,
 ) -> None:
     console = _configure_logging()
@@ -561,6 +567,7 @@ def expand_archive_threads(
             expand_threads(
                 targets=targets,
                 limit=limit,
+                refresh=refresh,
                 config=config,
                 paths=paths,
                 auth_bundle=auth_bundle,

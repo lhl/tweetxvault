@@ -257,6 +257,50 @@ def test_auth_check_debug_auth_prints_resolver_status(paths, monkeypatch) -> Non
     assert "bookmarks: ready" in output
 
 
+def test_prepare_auth_override_preserves_explicit_user_id_fallback(
+    paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    console = Console(file=StringIO(), force_terminal=False, color_system=None)
+    config = AppConfig(
+        auth=AuthConfig(
+            auth_token="config-token",
+            ct0="config-ct0",
+            user_id="84",
+        )
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("TWEETXVAULT_USER_ID", "42")
+
+    def fake_resolve_auth_bundle(config, env=None, status=None):
+        captured["config_user_id"] = config.auth.user_id
+        captured["config_auth_token"] = config.auth.auth_token
+        captured["config_ct0"] = config.auth.ct0
+        assert env is not None
+        captured["env_user_id"] = env.get("TWEETXVAULT_USER_ID")
+        captured["env_auth_token"] = env.get("TWEETXVAULT_AUTH_TOKEN")
+        captured["env_ct0"] = env.get("TWEETXVAULT_CT0")
+        return SimpleNamespace(auth_token="browser-token", ct0="browser-ct0", user_id="42")
+
+    monkeypatch.setattr(cli, "resolve_auth_bundle", fake_resolve_auth_bundle)
+
+    cli._prepare_auth_override(
+        config,
+        console,
+        browser="firefox",
+        profile=None,
+        profile_path=None,
+    )
+
+    assert captured == {
+        "config_user_id": "84",
+        "config_auth_token": None,
+        "config_ct0": None,
+        "env_user_id": "42",
+        "env_auth_token": None,
+        "env_ct0": None,
+    }
+
+
 def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)
@@ -518,6 +562,7 @@ def test_expand_archive_threads_reports_runner_result(paths, monkeypatch) -> Non
     async def fake_expand_threads(**kwargs):
         assert kwargs["targets"] == ["https://x.com/example/status/2026531440414925307"]
         assert kwargs["limit"] == 5
+        assert kwargs["refresh"] is False
         return SimpleNamespace(processed=2, expanded=2, skipped=1, failed=0)
 
     monkeypatch.setattr(cli, "expand_threads", fake_expand_threads)
@@ -529,6 +574,28 @@ def test_expand_archive_threads_reports_runner_result(paths, monkeypatch) -> Non
 
     output = buffer.getvalue()
     assert "threads: 2 processed, 2 expanded, 1 skipped, 0 failed" in output
+
+
+def test_expand_archive_threads_forwards_refresh_flag(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="token", ct0="ct0")),
+    )
+
+    async def fake_expand_threads(**kwargs):
+        assert kwargs["targets"] == ["100"]
+        assert kwargs["refresh"] is True
+        return SimpleNamespace(processed=1, expanded=1, skipped=0, failed=0)
+
+    monkeypatch.setattr(cli, "expand_threads", fake_expand_threads)
+
+    cli.expand_archive_threads(["100"], refresh=True)
+
+    assert "threads: 1 processed, 1 expanded, 0 skipped, 0 failed" in buffer.getvalue()
 
 
 def test_expand_archive_threads_debug_auth_passes_status_callback(paths, monkeypatch) -> None:
@@ -552,6 +619,23 @@ def test_expand_archive_threads_debug_auth_passes_status_callback(paths, monkeyp
     output = buffer.getvalue()
     assert "auth: trying Firefox browser cookies" in output
     assert "threads: 0 processed, 0 expanded, 0 skipped, 0 failed" in output
+
+
+def test_expand_archive_threads_refresh_requires_targets(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, None),
+    )
+
+    with pytest.raises(typer.Exit) as excinfo:
+        cli.expand_archive_threads(refresh=True)
+
+    assert excinfo.value.exit_code == 1
+    assert "--refresh requires one or more explicit thread targets." in buffer.getvalue()
 
 
 def test_with_auto_optimize_exits_when_lock_is_held(paths, monkeypatch) -> None:

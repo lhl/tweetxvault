@@ -328,6 +328,7 @@ This is separate from attached-tweet extraction. The current extractor already s
 - [x] Reserve CLI shape for the first pass:
   - `tweetxvault threads expand`
   - optional `tweetxvault threads expand <tweet-id-or-status-url> ...`
+  - optional `tweetxvault threads expand --refresh <tweet-id-or-status-url> ...` for explicit re-fetches
 - [x] Persist thread/context tweets as global `tweet_object` rows plus `tweet_relation` edges without inventing bookmark/like/tweets memberships for them.
 - [x] Add new relation types for thread context as needed (`reply_to`, `in_reply_to`, `thread_parent`, `thread_child`) once we lock the exact `TweetDetail` shape.
 - [x] Expand linked X-status URLs found in `url_ref` rows:
@@ -420,14 +421,14 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `_sync_collection_ready()` persists fetched pages, then auto-embedding can still raise on model/artifact/runtime issues and flip the whole command to failure after the archive write already succeeded.
   - Landed approach: successful sync persistence now wins. Auto-embedding failures are caught, surfaced as warnings, and deferred to a later `tweetxvault embed` run or a future sync instead of failing the capture command.
   - Coverage: `tests/test_sync.py` now forces embedding initialization to fail after page persistence and proves the sync still succeeds with stored rows intact.
-- [ ] Review item 16: define `--browser` auth-override semantics for `user_id`.
+- [x] Review item 16: define `--browser` auth-override semantics for `user_id`.
   - Current problem: the current browser override drops explicit env/config `user_id`, which can break likes/tweets even when the user configured a numeric fallback.
-  - Pending decision: whether `--browser` means “browser source for cookies only, while explicit `user_id` fallback still applies” or “browser-only for all auth fields, including `user_id`.”
-  - Coverage target: CLI/auth regressions for `--browser` + env/config `user_id` on likes/tweets once the intended semantics are chosen.
-- [ ] Review item 17: tighten thread-expansion rerun/dedupe semantics.
+  - Landed approach: browser overrides now only force cookie sourcing (`auth_token` / `ct0`) from the selected browser/profile; explicit env/config `user_id` remains a fallback for likes/tweets.
+  - Coverage: CLI tests now lock in that `--browser` preserves explicit `user_id` fallback inputs.
+- [x] Review item 17: tighten thread-expansion rerun/dedupe semantics.
   - Current problem: explicit `threads expand <id/url>...` currently refetches already-expanded targets, and linked-status expansion only remembers successful targets within a run, so one failing target can be retried repeatedly from multiple URL refs.
-  - Pending decisions: whether explicit targets should be idempotent by default or act as a force-refresh surface, and whether failed linked-status targets should be attempted once per run or retried per occurrence.
-  - Coverage target: one regression for explicit-target reruns and one for duplicate linked-status IDs where the first fetch fails.
-- [ ] Review item 18: decide and document the supported runtime platforms.
+  - Landed approach: explicit targets are now idempotent by default, `--refresh` is the explicit re-fetch escape hatch, and linked status-URL targets are attempted at most once per run.
+  - Coverage: thread tests now cover default explicit-target skipping, `--refresh` refetches, and duplicate linked-status failures only attempting one network call per run; CLI tests cover the new `--refresh` flag and validation.
+- [x] Review item 18: decide and document the supported runtime platforms.
   - Current problem: README/path messaging implies Windows support, but core runtime pieces (`fcntl`, `resource`, `strftime("%-d")`) keep the current CLI Unix-specific.
-  - Pending decision: explicitly scope the current runtime to Unix-like platforms, or add platform-specific implementations/tests before claiming Windows support.
+  - Landed approach: documented the current runtime as Unix-like only until platform-specific replacements and tests land for those dependencies.

@@ -2,6 +2,17 @@
 
 ## 2026-03-16
 
+- Resolved the remaining review-driven semantics around auth override, thread reruns, and platform support:
+  - Changed `tweetxvault/cli.py` so `--browser` only forces cookie sourcing (`auth_token` / `ct0`) from the selected browser/profile; explicit env/config `user_id` now remains a fallback for likes and authored-tweet sync to avoid surprising breakage
+  - Changed `tweetxvault/threads.py` so explicit `threads expand <id/url>...` is idempotent by default, added `--refresh` for intentional re-fetches, and de-duped failing linked status-URL targets to one attempt per run even if repeated across many `url_ref` rows
+  - Documented the current runtime target as Unix-like only in `README.md`, with the concrete blockers called out (`fcntl`, `resource`, `strftime("%-d")`)
+  - Updated `docs/PLAN.md` / `docs/IMPLEMENTATION.md` to mark those review items resolved and capture the shipped semantics
+  - Added regression coverage in `tests/test_cli.py` for preserved `user_id` fallback, `threads expand --refresh`, and `--refresh` validation, plus `tests/test_threads.py` coverage for default explicit-target skipping, refresh re-fetches, and once-per-run linked-status failure dedupe
+  - Validation:
+    - `uv run pytest tests/test_threads.py tests/test_cli.py -q`
+    - `uv run ruff check tweetxvault/cli.py tweetxvault/threads.py tests/test_cli.py tests/test_threads.py`
+    - `uv run ruff format --check tweetxvault/cli.py tweetxvault/threads.py tests/test_cli.py tests/test_threads.py`
+
 - Recorded the new review-driven refactor decisions/open questions and fixed sync/embed coupling:
   - Changed `tweetxvault/sync.py` so post-sync auto-embedding is best-effort; embedding/model/runtime failures now emit a warning and leave the already-persisted sync result intact instead of failing the whole command after insertions succeeded
   - Added a sync regression in `tests/test_sync.py` that forces embedding initialization to fail after page persistence and proves the sync still returns success with stored rows intact

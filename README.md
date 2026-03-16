@@ -20,6 +20,7 @@ A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tw
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- Unix-like runtime only today (Linux/macOS). Windows is not supported yet because the CLI currently depends on `fcntl`, `resource`, and `strftime("%-d")`.
 - A Twitter/X account logged in via Firefox or a supported Chromium-family browser, or session cookies obtained manually
 
 ## Installation
@@ -74,6 +75,8 @@ uv run tweetxvault auth check --browser chrome
 uv run tweetxvault sync all --browser brave --profile "Profile 2"
 uv run tweetxvault sync all --browser firefox --profile-path /path/to/profile
 ```
+
+When `--browser` is used, tweetxvault still accepts explicit `TWEETXVAULT_USER_ID` or `auth.user_id` as the fallback for likes and authored-tweet sync; the override only forces cookie sourcing (`auth_token` / `ct0`) from the selected browser/profile.
 
 To persist a browser preference in the environment or config:
 
@@ -226,7 +229,12 @@ uv run tweetxvault threads expand
 # Expand a specific thread target by URL or ID
 uv run tweetxvault threads expand https://x.com/dimitrispapail/status/2026531440414925307
 uv run tweetxvault threads expand 2026531440414925307
+
+# Re-fetch an explicit target even if it was already expanded before
+uv run tweetxvault threads expand --refresh 2026531440414925307
 ```
+
+Explicit thread targets are idempotent by default: previously expanded targets are skipped unless you pass `--refresh`. Linked status-URL targets are attempted at most once per run, even if the same target appears in multiple archived URL refs.
 
 ### Article Refresh
 
@@ -282,7 +290,7 @@ All configuration is optional. Defaults work out of the box with browser cookie 
 
 ## Data storage
 
-Data paths are resolved by [platformdirs](https://platformdirs.readthedocs.io/) so they follow OS conventions on Linux, macOS, and Windows. On Linux the defaults are:
+Data paths are resolved by [platformdirs](https://platformdirs.readthedocs.io/) so they follow OS conventions, but the current runtime target is Unix-like systems only. On Linux the defaults are:
 
 | Purpose | Default path |
 |---------|-------------|

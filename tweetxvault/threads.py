@@ -145,12 +145,14 @@ async def _try_expand_target(
     query_store: QueryIdStore,
     client: httpx.AsyncClient,
     config: AppConfig,
+    attempted_targets: set[str],
     expanded_targets: set[str],
     known_tweet_ids: set[str],
     result: ThreadExpandResult,
     console: Console,
 ) -> None:
     result.processed += 1
+    attempted_targets.add(tweet_id)
     try:
         discovered_ids = await _expand_target(
             tweet_id=tweet_id,
@@ -175,6 +177,7 @@ async def expand_threads(
     *,
     targets: list[str] | None = None,
     limit: int | None = None,
+    refresh: bool = False,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
     auth_bundle: ResolvedAuthBundle | None = None,
@@ -185,6 +188,8 @@ async def expand_threads(
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
     _log_threads(console, "preparing archive expansion job")
+    if refresh and not targets:
+        raise ConfigError("--refresh requires one or more explicit thread targets.")
     if auth_bundle is None:
         _log_threads(console, "resolving auth bundle")
         auth_bundle = resolve_auth_bundle(config, status=auth_status)
@@ -212,6 +217,7 @@ async def expand_threads(
                 console,
                 f"loaded {len(expanded_targets)} previously expanded thread targets",
             )
+            attempted_targets: set[str] = set()
             known_tweet_ids: set[str] = set()
 
             if targets:
@@ -220,8 +226,22 @@ async def expand_threads(
                 )
                 result.skipped += duplicate_count
                 target_ids = requested[:limit] if limit is not None else requested
-                _log_threads(console, f"explicit target pass over {len(target_ids)} targets")
+                refresh_suffix = " (refresh)" if refresh else ""
+                _log_threads(
+                    console,
+                    f"explicit target pass over {len(target_ids)} targets{refresh_suffix}",
+                )
                 for scanned, tweet_id in enumerate(target_ids, start=1):
+                    if not refresh and tweet_id in expanded_targets:
+                        result.skipped += 1
+                        _log_scan_progress(
+                            console,
+                            phase="explicit",
+                            scanned=scanned,
+                            total=len(target_ids),
+                            result=result,
+                        )
+                        continue
                     await _try_expand_target(
                         tweet_id=tweet_id,
                         store=store,
@@ -229,6 +249,7 @@ async def expand_threads(
                         query_store=query_store,
                         client=client,
                         config=config,
+                        attempted_targets=attempted_targets,
                         expanded_targets=expanded_targets,
                         known_tweet_ids=known_tweet_ids,
                         result=result,
@@ -270,6 +291,7 @@ async def expand_threads(
                         query_store=query_store,
                         client=client,
                         config=config,
+                        attempted_targets=attempted_targets,
                         expanded_targets=expanded_targets,
                         known_tweet_ids=known_tweet_ids,
                         result=result,
@@ -318,6 +340,7 @@ async def expand_threads(
                         source_tweet_id = row.get("tweet_id")
                         if (
                             target_id == source_tweet_id
+                            or target_id in attempted_targets
                             or target_id in expanded_targets
                             or target_id in known_tweet_ids
                         ):
@@ -337,6 +360,7 @@ async def expand_threads(
                             query_store=query_store,
                             client=client,
                             config=config,
+                            attempted_targets=attempted_targets,
                             expanded_targets=expanded_targets,
                             known_tweet_ids=known_tweet_ids,
                             result=result,
