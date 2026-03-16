@@ -2,6 +2,15 @@
 
 ## 2026-03-17
 
+- Tightened the archive-import edge cases from the latest review pass:
+  - Kept archive-imported video/animated-GIF media rows `pending` until both the main asset and poster file are present, so poster-only archive exports no longer block later `tweetxvault media download` completion
+  - Removed the archive `deleted_at` source-precedence override so a later archive deletion marker can merge into an existing live row without overwriting richer live text/author fields
+  - Improved YTD parse errors to include the specific filename being parsed, and added archive-import regressions for ZIP happy-path import plus extracted root-layout archives
+  - Validation:
+    - `uv run pytest tests/test_archive_import.py tests/test_storage.py -q`
+    - `uv run ruff check tweetxvault/archive_import.py tweetxvault/storage/backend.py tests/test_archive_import.py`
+    - `uv run ruff format --check tweetxvault/archive_import.py tweetxvault/storage/backend.py tests/test_archive_import.py`
+
 - Added a standalone archive follow-up command so users can finish pending TweetDetail work after import without the original ZIP path:
   - Added `tweetxvault import enrich [--limit N]` as the rerunnable archive-specific follow-up job, while keeping `tweetxvault import x-archive --enrich` as the one-shot import-and-finish path
   - Reused the shared archive reconciliation/pending-row enrichment runner for both entry points and restricted standalone enrich discovery to completed import manifests

@@ -404,8 +404,6 @@ class ArchiveStore:
         existing_source = self._normalized_source(self._existing_value(context, source_field))
         if incoming_source == existing_source:
             return True
-        if deleted_at and incoming_source == ARCHIVE_SOURCE:
-            return True
         return incoming_source == LIVE_SOURCE and existing_source != LIVE_SOURCE
 
     def _merge_by_source_precedence(

@@ -243,6 +243,15 @@ def _write_archive_zip(archive_dir: Path, destination: Path) -> Path:
     return destination
 
 
+def _write_root_layout_archive_dir(base: Path, **kwargs: object) -> Path:
+    root = _write_archive_dir(base, **kwargs)
+    data_dir = root / "data"
+    for path in sorted(data_dir.iterdir()):
+        path.rename(root / path.name)
+    data_dir.rmdir()
+    return root
+
+
 def _live_tweet(tweet_id: str, *, text: str) -> TimelineTweet:
     raw_json = {
         "__typename": "Tweet",
@@ -352,6 +361,53 @@ def test_import_x_archive_directory_populates_archive_and_copies_media(
     manifest_counts = json.loads(manifest_rows[0]["counts_json"])
     assert manifest_counts["pending_enrichment"] == 1
     store.close()
+
+
+def test_import_x_archive_zip_populates_archive_and_copies_media(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    archive_zip = _write_archive_zip(archive_dir, tmp_path / "archive.zip")
+    _disable_live_reconciliation(monkeypatch)
+
+    result = asyncio.run(
+        import_x_archive(
+            archive_zip,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert result.skipped is False
+    assert result.counts["authored_tweets"] == 1
+    assert result.counts["deleted_authored_tweets"] == 1
+    assert result.counts["likes"] == 1
+    assert result.counts["media_files_copied"] == 1
+    assert (paths.data_dir / "media" / "100" / "3_500.jpg").exists()
+
+
+def test_import_x_archive_supports_root_manifest_layout(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_root_layout_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+
+    result = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert result.skipped is False
+    assert result.counts["authored_tweets"] == 1
+    assert result.counts["deleted_authored_tweets"] == 1
+    assert result.counts["likes"] == 1
+    assert result.counts["media_files_copied"] == 1
+    assert (paths.data_dir / "media" / "100" / "3_500.jpg").exists()
 
 
 def test_repeated_import_short_circuits_across_directory_and_zip_inputs(
@@ -663,6 +719,24 @@ def test_import_x_archive_rejects_parent_segments_in_manifest_paths(paths, tmp_p
         )
 
 
+def test_import_x_archive_parse_errors_include_filename(paths, tmp_path: Path) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    (archive_dir / "data" / "like.js").write_text(
+        "window.YTD.like.part0 = not-json\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match=r"like\.js"):
+        asyncio.run(
+            import_x_archive(
+                archive_dir,
+                config=AppConfig(),
+                paths=paths,
+                console=_console(),
+            )
+        )
+
+
 def test_import_x_archive_reuses_existing_thumbnail_destination(
     paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -684,10 +758,12 @@ def test_import_x_archive_reuses_existing_thumbnail_destination(
     store = open_archive_store(paths, create=False)
     assert store is not None
     media_row = store.table.search().where("record_type = 'media'").limit(1).to_list()[0]
-    assert media_row["download_state"] == "done"
+    assert media_row["download_state"] == "pending"
+    assert media_row["local_path"] is None
     assert media_row["thumbnail_local_path"] == "media/100/7_500-poster.jpg"
     assert media_row["thumbnail_sha256"] is None
     assert media_row["thumbnail_byte_size"] is None
+    assert store.list_media_rows(states={"pending"})[0]["row_key"] == media_row["row_key"]
     store.close()
 
 
@@ -716,8 +792,53 @@ def test_import_x_archive_preserves_main_and_thumbnail_updates_for_video_media(
     media_row = store.table.search().where("record_type = 'media'").limit(1).to_list()[0]
     assert media_row["local_path"] == "media/100/7_500.mp4"
     assert media_row["thumbnail_local_path"] == "media/100/7_500-poster.jpg"
+    assert media_row["download_state"] == "done"
     assert (paths.data_dir / "media" / "100" / "7_500.mp4").exists()
     assert (paths.data_dir / "media" / "100" / "7_500-poster.jpg").exists()
+    store.close()
+
+
+def test_archive_deleted_tweet_preserves_existing_live_fields(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    live_tweet = _live_tweet("200", text="live deleted tweet")
+    store.persist_page(
+        operation="UserTweets",
+        collection_type="tweet",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[live_tweet],
+        last_head_tweet_id="200",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.close()
+    _disable_live_reconciliation(monkeypatch)
+
+    asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    tweet_row = store.table.search().where("row_key = 'tweet:tweet::200'").limit(1).to_list()[0]
+    assert tweet_row["source"] == "live_graphql"
+    assert tweet_row["text"] == "live deleted tweet"
+    assert tweet_row["deleted_at"] == "Mon Mar 16 00:00:00 +0000 2026"
+    tweet_object = store.table.search().where("row_key = 'tweet_object:200'").limit(1).to_list()[0]
+    assert tweet_object["source"] == "live_graphql"
+    assert tweet_object["text"] == "live deleted tweet"
+    assert tweet_object["deleted_at"] == "Mon Mar 16 00:00:00 +0000 2026"
     store.close()
 
 

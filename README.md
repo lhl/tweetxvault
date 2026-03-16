@@ -183,7 +183,7 @@ uv run tweetxvault import enrich
 uv run tweetxvault import enrich --limit 500
 ```
 
-The importer maps authored tweets, deleted authored tweets, likes, and exported `tweets_media/` files into the same LanceDB archive used by live sync. It applies the same archive-owner guardrail as sync, runs bulk live `tweets` / `likes` reconciliation automatically when auth is available, and keeps sparse archive-only rows in a tracked pending state until you choose how much per-tweet follow-up to run.
+The importer maps authored tweets, deleted authored tweets, likes, and exported `tweets_media/` files into the same LanceDB archive used by live sync. It applies the same archive-owner guardrail as sync, runs bulk live `tweets` / `likes` reconciliation automatically when auth is available, and keeps sparse archive-only rows in a tracked pending state until you choose how much per-tweet follow-up to run. If the archive only includes a video poster/thumbnail and not the main media file, that media row stays pending so `tweetxvault media download` can fill the gap later.
 
 `TweetDetail` is X's per-tweet detail API: tweetxvault uses it to fill in metadata the archive often lacks for liked tweets, such as author fields, timestamps, full media metadata, and thread context.
 

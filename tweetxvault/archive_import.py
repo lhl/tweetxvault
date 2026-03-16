@@ -178,7 +178,7 @@ class _ArchiveInput:
         items: list[Any] = []
         parts: list[tuple[str, Any]] = []
         for filename in self.dataset_files(key):
-            parsed = parse_ytd_js(self.read_text(filename))
+            parsed = parse_ytd_js(self.read_text(filename), label=filename)
             parts.append((filename, parsed))
             if isinstance(parsed, list):
                 items.extend(parsed)
@@ -219,8 +219,8 @@ def _parse_assigned_json(raw: str, pattern: re.Pattern[str], label: str) -> Any:
         raise ConfigError(f"Failed to parse {label}.") from exc
 
 
-def parse_ytd_js(raw: str) -> Any:
-    return _parse_assigned_json(raw, _YTD_ASSIGNMENT_RE, "YTD data")
+def parse_ytd_js(raw: str, *, label: str = "YTD data") -> Any:
+    return _parse_assigned_json(raw, _YTD_ASSIGNMENT_RE, label)
 
 
 def _archive_identity(manifest: dict[str, Any], account_items: list[Any]) -> _ArchiveIdentity:
@@ -527,6 +527,22 @@ def _copy_file_from_archive(
     return sha.hexdigest(), byte_size
 
 
+def _resolve_media_path(base_dir: Path, relative_path: Any) -> Path | None:
+    if not isinstance(relative_path, str) or not relative_path:
+        return None
+    return base_dir / relative_path
+
+
+def _media_download_complete(base_dir: Path, row: dict[str, Any]) -> bool:
+    local_path = _resolve_media_path(base_dir, row.get("local_path"))
+    if local_path is None or not local_path.exists():
+        return False
+    if row.get("media_type") not in {"video", "animated_gif"}:
+        return True
+    poster_path = _resolve_media_path(base_dir, row.get("thumbnail_local_path"))
+    return poster_path is not None and poster_path.exists()
+
+
 def _copy_exported_media(
     source: _ArchiveInput,
     store: ArchiveStore,
@@ -583,26 +599,42 @@ def _copy_exported_media(
             )
         content_type = mimetypes.guess_type(destination.name)[0]
         base_row = pending_updates.get(str(row["row_key"]), row)
+        local_path = base_row.get("local_path") if is_thumbnail else relative_dest.as_posix()
+        thumbnail_local_path = (
+            relative_dest.as_posix() if is_thumbnail else base_row.get("thumbnail_local_path")
+        )
+        updated_row = dict(base_row)
+        updated_row.update(
+            {
+                "local_path": local_path,
+                "sha256": base_row.get("sha256") if is_thumbnail else sha256 or None,
+                "byte_size": base_row.get("byte_size") if is_thumbnail else byte_size or None,
+                "content_type": base_row.get("content_type") if is_thumbnail else content_type,
+                "thumbnail_local_path": thumbnail_local_path,
+                "thumbnail_sha256": (sha256 or None)
+                if is_thumbnail
+                else base_row.get("thumbnail_sha256"),
+                "thumbnail_byte_size": (byte_size or None)
+                if is_thumbnail
+                else base_row.get("thumbnail_byte_size"),
+                "thumbnail_content_type": content_type
+                if is_thumbnail
+                else base_row.get("thumbnail_content_type"),
+            }
+        )
+        complete = _media_download_complete(paths.data_dir, updated_row)
         pending_updates[str(row["row_key"])] = store.build_media_download_update(
             base_row,
-            download_state="done",
-            local_path=(base_row.get("local_path") if is_thumbnail else relative_dest.as_posix()),
-            sha256=(base_row.get("sha256") if is_thumbnail else sha256 or None),
-            byte_size=(base_row.get("byte_size") if is_thumbnail else byte_size or None),
-            content_type=(base_row.get("content_type") if is_thumbnail else content_type),
-            thumbnail_local_path=(
-                relative_dest.as_posix() if is_thumbnail else base_row.get("thumbnail_local_path")
-            ),
-            thumbnail_sha256=(
-                (sha256 or None) if is_thumbnail else base_row.get("thumbnail_sha256")
-            ),
-            thumbnail_byte_size=(byte_size or None)
-            if is_thumbnail
-            else base_row.get("thumbnail_byte_size"),
-            thumbnail_content_type=content_type
-            if is_thumbnail
-            else base_row.get("thumbnail_content_type"),
-            downloaded_at=utc_now(),
+            download_state="done" if complete else "pending",
+            local_path=local_path,
+            sha256=updated_row.get("sha256"),
+            byte_size=updated_row.get("byte_size"),
+            content_type=updated_row.get("content_type"),
+            thumbnail_local_path=thumbnail_local_path,
+            thumbnail_sha256=updated_row.get("thumbnail_sha256"),
+            thumbnail_byte_size=updated_row.get("thumbnail_byte_size"),
+            thumbnail_content_type=updated_row.get("thumbnail_content_type"),
+            downloaded_at=utc_now() if complete else (base_row.get("downloaded_at") or None),
             download_error=None,
         )
         if len(pending_updates) >= 100:
