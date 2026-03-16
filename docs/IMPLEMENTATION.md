@@ -412,3 +412,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `tweetxvault threads expand` still stays silent at startup on large archives because it eagerly loads prior expansion targets, known tweet ids, and membership ids before the first progress line.
   - Landed approach: added immediate startup/preload status lines, then deferred the expensive `known_tweet_ids` scan until the linked-status pass actually needs it so explicit-target runs and some limit-bounded runs stop paying that cost up front.
   - Coverage: thread tests now lock in early preload logging for both the normal membership+linked-status path and the explicit-target/rate-limit path.
+- [x] Review item 14: add an auth-resolution debug path for long-running CLI jobs.
+  - Current problem: if a command stalls before the archive job starts, there is no visibility into whether browser cookie resolution or profile/keyring probing is the blocking step.
+  - Landed approach: added a `--debug-auth` flag for `threads expand` and `auth check`, plus auth-resolution status callbacks that surface browser/profile probing steps from the cookie resolver.
+  - Coverage: auth tests now lock in emitted browser-probe status, and CLI tests cover `--debug-auth` output plumbing for both `auth check` and `threads expand`.

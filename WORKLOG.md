@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 14 for auth-resolution diagnostics:
+  - Added auth-status callback plumbing in `tweetxvault/auth/cookies.py` / `tweetxvault/auth/firefox.py` so browser/profile probing steps can be surfaced without hard-coding print calls into the auth resolver
+  - Added `--debug-auth` support in `tweetxvault/cli.py` for `tweetxvault threads expand` and `tweetxvault auth check`, so stalls before the archive job starts can now be traced to a specific browser/profile resolution step
+  - Added auth coverage in `tests/test_auth.py` for emitted browser-probe status and CLI coverage in `tests/test_cli.py` for the new debug output plumbing
+  - Validation:
+    - `uv run pytest`
+    - `uv run ruff check tweetxvault/auth/cookies.py tweetxvault/auth/firefox.py tweetxvault/cli.py tweetxvault/threads.py tests/test_auth.py tests/test_cli.py tests/test_threads.py`
+    - `uv run ruff format --check tweetxvault/auth/cookies.py tweetxvault/auth/firefox.py tweetxvault/cli.py tweetxvault/threads.py tests/test_auth.py tests/test_cli.py tests/test_threads.py`
+
 - Landed review cleanup item 13 for early thread-expansion startup logging and lighter preload work:
   - Updated `tweetxvault/threads.py` so `tweetxvault threads expand` now prints immediately while it is preparing the job, resolving query IDs, and loading archive state instead of waiting for multiple full-table scans to finish before the first line
   - Deferred the expensive `known_tweet_ids` scan until the linked-status pass actually needs it, so explicit-target runs and some limit-bounded runs avoid one unnecessary archive-wide preload

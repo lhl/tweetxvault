@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,6 +66,11 @@ class ResolvedAuthBundle(BaseModel):
             )
 
 
+def _emit_status(status: Callable[[str], None] | None, message: str) -> None:
+    if status is not None:
+        status(message)
+
+
 def list_available_browser_candidates(
     *,
     browser: str | None = None,
@@ -124,6 +129,7 @@ def resolve_auth_bundle(
     config: AppConfig,
     *,
     env: Mapping[str, str] | None = None,
+    status: Callable[[str], None] | None = None,
 ) -> ResolvedAuthBundle:
     env = env or os.environ
     browser_bundle = None
@@ -139,7 +145,8 @@ def resolve_auth_bundle(
     def _from_browser(attr: str) -> tuple[str | None, str | None]:
         nonlocal browser_bundle
         if browser_bundle is None:
-            browser_bundle = _resolve_browser_bundle(config, env)
+            _emit_status(status, "resolving browser cookies")
+            browser_bundle = _resolve_browser_bundle(config, env, status=status)
         value = browser_bundle.get(attr)
         source = browser_bundle["source"]
         return (value, source) if value else (None, None)
@@ -181,13 +188,20 @@ def resolve_auth_bundle(
 def _resolve_browser_bundle(
     config: AppConfig,
     env: Mapping[str, str],
+    *,
+    status: Callable[[str], None] | None = None,
 ) -> dict[str, str | None]:
     selection = _resolve_browser_selection(config)
     if selection["browser"] == "firefox":
+        target = (
+            selection["profile_path"] or selection["profile"] or "auto-detected Firefox profile"
+        )
+        _emit_status(status, f"trying Firefox cookies from {target}")
         bundle = _resolve_firefox_bundle(
             explicit_profile=selection["profile"],
             explicit_path=selection["profile_path"],
             env=env,
+            status=status,
         )
         return {
             "auth_token": bundle["auth_token"],
@@ -197,6 +211,8 @@ def _resolve_browser_bundle(
         }
 
     if selection["browser"] is not None:
+        target = selection["profile_path"] or selection["profile"] or "default profile"
+        _emit_status(status, f"trying {selection['browser']} cookies from {target}")
         bundle = extract_chromium_cookies(
             selection["browser"],
             profile_name=selection["profile"],
@@ -210,11 +226,13 @@ def _resolve_browser_bundle(
             "source": selection["browser"],
         }
 
-    firefox_bundle = _attempt_firefox_bundle(env)
+    _emit_status(status, "trying Firefox browser cookies")
+    firefox_bundle = _attempt_firefox_bundle(env, status=status)
     if firefox_bundle is not None:
         return firefox_bundle
 
     for browser_id in CHROMIUM_BROWSER_ORDER:
+        _emit_status(status, f"trying {browser_id} browser cookies")
         try:
             bundle = extract_chromium_cookies(browser_id, env=env)
         except AuthResolutionError:
@@ -230,9 +248,13 @@ def _resolve_browser_bundle(
     return {"auth_token": None, "ct0": None, "user_id": None, "source": None}
 
 
-def _attempt_firefox_bundle(env: Mapping[str, str]) -> dict[str, str | None] | None:
+def _attempt_firefox_bundle(
+    env: Mapping[str, str],
+    *,
+    status: Callable[[str], None] | None = None,
+) -> dict[str, str | None] | None:
     try:
-        bundle = _resolve_firefox_bundle(env=env)
+        bundle = _resolve_firefox_bundle(env=env, status=status)
     except AuthResolutionError:
         return None
     return {
@@ -248,12 +270,15 @@ def _resolve_firefox_bundle(
     explicit_profile: str | None = None,
     explicit_path: Path | None = None,
     env: Mapping[str, str],
+    status: Callable[[str], None] | None = None,
 ) -> dict[str, str | None]:
     profile = resolve_firefox_profile(
         explicit_path=str(explicit_path) if explicit_path is not None else None,
         explicit_profile=explicit_profile,
         env=env,
+        status=status,
     )
+    _emit_status(status, f"reading Firefox cookies from {profile.path}")
     bundle = extract_firefox_cookies(profile.path)
     return {
         "auth_token": bundle.auth_token,

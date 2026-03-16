@@ -62,6 +62,7 @@ BROWSER_HELP = (
     "Browser to use for cookie extraction: firefox, chrome, chromium, brave, edge, "
     "opera, opera-gx, vivaldi, arc."
 )
+DEBUG_AUTH_HELP = "Print browser/profile auth-resolution diagnostics."
 ARTICLE_BACKFILL_HELP = (
     "Rewalk existing timeline pages without resetting sync state so older items can pick up "
     "new article fields."
@@ -79,6 +80,10 @@ SYNC_ARTICLE_BACKFILL_OPTION = Annotated[
     bool,
     typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
 ]
+DEBUG_AUTH_OPTION = Annotated[
+    bool,
+    typer.Option("--debug-auth", help=DEBUG_AUTH_HELP),
+]
 
 
 def _configure_logging() -> Console:
@@ -92,6 +97,12 @@ def _browser_only_env() -> dict[str, str]:
     for key in ("TWEETXVAULT_AUTH_TOKEN", "TWEETXVAULT_CT0", "TWEETXVAULT_USER_ID"):
         env.pop(key, None)
     return env
+
+
+def _auth_status_callback(console: Console, *, enabled: bool):
+    if not enabled:
+        return None
+    return lambda message: console.print(f"auth: {message}", highlight=False)
 
 
 def _pick_browser_candidate_interactively(
@@ -135,6 +146,7 @@ def _prepare_auth_override(
     browser: str | None,
     profile: str | None,
     profile_path: Path | None,
+    debug_auth: bool = False,
     interactive: bool = False,
 ):
     if interactive and (profile or (profile_path is not None)):
@@ -162,7 +174,11 @@ def _prepare_auth_override(
         }
     )
     forced_config = config.model_copy(update={"auth": auth})
-    auth_bundle = resolve_auth_bundle(forced_config, env=_browser_only_env())
+    auth_bundle = resolve_auth_bundle(
+        forced_config,
+        env=_browser_only_env(),
+        status=_auth_status_callback(console, enabled=debug_auth),
+    )
     return forced_config, auth_bundle
 
 
@@ -386,6 +402,7 @@ def auth_check(
         bool,
         typer.Option("--interactive", help="Interactively choose a browser profile."),
     ] = False,
+    debug_auth: DEBUG_AUTH_OPTION = False,
 ) -> None:
     console = _configure_logging()
     config, paths = load_config()
@@ -396,8 +413,14 @@ def auth_check(
             browser=browser,
             profile=profile,
             profile_path=profile_path,
+            debug_auth=debug_auth,
             interactive=interactive,
         )
+        if auth_bundle is None:
+            auth_bundle = resolve_auth_bundle(
+                config,
+                status=_auth_status_callback(console, enabled=debug_auth),
+            )
         result = asyncio.run(
             run_preflight(
                 config=config,
@@ -521,6 +544,7 @@ def expand_archive_threads(
         Path | None,
         typer.Option("--profile-path", help="Explicit browser profile directory path."),
     ] = None,
+    debug_auth: DEBUG_AUTH_OPTION = False,
 ) -> None:
     console = _configure_logging()
     try:
@@ -531,6 +555,7 @@ def expand_archive_threads(
             browser=browser,
             profile=profile,
             profile_path=profile_path,
+            debug_auth=debug_auth,
         )
         result = asyncio.run(
             expand_threads(
@@ -539,6 +564,7 @@ def expand_archive_threads(
                 config=config,
                 paths=paths,
                 auth_bundle=auth_bundle,
+                auth_status=_auth_status_callback(console, enabled=debug_auth),
                 console=console,
             )
         )

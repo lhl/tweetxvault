@@ -177,7 +177,7 @@ def test_auth_check_interactive_uses_selected_browser(paths, monkeypatch) -> Non
     monkeypatch.setattr(
         cli,
         "resolve_auth_bundle",
-        lambda config, env=None: SimpleNamespace(
+        lambda config, env=None, status=None: SimpleNamespace(
             auth_token="chrome-token",
             ct0="chrome-ct0",
             user_id="42",
@@ -209,6 +209,52 @@ def test_auth_check_interactive_uses_selected_browser(paths, monkeypatch) -> Non
     assert "local auth: auth_token=chrome" in output
     assert "bookmarks: ready" in output
     assert "tweets: ready" in output
+
+
+def test_auth_check_debug_auth_prints_resolver_status(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_auth_bundle",
+        lambda config, env=None, status=None: (
+            status("trying Firefox browser cookies") if status is not None else None,
+            SimpleNamespace(
+                auth_token="token",
+                ct0="ct0",
+                user_id="42",
+                auth_token_source="firefox",
+                ct0_source="firefox",
+                user_id_source="firefox",
+            ),
+        )[1],
+    )
+
+    async def fake_run_preflight(*, config, paths, collections, auth_bundle=None):
+        return SimpleNamespace(
+            auth=auth_bundle,
+            probes={
+                "bookmarks": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
+                "likes": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
+                "tweets": SimpleNamespace(ready=True, detail="Remote probe succeeded."),
+            },
+            has_local_error=False,
+            has_remote_error=False,
+        )
+
+    monkeypatch.setattr(cli, "run_preflight", fake_run_preflight)
+
+    cli.auth_check(debug_auth=True)
+
+    output = buffer.getvalue()
+    assert "auth: trying Firefox browser cookies" in output
+    assert "bookmarks: ready" in output
 
 
 def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
@@ -483,6 +529,29 @@ def test_expand_archive_threads_reports_runner_result(paths, monkeypatch) -> Non
 
     output = buffer.getvalue()
     assert "threads: 2 processed, 2 expanded, 1 skipped, 0 failed" in output
+
+
+def test_expand_archive_threads_debug_auth_passes_status_callback(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, None),
+    )
+
+    async def fake_expand_threads(**kwargs):
+        kwargs["auth_status"]("trying Firefox browser cookies")
+        return SimpleNamespace(processed=0, expanded=0, skipped=0, failed=0)
+
+    monkeypatch.setattr(cli, "expand_threads", fake_expand_threads)
+
+    cli.expand_archive_threads(debug_auth=True)
+
+    output = buffer.getvalue()
+    assert "auth: trying Firefox browser cookies" in output
+    assert "threads: 0 processed, 0 expanded, 0 skipped, 0 failed" in output
 
 
 def test_with_auto_optimize_exits_when_lock_is_held(paths, monkeypatch) -> None:

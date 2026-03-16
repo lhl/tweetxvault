@@ -33,7 +33,7 @@ def test_resolve_auth_bundle_prefers_env_then_config_then_browser(
 
     monkeypatch.setattr(
         "tweetxvault.auth.cookies._resolve_browser_bundle",
-        lambda config, env: {
+        lambda config, env, status=None: {
             "auth_token": "browser-token",
             "ct0": "browser-ct0",
             "user_id": "42",
@@ -60,7 +60,10 @@ def test_resolve_auth_bundle_falls_back_to_chrome_after_firefox_miss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = AppConfig()
-    monkeypatch.setattr("tweetxvault.auth.cookies._attempt_firefox_bundle", lambda env: None)
+    monkeypatch.setattr(
+        "tweetxvault.auth.cookies._attempt_firefox_bundle",
+        lambda env, status=None: None,
+    )
 
     def fake_extract(browser_id: str, **_: object) -> SimpleNamespace:
         if browser_id == "chrome":
@@ -77,6 +80,36 @@ def test_resolve_auth_bundle_falls_back_to_chrome_after_firefox_miss(
     assert bundle.auth_token_source == "chrome"
     assert bundle.ct0_source == "chrome"
     assert bundle.user_id_source == "chrome"
+
+
+def test_resolve_auth_bundle_reports_browser_probe_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = AppConfig()
+    messages: list[str] = []
+
+    def fake_firefox(env, *, status=None):
+        if status is not None:
+            status("probing Firefox profile default")
+        return None
+
+    def fake_extract(browser_id: str, **_: object) -> SimpleNamespace:
+        if browser_id == "chrome":
+            return SimpleNamespace(auth_token="chrome-token", ct0="chrome-ct0", user_id="42")
+        raise AuthResolutionError("missing")
+
+    monkeypatch.setattr("tweetxvault.auth.cookies._attempt_firefox_bundle", fake_firefox)
+    monkeypatch.setattr("tweetxvault.auth.cookies.extract_chromium_cookies", fake_extract)
+
+    bundle = resolve_auth_bundle(config, env={}, status=messages.append)
+
+    assert bundle.auth_token == "chrome-token"
+    assert messages == [
+        "resolving browser cookies",
+        "trying Firefox browser cookies",
+        "probing Firefox profile default",
+        "trying chrome browser cookies",
+    ]
 
 
 def test_extract_firefox_cookies_reads_sqlite_fixture(tmp_path: Path) -> None:

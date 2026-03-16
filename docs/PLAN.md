@@ -636,6 +636,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: `tweetxvault threads expand` now prints phase/progress output plus visible 429 retry/cooldown diagnostics so large thread-expansion jobs no longer look dead while the HTTP layer is backing off.
 - [x] Reduce startup silence and unnecessary preload scans in `tweetxvault threads expand`.
   - Next cleanup item landed: the runner now prints preload progress before the archive scans begin, and it defers the expensive known-tweet-id scan until the linked-status pass actually needs it.
+- [x] Add an auth-resolution debug flag for commands that can stall before the archive job starts.
+  - Next cleanup item landed: `threads expand --debug-auth` and `auth check --debug-auth` now surface browser/profile probing steps when cookie extraction or keyring access is the slow step.
 
 ## Open Questions (Remaining)
 

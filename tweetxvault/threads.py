@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -177,13 +178,16 @@ async def expand_threads(
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
     auth_bundle: ResolvedAuthBundle | None = None,
+    auth_status: Callable[[str], None] | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
 ) -> ThreadExpandResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
     _log_threads(console, "preparing archive expansion job")
-    auth_bundle = auth_bundle or resolve_auth_bundle(config)
+    if auth_bundle is None:
+        _log_threads(console, "resolving auth bundle")
+        auth_bundle = resolve_auth_bundle(config, status=auth_status)
 
     async with locked_archive_job(config=config, paths=paths) as job:
         store = job.store

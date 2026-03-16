@@ -7,7 +7,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,16 +136,21 @@ def resolve_firefox_profile(
     explicit_path: str | None = None,
     explicit_profile: str | None = None,
     env: Mapping[str, str] | None = None,
+    status: Callable[[str], None] | None = None,
 ) -> FirefoxProfile:
     env = env or os.environ
     if explicit_path:
         path = Path(explicit_path).expanduser()
         if not path.exists():
             raise AuthResolutionError(f"Configured Firefox profile does not exist: {path}")
+        if status is not None:
+            status(f"using Firefox profile path {path}")
         return FirefoxProfile(name=path.name, path=path)
 
     profiles = list_firefox_profiles(env)
     if explicit_profile:
+        if status is not None:
+            status(f"looking for Firefox profile '{explicit_profile}'")
         matches = [
             profile
             for profile in profiles
@@ -165,6 +170,8 @@ def resolve_firefox_profile(
         )
 
     for profile in profiles:
+        if status is not None:
+            status(f"probing Firefox profile {profile.name}")
         try:
             bundle = extract_firefox_cookies(profile.path)
         except AuthResolutionError:
