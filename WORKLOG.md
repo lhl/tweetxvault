@@ -2,6 +2,14 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 10 for direct `ExtractedTweetGraph` coalescing coverage:
+  - Expanded `tests/test_extractor.py` with direct unit tests for `ExtractedTweetGraph.add_tweet_object(...)`, `add_media(...)`, and `merge(...)`
+  - Locked down the current precedence rules: new non-empty values beat existing ones, empty strings fall back to existing values, media keeps the minimum position, empty variant/raw-json payloads do not overwrite richer existing values, and articles promote to `body_present` when merged body text appears
+  - Validation:
+    - `uv run pytest tests/test_extractor.py`
+    - `uv run ruff check tests/test_extractor.py`
+    - `uv run ruff format --check tests/test_extractor.py`
+
 - Landed review cleanup item 9 for runner/extractor coverage gaps:
   - Expanded `tests/test_media.py` with failed-download retry coverage plus `retry_failed` and `limit` behavior for photo downloads
   - Expanded `tests/test_unfurl.py` with failed-unfurl retry coverage, `retry_failed` + `limit` behavior, and a non-HTML response case

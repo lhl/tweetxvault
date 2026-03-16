@@ -396,3 +396,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: the new runner modules mostly only have happy-path tests, and extractor coverage is still thin on malformed payloads.
   - Landed approach: added focused tests for runner failure states, retries, limits, non-HTML responses, invalid detail payloads, and malformed extractor inputs without changing runner behavior.
   - Coverage: media/unfurl now cover retry + limit flows, articles/threads cover invalid-response or limit behavior, and extractor tests cover malformed article/attached/url/media payload shapes.
+- [x] Review item 10: add direct unit coverage for `ExtractedTweetGraph` merge/coalesce behavior.
+  - Current problem: the graph-level `add_*` methods are only exercised indirectly through extraction/storage integration tests, which makes edge-case precedence rules harder to lock down.
+  - Landed approach: added focused unit tests for direct `add_tweet_object(...)`, `add_media(...)`, and `merge(...)` behavior, covering new-vs-existing precedence, empty-string handling, `min(position)`, and article status promotion.
+  - Coverage: direct graph tests now cover tweet/media/url/url_ref/article coalescing plus one explicit `merge(...)` path.

@@ -628,6 +628,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: replaced manual `cookies.sqlite` / `-wal` / `-shm` copying with a proper SQLite snapshot so live Firefox profiles no longer rely on sidecar copy timing.
 - [x] Expand failure-path coverage for post-sync runners and extractor edge cases.
   - Next cleanup item landed: added targeted tests for retries, limits, invalid responses, and malformed payload handling across media, unfurl, articles, threads, and extractor.
+- [x] Add direct unit coverage for `ExtractedTweetGraph` coalescing rules.
+  - Next cleanup item landed: locked down the graph-level merge precedence rules with focused unit tests instead of relying only on extraction/storage integrations.
 
 ## Open Questions (Remaining)
 

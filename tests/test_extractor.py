@@ -7,7 +7,16 @@ from tests.conftest import (
     make_url_entity,
     make_video_media,
 )
-from tweetxvault.extractor import extract_secondary_objects, extract_thread_objects
+from tweetxvault.extractor import (
+    ArticleData,
+    ExtractedTweetGraph,
+    MediaData,
+    TweetObjectData,
+    UrlData,
+    UrlRefData,
+    extract_secondary_objects,
+    extract_thread_objects,
+)
 
 
 def test_extract_secondary_objects_captures_quote_media_urls_and_article() -> None:
@@ -206,3 +215,207 @@ def test_extract_secondary_objects_handles_sparse_url_and_media_items() -> None:
     assert set(graph.media) == {("100", "idx-0"), ("100", "7")}
     assert graph.media[("100", "idx-0")].media_url is None
     assert graph.media[("100", "7")].media_url is None
+
+
+def test_extracted_tweet_graph_add_tweet_object_prefers_new_non_empty_fields() -> None:
+    graph = ExtractedTweetGraph()
+    graph.add_tweet_object(
+        TweetObjectData(
+            tweet_id="100",
+            text="old text",
+            author_id="old-author",
+            author_username="old-user",
+            author_display_name="Old Name",
+            created_at="2026-03-14T00:00:00+00:00",
+            conversation_id="conv-old",
+            lang="en",
+            note_tweet_text="old note",
+            raw_json={"old": True},
+        )
+    )
+    graph.add_tweet_object(
+        TweetObjectData(
+            tweet_id="100",
+            text="",
+            author_id="new-author",
+            author_username=None,
+            author_display_name="New Name",
+            created_at=None,
+            conversation_id="conv-new",
+            lang="",
+            note_tweet_text="",
+            raw_json={},
+        )
+    )
+
+    item = graph.tweet_objects["100"]
+    assert item.text == "old text"
+    assert item.author_id == "new-author"
+    assert item.author_username == "old-user"
+    assert item.author_display_name == "New Name"
+    assert item.created_at == "2026-03-14T00:00:00+00:00"
+    assert item.conversation_id == "conv-new"
+    assert item.lang == "en"
+    assert item.note_tweet_text == "old note"
+    assert item.raw_json == {"old": True}
+
+
+def test_extracted_tweet_graph_add_media_applies_special_merge_rules() -> None:
+    graph = ExtractedTweetGraph()
+    graph.add_media(
+        MediaData(
+            tweet_id="100",
+            position=3,
+            media_key="m1",
+            media_type="photo",
+            media_url="https://cdn.example.com/old.jpg",
+            thumbnail_url="https://cdn.example.com/old-thumb.jpg",
+            width=100,
+            height=50,
+            duration_millis=None,
+            variants=[{"url": "https://cdn.example.com/old.jpg"}],
+            raw_json={"old": True},
+            source="tweet_media",
+            article_id="article-old",
+        )
+    )
+    graph.add_media(
+        MediaData(
+            tweet_id="100",
+            position=1,
+            media_key="m1",
+            media_type=None,
+            media_url="https://cdn.example.com/new.jpg",
+            thumbnail_url="",
+            width=None,
+            height=60,
+            duration_millis=123,
+            variants=[],
+            raw_json={},
+            source="",
+            article_id="article-new",
+        )
+    )
+
+    item = graph.media[("100", "m1")]
+    assert item.position == 1
+    assert item.media_type == "photo"
+    assert item.media_url == "https://cdn.example.com/new.jpg"
+    assert item.thumbnail_url == "https://cdn.example.com/old-thumb.jpg"
+    assert item.width == 100
+    assert item.height == 60
+    assert item.duration_millis == 123
+    assert item.variants == [{"url": "https://cdn.example.com/old.jpg"}]
+    assert item.raw_json == {"old": True}
+    assert item.source == "tweet_media"
+    assert item.article_id == "article-new"
+
+
+def test_extracted_tweet_graph_merge_coalesces_url_url_ref_and_article_records() -> None:
+    graph = ExtractedTweetGraph()
+    graph.add_url(
+        UrlData(
+            url_hash="url-hash",
+            canonical_url="https://example.com/story",
+            expanded_url="https://example.com/story?ref=old",
+            host="example.com",
+            raw_json={"old": True},
+            final_url=None,
+            title="Old title",
+            description="Old description",
+            site_name="Old Site",
+        )
+    )
+    graph.add_url_ref(
+        UrlRefData(
+            tweet_id="100",
+            position=0,
+            short_url="https://t.co/short",
+            expanded_url=None,
+            canonical_url=None,
+            display_url="t.co/short",
+            url_hash=None,
+            raw_json={"old": True},
+        )
+    )
+    graph.add_article(
+        ArticleData(
+            tweet_id="100",
+            article_id="article-1",
+            title="Old article title",
+            summary_text="Old summary",
+            content_text=None,
+            canonical_url="https://x.com/i/article/1",
+            published_at="2026-03-14T00:00:00+00:00",
+            status="preview_only",
+            raw_json={"old": True},
+        )
+    )
+
+    other = ExtractedTweetGraph()
+    other.add_url(
+        UrlData(
+            url_hash="url-hash",
+            canonical_url="https://example.com/story",
+            expanded_url="",
+            host=None,
+            raw_json={},
+            final_url="https://example.com/final",
+            title="",
+            description="New description",
+            site_name=None,
+        )
+    )
+    other.add_url_ref(
+        UrlRefData(
+            tweet_id="100",
+            position=0,
+            short_url=None,
+            expanded_url="https://example.com/story",
+            canonical_url="https://example.com/story",
+            display_url="",
+            url_hash="url-hash",
+            raw_json={},
+        )
+    )
+    other.add_article(
+        ArticleData(
+            tweet_id="100",
+            article_id="",
+            title="New article title",
+            summary_text="",
+            content_text="Article body",
+            canonical_url=None,
+            published_at=None,
+            status="preview_only",
+            raw_json={"new": True},
+        )
+    )
+
+    graph.merge(other)
+
+    url = graph.urls["url-hash"]
+    assert url.expanded_url == "https://example.com/story?ref=old"
+    assert url.final_url == "https://example.com/final"
+    assert url.title == "Old title"
+    assert url.description == "New description"
+    assert url.site_name == "Old Site"
+    assert url.raw_json == {"old": True}
+
+    url_ref = graph.url_refs[("100", 0)]
+    assert url_ref.short_url == "https://t.co/short"
+    assert url_ref.expanded_url == "https://example.com/story"
+    assert url_ref.canonical_url == "https://example.com/story"
+    assert url_ref.display_url == "t.co/short"
+    assert url_ref.url_hash == "url-hash"
+    assert url_ref.raw_json == {"old": True}
+
+    article = graph.articles["100"]
+    assert article.article_id == "article-1"
+    assert article.title == "New article title"
+    assert article.summary_text == "Old summary"
+    assert article.content_text == "Article body"
+    assert article.canonical_url == "https://x.com/i/article/1"
+    assert article.published_at == "2026-03-14T00:00:00+00:00"
+    assert article.status == "body_present"
+    assert article.raw_json == {"new": True}
