@@ -648,6 +648,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
     async def fake_import_x_archive(
         archive,
         *,
+        enrich=False,
         detail_lookups=0,
         config=None,
         paths=None,
@@ -657,12 +658,14 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         captured.update(
             {
                 "archive": archive,
+                "enrich": enrich,
                 "detail_lookups": detail_lookups,
                 "auth_bundle": auth_bundle,
             }
         )
         return SimpleNamespace(
             skipped=False,
+            followup_performed=True,
             counts={
                 "authored_tweets": 2,
                 "deleted_authored_tweets": 1,
@@ -685,6 +688,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
 
     assert captured == {
         "archive": archive_path,
+        "enrich": False,
         "detail_lookups": 25,
         "auth_bundle": None,
     }
@@ -693,6 +697,69 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
     assert "live reconciliation: tweets, likes" in output
     assert "detail enrichment: 5 refreshed, 1 terminal, 2 transient failures, 9 pending" in output
     assert "archive does not contain a bookmark dataset" in output
+
+
+def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_path: Path) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, None),
+    )
+    captured = {}
+
+    async def fake_import_x_archive(
+        archive,
+        *,
+        enrich=False,
+        detail_lookups=0,
+        config=None,
+        paths=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        captured.update(
+            {
+                "archive": archive,
+                "enrich": enrich,
+                "detail_lookups": detail_lookups,
+            }
+        )
+        return SimpleNamespace(
+            skipped=True,
+            followup_performed=True,
+            counts={
+                "authored_tweets": 2,
+                "deleted_authored_tweets": 1,
+                "likes": 3,
+                "media_files_copied": 4,
+            },
+            warnings=[],
+            reconciled_collections=["likes"],
+            detail_lookups=7,
+            detail_terminal_unavailable=0,
+            detail_transient_failures=1,
+            pending_enrichment=5,
+        )
+
+    monkeypatch.setattr(cli, "import_x_archive", fake_import_x_archive)
+    archive_path = tmp_path / "archive.zip"
+    archive_path.write_bytes(b"placeholder")
+
+    cli.import_x_archive_command(archive_path, enrich=True)
+
+    assert captured == {
+        "archive": archive_path,
+        "enrich": True,
+        "detail_lookups": 0,
+    }
+    output = buffer.getvalue().replace("\n", " ")
+    assert "already present; keeping existing imported data and running" in output
+    assert "follow-up enrichment" in output
+    assert "live reconciliation: likes" in output
+    assert "detail enrichment: 7 refreshed, 0 terminal, 1 transient failures, 5 pending" in output
 
 
 def test_expand_archive_threads_refresh_requires_targets(paths, monkeypatch) -> None:

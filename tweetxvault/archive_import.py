@@ -64,6 +64,7 @@ class _PlaceholderTweetObject:
 @dataclass(slots=True)
 class ArchiveImportResult:
     skipped: bool = False
+    followup_performed: bool = False
     counts: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     reconciled_collections: list[str] = field(default_factory=list)
@@ -645,14 +646,14 @@ async def _run_live_reconciliation(
 
 async def _enrich_pending_rows(
     *,
-    limit: int,
+    limit: int | None,
     config: AppConfig,
     paths: XDGPaths,
     auth_bundle: ResolvedAuthBundle,
     transport: httpx.AsyncBaseTransport | None,
     console: Console,
 ) -> tuple[int, int, int, int]:
-    if limit <= 0:
+    if limit is not None and limit <= 0:
         async with locked_archive_job(config=config, paths=paths) as job:
             return 0, 0, 0, len(job.store.list_tweet_objects_for_enrichment())
 
@@ -768,10 +769,31 @@ def _initial_counts() -> dict[str, int]:
     }
 
 
+def _manifest_counts(manifest_row: dict[str, Any] | None) -> dict[str, int]:
+    if not manifest_row:
+        return _initial_counts()
+    raw = manifest_row.get("counts_json")
+    if not isinstance(raw, str) or not raw:
+        return _initial_counts()
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return _initial_counts()
+    if not isinstance(parsed, dict):
+        return _initial_counts()
+    counts = _initial_counts()
+    for key in counts:
+        value = parsed.get(key)
+        if isinstance(value, int):
+            counts[key] = value
+    return counts
+
+
 async def import_x_archive(
     archive_path: Path,
     *,
     detail_lookups: int = 0,
+    enrich: bool = False,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
     auth_bundle: ResolvedAuthBundle | None = None,
@@ -780,6 +802,8 @@ async def import_x_archive(
 ) -> ArchiveImportResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
+    if enrich and detail_lookups > 0:
+        raise ConfigError("Use either --enrich or --detail-lookups, not both.")
     with _ArchiveInput(archive_path) as source:
         digest = source.digest()
         generation_date = _manifest_generation_date(source.manifest)
@@ -790,6 +814,8 @@ async def import_x_archive(
         existing_manifest: dict[str, Any] | None = None
         store: ArchiveStore | None = None
         import_started_at = utc_now()
+        followup_requested = enrich or detail_lookups > 0
+        import_performed = False
 
         lock = ProcessLock(paths.lock_file)
         lock.acquire()
@@ -798,81 +824,93 @@ async def import_x_archive(
             assert store is not None
             existing_manifest = store.get_import_manifest(digest)
             if existing_manifest and existing_manifest.get("status") == "completed":
+                counts = _manifest_counts(existing_manifest)
+                store.ensure_archive_owner_id(identity.account_id)
                 store.close()
-                return ArchiveImportResult(
-                    skipped=True,
+                if not followup_requested:
+                    return ArchiveImportResult(
+                        skipped=True,
+                        followup_performed=False,
+                        counts=counts,
+                        warnings=["archive already imported; skipping duplicate import"],
+                    )
+            else:
+                store.ensure_archive_owner_id(identity.account_id)
+                import_performed = True
+
+                store.set_import_manifest(
+                    digest,
+                    archive_generation_date=generation_date,
+                    status="in_progress",
+                    import_started_at=import_started_at,
+                    warnings=warnings,
                     counts=counts,
-                    warnings=["archive already imported; skipping duplicate import"],
                 )
+                _record_archive_capture(
+                    store, "XArchiveManifest", "data/manifest.js", source.manifest
+                )
+                for filename, payload in account_parts:
+                    _record_archive_capture(store, "XArchiveAccount", filename, payload)
 
-            store.ensure_archive_owner_id(identity.account_id)
-            store.set_import_manifest(
-                digest,
-                archive_generation_date=generation_date,
-                status="in_progress",
-                import_started_at=import_started_at,
-                warnings=warnings,
-                counts=counts,
-            )
-            _record_archive_capture(store, "XArchiveManifest", "data/manifest.js", source.manifest)
-            for filename, payload in account_parts:
-                _record_archive_capture(store, "XArchiveAccount", filename, payload)
+                tweets_info = ((source.manifest.get("dataTypes") or {}).get("tweets")) or {}
+                if "bookmark" not in {
+                    key.lower() for key in (source.manifest.get("dataTypes") or {})
+                }:
+                    warnings.append("archive does not contain a bookmark dataset")
 
-            tweets_info = ((source.manifest.get("dataTypes") or {}).get("tweets")) or {}
-            if "bookmark" not in {key.lower() for key in (source.manifest.get("dataTypes") or {})}:
-                warnings.append("archive does not contain a bookmark dataset")
+                _, tweet_header_parts = source.load_dataset("tweetHeaders")
+                deleted_tweets, deleted_tweet_parts = source.load_dataset("deletedTweets")
+                deleted_headers_items, deleted_header_parts = source.load_dataset(
+                    "deletedTweetHeaders"
+                )
+                tweets, tweet_parts = source.load_dataset("tweets")
+                likes, like_parts = source.load_dataset("like")
 
-            _, tweet_header_parts = source.load_dataset("tweetHeaders")
-            deleted_tweets, deleted_tweet_parts = source.load_dataset("deletedTweets")
-            deleted_headers_items, deleted_header_parts = source.load_dataset("deletedTweetHeaders")
-            tweets, tweet_parts = source.load_dataset("tweets")
-            likes, like_parts = source.load_dataset("like")
+                for filename, payload in tweet_header_parts:
+                    _record_archive_capture(store, "XArchiveTweetHeaders", filename, payload)
+                for filename, payload in deleted_header_parts:
+                    _record_archive_capture(store, "XArchiveDeletedTweetHeaders", filename, payload)
+                for filename, payload in tweet_parts:
+                    _record_archive_capture(store, "XArchiveTweets", filename, payload)
+                for filename, payload in deleted_tweet_parts:
+                    _record_archive_capture(store, "XArchiveDeletedTweets", filename, payload)
+                for filename, payload in like_parts:
+                    _record_archive_capture(store, "XArchiveLikes", filename, payload)
 
-            for filename, payload in tweet_header_parts:
-                _record_archive_capture(store, "XArchiveTweetHeaders", filename, payload)
-            for filename, payload in deleted_header_parts:
-                _record_archive_capture(store, "XArchiveDeletedTweetHeaders", filename, payload)
-            for filename, payload in tweet_parts:
-                _record_archive_capture(store, "XArchiveTweets", filename, payload)
-            for filename, payload in deleted_tweet_parts:
-                _record_archive_capture(store, "XArchiveDeletedTweets", filename, payload)
-            for filename, payload in like_parts:
-                _record_archive_capture(store, "XArchiveLikes", filename, payload)
-
-            deleted_headers = _deleted_headers_map(deleted_headers_items)
-            _import_authored_tweets(
-                store, tweets, identity, deleted_headers=deleted_headers, counts=counts
-            )
-            _import_authored_tweets(
-                store,
-                deleted_tweets,
-                identity,
-                deleted_headers=deleted_headers,
-                counts=counts,
-            )
-            _import_likes(store, likes, counts=counts)
-            _copy_exported_media(
-                source,
-                store,
-                paths,
-                tweets_info.get("mediaDirectory") if isinstance(tweets_info, dict) else None,
-                counts=counts,
-                warnings=warnings,
-            )
-            store.set_import_manifest(
-                digest,
-                archive_generation_date=generation_date,
-                status="completed",
-                import_started_at=import_started_at,
-                import_completed_at=utc_now(),
-                warnings=warnings,
-                counts=counts,
-            )
-            store.optimize()
+                deleted_headers = _deleted_headers_map(deleted_headers_items)
+                _import_authored_tweets(
+                    store, tweets, identity, deleted_headers=deleted_headers, counts=counts
+                )
+                _import_authored_tweets(
+                    store,
+                    deleted_tweets,
+                    identity,
+                    deleted_headers=deleted_headers,
+                    counts=counts,
+                )
+                _import_likes(store, likes, counts=counts)
+                _copy_exported_media(
+                    source,
+                    store,
+                    paths,
+                    tweets_info.get("mediaDirectory") if isinstance(tweets_info, dict) else None,
+                    counts=counts,
+                    warnings=warnings,
+                )
+                store.set_import_manifest(
+                    digest,
+                    archive_generation_date=generation_date,
+                    status="completed",
+                    import_started_at=import_started_at,
+                    import_completed_at=utc_now(),
+                    warnings=warnings,
+                    counts=counts,
+                )
+                store.optimize()
             store.close()
         except Exception:
             try:
-                if store is not None:
+                if store is not None and import_performed:
                     store.set_import_manifest(
                         digest,
                         archive_generation_date=generation_date,
@@ -905,6 +943,7 @@ async def import_x_archive(
         detail_terminal = 0
         detail_transient = 0
         pending = 0
+        detail_limit: int | None = None if enrich else detail_lookups
         if resolved_auth is not None:
             try:
                 (
@@ -913,7 +952,7 @@ async def import_x_archive(
                     detail_transient,
                     pending,
                 ) = await _enrich_pending_rows(
-                    limit=detail_lookups,
+                    limit=detail_limit,
                     config=config,
                     paths=paths,
                     auth_bundle=resolved_auth,
@@ -942,7 +981,11 @@ async def import_x_archive(
                 digest,
                 archive_generation_date=generation_date,
                 status="completed",
-                import_started_at=import_started_at,
+                import_started_at=(
+                    existing_manifest.get("import_started_at")
+                    if existing_manifest and not import_performed
+                    else import_started_at
+                ),
                 import_completed_at=utc_now(),
                 warnings=warnings,
                 counts=final_counts,
@@ -952,7 +995,8 @@ async def import_x_archive(
             lock.release()
 
         return ArchiveImportResult(
-            skipped=False,
+            skipped=not import_performed,
+            followup_performed=True,
             counts=final_counts,
             warnings=warnings,
             reconciled_collections=reconciled_collections,

@@ -170,11 +170,23 @@ If the `[embed]` extra is installed, new tweets are automatically embedded after
 # Import an official X archive ZIP or extracted directory
 uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip
 
+# Fetch TweetDetail for every remaining sparse archive tweet after the automatic bulk tweets/likes reconciliation
+uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip --enrich
+
 # Run a bounded TweetDetail follow-up after the automatic bulk tweets/likes reconciliation
 uv run tweetxvault import x-archive ~/Downloads/twitter-archive --detail-lookups 100
 ```
 
-The importer maps authored tweets, deleted authored tweets, likes, and exported `tweets_media/` files into the same LanceDB archive used by live sync. It applies the same archive-owner guardrail as sync, short-circuits repeated imports of the same archive digest, runs bulk live `tweets` / `likes` reconciliation automatically when auth is available, and leaves sparse archive-only rows in a tracked pending state until you choose how many per-tweet `TweetDetail` lookups to allow with `--detail-lookups` (default `0`).
+The importer maps authored tweets, deleted authored tweets, likes, and exported `tweets_media/` files into the same LanceDB archive used by live sync. It applies the same archive-owner guardrail as sync, runs bulk live `tweets` / `likes` reconciliation automatically when auth is available, and keeps sparse archive-only rows in a tracked pending state until you choose how much per-tweet follow-up to run.
+
+`TweetDetail` is X's per-tweet detail API: tweetxvault uses it to fill in metadata the archive often lacks for liked tweets, such as author fields, timestamps, full media metadata, and thread context.
+
+Import follow-up options:
+- Default import does **no per-tweet TweetDetail pass**. It only imports the archive and runs the bulk live collection reconciliation.
+- `--detail-lookups N` runs a bounded TweetDetail pass for at most `N` pending sparse tweets after the bulk live syncs.
+- `--enrich` runs the TweetDetail pass for **all** currently pending sparse tweets after the bulk live syncs.
+- If the same archive digest was already imported, a plain re-run still short-circuits, but `--enrich` reuses the existing import and runs only the follow-up enrichment instead of re-importing the ZIP contents.
+- If you want broader TweetDetail-based context capture later, `uv run tweetxvault threads expand` is the follow-up command for that.
 
 ### Viewing your archive
 
@@ -278,6 +290,7 @@ uv run tweetxvault threads expand --refresh 2026531440414925307
 ```
 
 Explicit thread targets are idempotent by default: previously expanded targets are skipped unless you pass `--refresh`. Linked status-URL targets are attempted at most once per run, even if the same target appears in multiple archived URL refs.
+`tweetxvault threads expand` is incremental by default, so it is safe to rerun after archive import if you want more TweetDetail-based context capture later.
 
 ### Article Refresh
 

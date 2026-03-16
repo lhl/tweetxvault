@@ -386,6 +386,62 @@ def test_repeated_import_short_circuits_across_directory_and_zip_inputs(
     store.close()
 
 
+def test_repeated_import_can_reuse_existing_archive_for_enrich_followup(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+
+    first = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    async def fake_reconciliation(**_kwargs):
+        return ["likes"], [], _auth_bundle()
+
+    async def fake_enrich_pending_rows(**kwargs):
+        assert kwargs["limit"] is None
+        return 3, 1, 2, 4
+
+    monkeypatch.setattr(archive_import, "_run_live_reconciliation", fake_reconciliation)
+    monkeypatch.setattr(archive_import, "_enrich_pending_rows", fake_enrich_pending_rows)
+
+    second = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            enrich=True,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert first.skipped is False
+    assert second.skipped is True
+    assert second.followup_performed is True
+    assert second.reconciled_collections == ["likes"]
+    assert second.counts["authored_tweets"] == 1
+    assert second.counts["deleted_authored_tweets"] == 1
+    assert second.counts["likes"] == 1
+    assert second.detail_lookups == 3
+    assert second.detail_terminal_unavailable == 1
+    assert second.detail_transient_failures == 2
+    assert second.pending_enrichment == 4
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    manifest_rows = store.table.search().where("record_type = 'import_manifest'").to_list()
+    manifest_counts = json.loads(manifest_rows[0]["counts_json"])
+    assert manifest_counts["detail_lookups"] == 3
+    assert manifest_counts["pending_enrichment"] == 4
+    store.close()
+
+
 def test_archive_import_does_not_downgrade_existing_live_tweet_object(
     paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

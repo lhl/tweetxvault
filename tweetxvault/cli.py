@@ -685,14 +685,25 @@ def import_x_archive_command(
     archive: Annotated[
         Path, typer.Argument(help="Path to an X archive zip or extracted directory.")
     ],
+    enrich: Annotated[
+        bool,
+        typer.Option(
+            "--enrich",
+            help=(
+                "Fetch TweetDetail for all pending sparse archive tweets after bulk live syncs. "
+                "If this archive was already imported, reuse the existing import and run only "
+                "the follow-up enrichment."
+            ),
+        ),
+    ] = False,
     detail_lookups: Annotated[
         int,
         typer.Option(
             "--detail-lookups",
             min=0,
             help=(
-                "Maximum number of pending sparse tweets to enrich via "
-                "TweetDetail after bulk live syncs."
+                "Maximum number of pending sparse tweets to enrich by fetching X's "
+                "per-tweet TweetDetail API after bulk live syncs."
             ),
         ),
     ] = 0,
@@ -715,6 +726,7 @@ def import_x_archive_command(
         result = asyncio.run(
             import_x_archive(
                 archive,
+                enrich=enrich,
                 detail_lookups=detail_lookups,
                 config=config,
                 paths=paths,
@@ -729,9 +741,15 @@ def import_x_archive_command(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
 
-    if result.skipped:
+    if result.skipped and not result.followup_performed:
         console.print("archive import skipped: already imported")
         return
+    if result.skipped:
+        console.print(
+            "archive import: already present; keeping existing imported data "
+            "and running follow-up enrichment",
+            highlight=False,
+        )
 
     console.print(
         "archive import: "

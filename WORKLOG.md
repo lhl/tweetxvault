@@ -2,6 +2,17 @@
 
 ## 2026-03-17
 
+- Smoothed the archive-import follow-up UX after the operator review:
+  - Added `tweetxvault import x-archive --enrich` so users can rerun the same archive digest and perform the pending TweetDetail follow-up without re-importing the ZIP contents
+  - Kept plain repeated imports digest-idempotent, but changed repeated imports with `--enrich` to reuse the existing import manifest/counts and run the follow-up reconciliation/enrichment path instead of short-circuiting immediately
+  - Clarified the README around what `TweetDetail` means for end users, how `--detail-lookups` differs from `--enrich`, and when `tweetxvault threads expand` is the better broader follow-up command
+  - Added regression coverage for “import once, enrich later” plus CLI output/forwarding for the new `--enrich` mode
+  - Validation:
+    - `uv run pytest tests/test_archive_import.py tests/test_cli.py -q`
+    - `uv run ruff check`
+    - `uv run ruff format --check`
+    - `uv run pytest -q`
+
 - Applied the second post-Task-16 archive-import review fixes:
   - Collapsed archive media download updates per `media` row so importing both a main asset and thumbnail for the same normalized row no longer clears the first field written
   - Made `--detail-lookups` best-effort for non-terminal API failures by marking rows `transient_failure` with the HTTP status instead of aborting the whole import after archive writes succeeded

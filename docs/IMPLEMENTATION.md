@@ -391,6 +391,11 @@ Fresh fixture status (2026-03-16):
   - downgraded non-terminal `TweetDetail` API failures during `--detail-lookups` to tracked `transient_failure` states instead of aborting the overall import after archive writes had already completed
   - preserved one attempt-scoped `import_started_at` value across all import-manifest rewrites for the run
   - added regressions for combined main+thumbnail media import, transient detail API failures, and manifest start-time preservation
+- [x] Smoothed the archive-import follow-up UX:
+  - documented `TweetDetail` in end-user terms in the README instead of assuming users know the internal X API name
+  - added `tweetxvault import x-archive --enrich` as the “do the rest” path for pending sparse archive tweets
+  - changed repeated imports so a plain rerun still short-circuits by digest, but `--enrich` reuses the existing import and runs the follow-up enrichment instead of skipping outright
+  - documented `tweetxvault threads expand` as the broader incremental TweetDetail/context follow-up command after import
 
 ## Review Cleanup
 
