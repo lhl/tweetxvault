@@ -23,6 +23,7 @@ _META_RE = re.compile(
     r'<meta[^>]+(?:name|property)=["\']([^"\']+)["\'][^>]+content=["\']([^"\']*)["\']',
     re.IGNORECASE,
 )
+_UPDATE_BATCH_SIZE = 100
 
 
 @dataclass(slots=True)
@@ -87,6 +88,14 @@ async def unfurl_urls(
                 "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
             },
         ) as client:
+            pending_updates: list[dict[str, object]] = []
+
+            def flush_updates() -> None:
+                if not pending_updates:
+                    return
+                store.merge_rows(pending_updates.copy())
+                pending_updates.clear()
+
             for row in rows:
                 result.processed += 1
                 request_url = (
@@ -96,20 +105,24 @@ async def unfurl_urls(
                     or row.get("url")
                 )
                 if not isinstance(request_url, str) or not request_url:
-                    store.update_url_unfurl(
-                        row["row_key"],
-                        http_status=row.get("http_status"),
-                        final_url=row.get("final_url"),
-                        canonical_url=row.get("canonical_url"),
-                        title=row.get("title"),
-                        description=row.get("description"),
-                        site_name=row.get("site_name"),
-                        content_type=row.get("content_type"),
-                        unfurl_state="failed",
-                        last_fetched_at=utc_now(),
-                        download_error="missing URL to unfurl",
+                    pending_updates.append(
+                        store.build_url_unfurl_update(
+                            row,
+                            http_status=row.get("http_status"),
+                            final_url=row.get("final_url"),
+                            canonical_url=row.get("canonical_url"),
+                            title=row.get("title"),
+                            description=row.get("description"),
+                            site_name=row.get("site_name"),
+                            content_type=row.get("content_type"),
+                            unfurl_state="failed",
+                            last_fetched_at=utc_now(),
+                            download_error="missing URL to unfurl",
+                        )
                     )
                     result.failed += 1
+                    if len(pending_updates) >= _UPDATE_BATCH_SIZE:
+                        flush_updates()
                     continue
 
                 try:
@@ -139,37 +152,49 @@ async def unfurl_urls(
                         )
                     else:
                         canonical_url = canonical_url or canonicalize_url(final_url)
-                    store.update_url_unfurl(
-                        row["row_key"],
-                        http_status=response.status_code,
-                        final_url=final_url,
-                        canonical_url=canonical_url,
-                        title=title,
-                        description=description,
-                        site_name=site_name,
-                        content_type=content_type,
-                        unfurl_state="done",
-                        last_fetched_at=utc_now(),
-                        download_error=None,
+                    pending_updates.append(
+                        store.build_url_unfurl_update(
+                            row,
+                            http_status=response.status_code,
+                            final_url=final_url,
+                            canonical_url=canonical_url,
+                            title=title,
+                            description=description,
+                            site_name=site_name,
+                            content_type=content_type,
+                            unfurl_state="done",
+                            last_fetched_at=utc_now(),
+                            download_error=None,
+                        )
                     )
                     result.updated += 1
                 except Exception as exc:
-                    store.update_url_unfurl(
-                        row["row_key"],
-                        http_status=getattr(getattr(exc, "response", None), "status_code", None),
-                        final_url=row.get("final_url"),
-                        canonical_url=row.get("canonical_url"),
-                        title=row.get("title"),
-                        description=row.get("description"),
-                        site_name=row.get("site_name"),
-                        content_type=row.get("content_type"),
-                        unfurl_state="failed",
-                        last_fetched_at=utc_now(),
-                        download_error=str(exc),
+                    pending_updates.append(
+                        store.build_url_unfurl_update(
+                            row,
+                            http_status=getattr(
+                                getattr(exc, "response", None),
+                                "status_code",
+                                None,
+                            ),
+                            final_url=row.get("final_url"),
+                            canonical_url=row.get("canonical_url"),
+                            title=row.get("title"),
+                            description=row.get("description"),
+                            site_name=row.get("site_name"),
+                            content_type=row.get("content_type"),
+                            unfurl_state="failed",
+                            last_fetched_at=utc_now(),
+                            download_error=str(exc),
+                        )
                     )
                     result.failed += 1
                     if console:
                         console.print(f"url {row['row_key']}: failed ({exc})", highlight=False)
+                if len(pending_updates) >= _UPDATE_BATCH_SIZE:
+                    flush_updates()
+
+            flush_updates()
 
         if result.processed > 0:
             job.mark_dirty()

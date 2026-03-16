@@ -400,3 +400,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: the graph-level `add_*` methods are only exercised indirectly through extraction/storage integration tests, which makes edge-case precedence rules harder to lock down.
   - Landed approach: added focused unit tests for direct `add_tweet_object(...)`, `add_media(...)`, and `merge(...)` behavior, covering new-vs-existing precedence, empty-string handling, `min(position)`, and article status promotion.
   - Coverage: direct graph tests now cover tweet/media/url/url_ref/article coalescing plus one explicit `merge(...)` path.
+- [x] Review item 11: batch media/unfurl row updates and clean up minor clarity issues.
+  - Current problem: `media` and `unfurl` currently do a LanceDB read + merge per item via `update_media_download(...)` / `update_url_unfurl(...)`, which is unnecessarily expensive at larger archive sizes.
+  - Landed approach: added reusable row-update builders plus `ArchiveStore.merge_rows(...)`, switched media/unfurl to flush updated rows in batches, and folded in the low-risk CLI-parentheses + media-URL safety fixes while touching those files.
+  - Coverage: media/unfurl tests now prove the batched merge path is actually used, and the existing state-transition coverage stayed green on top.

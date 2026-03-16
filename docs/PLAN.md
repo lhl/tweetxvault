@@ -630,6 +630,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: added targeted tests for retries, limits, invalid responses, and malformed payload handling across media, unfurl, articles, threads, and extractor.
 - [x] Add direct unit coverage for `ExtractedTweetGraph` coalescing rules.
   - Next cleanup item landed: locked down the graph-level merge precedence rules with focused unit tests instead of relying only on extraction/storage integrations.
+- [x] Batch media/unfurl row merges for LanceDB and clean up nearby minor issues.
+  - Next cleanup item landed: stopped doing one merge per media/url update in the runners, and folded in the small readability/safety fixes in `cli.py` and `extractor.py`.
 
 ## Open Questions (Remaining)
 

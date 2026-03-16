@@ -137,7 +137,7 @@ def _prepare_auth_override(
     profile_path: Path | None,
     interactive: bool = False,
 ):
-    if interactive and (profile or profile_path is not None):
+    if interactive and (profile or (profile_path is not None)):
         raise ConfigError("--interactive cannot be combined with --profile or --profile-path.")
     if interactive:
         candidate = _pick_browser_candidate_interactively(console, browser=browser)
@@ -145,7 +145,7 @@ def _prepare_auth_override(
         profile = None
         profile_path = candidate.profile_path
 
-    if (profile or profile_path is not None) and not browser:
+    if (profile or (profile_path is not None)) and not browser:
         raise ConfigError("--profile and --profile-path require --browser.")
     if not browser:
         return config, None

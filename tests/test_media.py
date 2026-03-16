@@ -13,6 +13,7 @@ from tests.conftest import (
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.media import download_media
 from tweetxvault.storage import open_archive_store
+from tweetxvault.storage.backend import ArchiveStore
 
 
 def _complex_tweet(tweet_id: str = "100") -> TimelineTweet:
@@ -130,6 +131,48 @@ async def test_download_media_updates_rows_and_files(paths, config) -> None:
     assert repeat.processed == 0
     assert repeat.downloaded == 0
     assert repeat.skipped == 0
+
+
+@pytest.mark.asyncio
+async def test_download_media_batches_row_merges(
+    paths,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_archive(paths)
+    batch_sizes: list[int] = []
+    original = ArchiveStore.merge_rows
+
+    def counting_merge_rows(self, rows):
+        batch_sizes.append(len(rows))
+        return original(self, rows)
+
+    monkeypatch.setattr(ArchiveStore, "merge_rows", counting_merge_rows)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith(".mp4"):
+            return httpx.Response(
+                200,
+                content=b"video-bytes",
+                headers={"content-type": "video/mp4"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            content=b"image-bytes",
+            headers={"content-type": "image/jpeg"},
+            request=request,
+        )
+
+    result = await download_media(
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.downloaded == 3
+    assert batch_sizes == [3]
 
 
 @pytest.mark.asyncio

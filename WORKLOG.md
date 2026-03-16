@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 11 for LanceDB batch updates in media/unfurl:
+  - Added `ArchiveStore.merge_rows(...)` plus reusable media/url row-update builders in `tweetxvault/storage/backend.py`, then switched `tweetxvault/media.py` and `tweetxvault/unfurl.py` to flush row updates in batches instead of merging one item at a time
+  - Added proof tests in `tests/test_media.py` and `tests/test_unfurl.py` that count `merge_rows(...)` calls so the new batched path is explicitly covered
+  - Folded in the nearby minor fixes while touching those files: parenthesized the `cli.py` auth-override guard for readability and made `_preferred_media_url(...)` avoid unchecked dict indexing even though `_video_variants(...)` already sanitizes inputs
+  - Validation:
+    - `uv run pytest tests/test_media.py tests/test_unfurl.py tests/test_storage.py tests/test_extractor.py tests/test_cli.py`
+    - `uv run ruff check tweetxvault/storage/backend.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/cli.py tweetxvault/extractor.py tests/test_media.py tests/test_unfurl.py`
+    - `uv run ruff format --check tweetxvault/storage/backend.py tweetxvault/media.py tweetxvault/unfurl.py tweetxvault/cli.py tweetxvault/extractor.py tests/test_media.py tests/test_unfurl.py`
+
 - Landed review cleanup item 10 for direct `ExtractedTweetGraph` coalescing coverage:
   - Expanded `tests/test_extractor.py` with direct unit tests for `ExtractedTweetGraph.add_tweet_object(...)`, `add_media(...)`, and `merge(...)`
   - Locked down the current precedence rules: new non-empty values beat existing ones, empty strings fall back to existing values, media keeps the minimum position, empty variant/raw-json payloads do not overwrite richer existing values, and articles promote to `body_present` when merged body text appears

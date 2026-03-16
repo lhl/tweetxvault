@@ -25,6 +25,7 @@ _CONTENT_TYPE_EXTENSIONS = {
     "image/webp": ".webp",
     "video/mp4": ".mp4",
 }
+_UPDATE_BATCH_SIZE = 100
 
 
 @dataclass(slots=True)
@@ -175,6 +176,14 @@ async def download_media(
             transport=transport,
             headers={"User-Agent": DEFAULT_USER_AGENT},
         ) as client:
+            pending_updates: list[dict[str, object]] = []
+
+            def flush_updates() -> None:
+                if not pending_updates:
+                    return
+                store.merge_rows(pending_updates.copy())
+                pending_updates.clear()
+
             for row in rows:
                 result.processed += 1
                 if _download_complete(row, paths.data_dir):
@@ -244,39 +253,47 @@ async def download_media(
                             }
                         )
 
-                    store.update_media_download(
-                        row["row_key"],
-                        download_state="done",
-                        local_path=state["local_path"],
-                        sha256=state["sha256"],
-                        byte_size=state["byte_size"],
-                        content_type=state["content_type"],
-                        thumbnail_local_path=state["thumbnail_local_path"],
-                        thumbnail_sha256=state["thumbnail_sha256"],
-                        thumbnail_byte_size=state["thumbnail_byte_size"],
-                        thumbnail_content_type=state["thumbnail_content_type"],
-                        downloaded_at=utc_now(),
-                        download_error=None,
+                    pending_updates.append(
+                        store.build_media_download_update(
+                            row,
+                            download_state="done",
+                            local_path=state["local_path"],
+                            sha256=state["sha256"],
+                            byte_size=state["byte_size"],
+                            content_type=state["content_type"],
+                            thumbnail_local_path=state["thumbnail_local_path"],
+                            thumbnail_sha256=state["thumbnail_sha256"],
+                            thumbnail_byte_size=state["thumbnail_byte_size"],
+                            thumbnail_content_type=state["thumbnail_content_type"],
+                            downloaded_at=utc_now(),
+                            download_error=None,
+                        )
                     )
                     result.downloaded += 1
                 except Exception as exc:
-                    store.update_media_download(
-                        row["row_key"],
-                        download_state="failed",
-                        local_path=state["local_path"],
-                        sha256=state["sha256"],
-                        byte_size=state["byte_size"],
-                        content_type=state["content_type"],
-                        thumbnail_local_path=state["thumbnail_local_path"],
-                        thumbnail_sha256=state["thumbnail_sha256"],
-                        thumbnail_byte_size=state["thumbnail_byte_size"],
-                        thumbnail_content_type=state["thumbnail_content_type"],
-                        downloaded_at=row.get("downloaded_at") or None,
-                        download_error=str(exc),
+                    pending_updates.append(
+                        store.build_media_download_update(
+                            row,
+                            download_state="failed",
+                            local_path=state["local_path"],
+                            sha256=state["sha256"],
+                            byte_size=state["byte_size"],
+                            content_type=state["content_type"],
+                            thumbnail_local_path=state["thumbnail_local_path"],
+                            thumbnail_sha256=state["thumbnail_sha256"],
+                            thumbnail_byte_size=state["thumbnail_byte_size"],
+                            thumbnail_content_type=state["thumbnail_content_type"],
+                            downloaded_at=row.get("downloaded_at") or None,
+                            download_error=str(exc),
+                        )
                     )
                     result.failed += 1
                     if console:
                         console.print(f"media {row['row_key']}: failed ({exc})", highlight=False)
+                if len(pending_updates) >= _UPDATE_BATCH_SIZE:
+                    flush_updates()
+
+            flush_updates()
 
         if result.processed > 0:
             job.mark_dirty()

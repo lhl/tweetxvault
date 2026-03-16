@@ -12,6 +12,7 @@ from tests.conftest import (
 )
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.storage import open_archive_store
+from tweetxvault.storage.backend import ArchiveStore
 from tweetxvault.unfurl import unfurl_urls
 
 
@@ -137,6 +138,45 @@ async def test_unfurl_urls_persists_html_metadata(paths, config) -> None:
         assert quoted["description"] == "Quoted description"
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_unfurl_urls_batches_row_merges(
+    paths,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_archive(paths)
+    batch_sizes: list[int] = []
+    original = ArchiveStore.merge_rows
+
+    def counting_merge_rows(self, rows):
+        batch_sizes.append(len(rows))
+        return original(self, rows)
+
+    monkeypatch.setattr(ArchiveStore, "merge_rows", counting_merge_rows)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        html = """
+        <html><head>
+        <title>Story</title>
+        </head><body></body></html>
+        """
+        return httpx.Response(
+            200,
+            text=html,
+            headers={"content-type": "text/html"},
+            request=request,
+        )
+
+    result = await unfurl_urls(
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.updated == 2
+    assert batch_sizes == [2]
 
 
 @pytest.mark.asyncio

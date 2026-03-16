@@ -247,6 +247,9 @@ class ArchiveStore:
             .execute(payload)
         )
 
+    def merge_rows(self, rows: list[dict[str, Any]]) -> None:
+        self._merge_records(rows)
+
     def _row_key_for_tweet(
         self, tweet_id: str, collection_type: str, folder_id: str | None = None
     ) -> str:
@@ -933,6 +936,41 @@ class ArchiveStore:
         row = self._get_row(row_key)
         if row is None:
             raise KeyError(f"Media row not found: {row_key}")
+        self.merge_rows(
+            [
+                self.build_media_download_update(
+                    row,
+                    download_state=download_state,
+                    local_path=local_path,
+                    sha256=sha256,
+                    byte_size=byte_size,
+                    content_type=content_type,
+                    thumbnail_local_path=thumbnail_local_path,
+                    thumbnail_sha256=thumbnail_sha256,
+                    thumbnail_byte_size=thumbnail_byte_size,
+                    thumbnail_content_type=thumbnail_content_type,
+                    downloaded_at=downloaded_at,
+                    download_error=download_error,
+                )
+            ]
+        )
+
+    def build_media_download_update(
+        self,
+        row: dict[str, Any],
+        *,
+        download_state: str,
+        local_path: str | None,
+        sha256: str | None,
+        byte_size: int | None,
+        content_type: str | None,
+        thumbnail_local_path: str | None,
+        thumbnail_sha256: str | None,
+        thumbnail_byte_size: int | None,
+        thumbnail_content_type: str | None,
+        downloaded_at: str | None,
+        download_error: str | None,
+    ) -> dict[str, Any]:
         updated = dict(row)
         updated.update(
             {
@@ -950,7 +988,7 @@ class ArchiveStore:
                 "updated_at": utc_now(),
             }
         )
-        self._merge_records([updated])
+        return updated
 
     def list_url_rows(
         self,
@@ -986,6 +1024,39 @@ class ArchiveStore:
         row = self._get_row(row_key)
         if row is None:
             raise KeyError(f"URL row not found: {row_key}")
+        self.merge_rows(
+            [
+                self.build_url_unfurl_update(
+                    row,
+                    http_status=http_status,
+                    final_url=final_url,
+                    canonical_url=canonical_url,
+                    title=title,
+                    description=description,
+                    site_name=site_name,
+                    content_type=content_type,
+                    unfurl_state=unfurl_state,
+                    last_fetched_at=last_fetched_at,
+                    download_error=download_error,
+                )
+            ]
+        )
+
+    def build_url_unfurl_update(
+        self,
+        row: dict[str, Any],
+        *,
+        http_status: int | None,
+        final_url: str | None,
+        canonical_url: str | None,
+        title: str | None,
+        description: str | None,
+        site_name: str | None,
+        content_type: str | None,
+        unfurl_state: str,
+        last_fetched_at: str | None,
+        download_error: str | None,
+    ) -> dict[str, Any]:
         updated = dict(row)
         updated.update(
             {
@@ -1003,7 +1074,7 @@ class ArchiveStore:
                 "updated_at": utc_now(),
             }
         )
-        self._merge_records([updated])
+        return updated
 
     def list_article_rows(
         self,

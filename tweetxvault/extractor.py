@@ -548,9 +548,11 @@ def _preferred_media_url(item: dict[str, Any], variants: list[dict[str, Any]]) -
     ]
     if mp4_variants:
         best = max(mp4_variants, key=lambda variant: variant.get("bitrate") or -1)
-        return best["url"]
+        best_url = best.get("url")
+        return best_url if isinstance(best_url, str) and best_url else None
     if variants:
-        return variants[0]["url"]
+        fallback_url = variants[0].get("url")
+        return fallback_url if isinstance(fallback_url, str) and fallback_url else None
     return media_url if isinstance(media_url, str) else None
 
 
