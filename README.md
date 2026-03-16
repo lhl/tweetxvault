@@ -2,7 +2,7 @@
 
 A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tweets into a local [LanceDB](https://lancedb.github.io/lancedb/) database. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
 
-<img src="docs/screenshot.png" alt="tweetxvault view all" width="800">
+<img src="https://raw.githubusercontent.com/lhl/tweetxvault/main/docs/screenshot.png" alt="tweetxvault view all" width="800">
 
 ## Features
 
@@ -25,13 +25,27 @@ A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tw
 
 ## Installation
 
+Install from PyPI:
+
+```bash
+pip install tweetxvault
+```
+
+To enable semantic search (vector embeddings):
+
+```bash
+pip install "tweetxvault[embed]"
+```
+
+Install from source:
+
 ```bash
 git clone https://github.com/lhl/tweetxvault.git
 cd tweetxvault
 uv sync
 ```
 
-To enable semantic search (vector embeddings):
+To enable semantic search from source:
 
 ```bash
 uv sync --extra embed

@@ -432,3 +432,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
 - [x] Review item 18: decide and document the supported runtime platforms.
   - Current problem: README/path messaging implies Windows support, but core runtime pieces (`fcntl`, `resource`, `strftime("%-d")`) keep the current CLI Unix-specific.
   - Landed approach: documented the current runtime as Unix-like only until platform-specific replacements and tests land for those dependencies.
+- [x] Review item 19: tighten PyPI release metadata and artifact contents.
+  - Current problem: the PyPI-facing README used a repo-relative screenshot, install docs led with source checkout instead of `pip install`, and the default sdist pulled in repo-internal docs/tests/worklog files.
+  - Landed approach: switched the README screenshot to a direct GitHub raw URL, moved PyPI install instructions ahead of the source-install path, added explicit project URLs plus Unix-like trove classifiers, and constrained hatchling wheel/sdist targets to the package and release files. Hatchling still auto-includes `.gitignore` in the sdist.
+  - Validation: `uv build`, `uv run --with twine twine check dist/*`, and direct wheel/sdist content inspection.

@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Tightened the PyPI release surface for `0.1.0`:
+  - Switched the README screenshot to the direct GitHub raw URL after confirming `https://github.com/lhl/tweetxvault/blob/main/docs/screenshot.png?raw=true` resolves to `200 image/png`; this avoids a broken repo-relative image on PyPI while keeping the same asset
+  - Reworked the installation section in `README.md` so `pip install tweetxvault` / `pip install "tweetxvault[embed]"` come first, with `git clone` + `uv sync` kept as the source-install path
+  - Updated `pyproject.toml` metadata to reflect current capabilities more accurately (`bookmarks`, `likes`, and authored tweets), added project URLs/keywords plus Unix-like trove classifiers, and constrained hatchling wheel/sdist targets so release artifacts stop shipping repo-internal docs/tests/worklog/dev content; Hatchling still auto-includes `.gitignore` in the sdist
+  - Validation:
+    - `uv build`
+    - `uv run --with twine twine check dist/*`
+    - Inspected wheel/sdist contents to verify repo-internal files (`docs/`, `tests/`, `WORKLOG.md`, `AGENTS.md`, `CLAUDE.md`, `dev/`) no longer ship in the sdist
+
 - Clarified the user-facing `--browser` docs in `README.md`:
   - Replaced the terse internal-style note with explicit source precedence for `auth_token` / `ct0` / `user_id`
   - Added a concrete example showing forced browser cookies plus explicit `TWEETXVAULT_USER_ID`
