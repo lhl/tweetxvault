@@ -2,6 +2,19 @@
 
 ## 2026-03-17
 
+- Optimized archive import against large existing LanceDB archives by bulk-prefetching row state before each import chunk:
+  - added `ArchiveStore.prefetch_rows(...)` so archive import can hydrate `cursor.existing_rows` in row-key batches instead of issuing per-record point lookups during merge construction
+  - changed authored-tweet import to precompute tweet graphs in small chunks, bulk-prefetch the relevant `tweet` / `tweet_object` / `tweet_relation` / `media` / `url` / `url_ref` / `article` row keys, then merge the chunk in one buffered pass
+  - changed like import to bulk-prefetch `tweet:like` and `tweet_object` row keys before sparse placeholder decisions, removing the large-table point-lookup bottleneck there too
+  - added storage coverage for `prefetch_rows(...)`
+  - copied the real optimized archive DB to `/tmp` and reran the sampled import benchmark on the copy to quantify the improvement without touching the real archive:
+    - baseline on copied live archive before the prefetch change: authored `39.09s` (`25.6 tweets/s`), likes `24.69s` (`40.5 likes/s`)
+    - after the prefetch change on a fresh copied live archive: authored `1.37s` (`728.1 tweets/s`), likes `0.55s` (`1806.1 likes/s`)
+  - validation:
+    - `uv run ruff check`
+    - `uv run ruff format --check`
+    - `uv run pytest -q`
+
 - Clarified the archive-import UX wording after the sampled/debug progress change:
   - fixed `tweetxvault import x-archive --debug` help text and README copy to state that interactive TTY runs already show tqdm progress bars by default
   - `--debug` is now documented as adding per-phase timing diagnostics on top of the normal interactive progress output, not as the switch that enables progress bars

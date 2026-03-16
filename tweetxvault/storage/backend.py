@@ -331,6 +331,26 @@ class ArchiveStore:
             cursor.existing_rows[row_key] = self._get_row(row_key)
         return cursor.existing_rows[row_key]
 
+    def prefetch_rows(self, row_keys: list[str], *, cursor: _PageBuffer) -> None:
+        missing = [
+            row_key
+            for row_key in dict.fromkeys(row_keys)
+            if row_key and row_key not in cursor.records and row_key not in cursor.existing_rows
+        ]
+        if not missing:
+            return
+        found: dict[str, dict[str, Any]] = {}
+        chunk_size = 200
+        for start in range(0, len(missing), chunk_size):
+            chunk = missing[start : start + chunk_size]
+            expr = _expr_in("row_key", set(chunk))
+            for row in self.table.search().where(expr).to_list():
+                row_key = row.get("row_key")
+                if isinstance(row_key, str) and row_key:
+                    found[row_key] = row
+        for row_key in missing:
+            cursor.existing_rows[row_key] = found.get(row_key)
+
     def _queue_record(self, record: dict[str, Any], *, cursor: _PageBuffer | None = None) -> None:
         if cursor is None:
             self._merge_records([record])

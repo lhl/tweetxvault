@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path, PurePosixPath
 from time import perf_counter
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
 import httpx
@@ -40,7 +40,9 @@ from tweetxvault.utils import resolve_query_ids, utc_now
 
 _YTD_ASSIGNMENT_RE = re.compile(r"^\s*window\.YTD\.[A-Za-z0-9_.]+\s*=\s*", re.DOTALL)
 _MANIFEST_ASSIGNMENT_RE = re.compile(r"^\s*window\.__THAR_CONFIG\s*=\s*", re.DOTALL)
-_IMPORT_BATCH_SIZE = 500
+_AUTHORED_IMPORT_PREFETCH_CHUNK = 50
+_LIKE_IMPORT_PREFETCH_CHUNK = 200
+_T = TypeVar("_T")
 
 
 @dataclass(slots=True)
@@ -62,6 +64,20 @@ class _PlaceholderTweetObject:
     lang: str | None = None
     note_tweet_text: str | None = None
     raw_json: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class _PreparedAuthoredImport:
+    timeline_tweet: TimelineTweet
+    deleted_at: str | None
+    graph: ExtractedTweetGraph
+
+
+@dataclass(slots=True)
+class _PreparedLikeImport:
+    tweet_id: str
+    timeline_tweet: TimelineTweet
+    payload: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -505,6 +521,34 @@ def _deleted_headers_map(items: list[Any]) -> dict[str, str]:
     return result
 
 
+def _chunked(items: list[_T], size: int) -> list[list[_T]]:
+    return [items[index : index + size] for index in range(0, len(items), size)]
+
+
+def _secondary_graph_row_keys(store: ArchiveStore, graph: ExtractedTweetGraph) -> list[str]:
+    row_keys: list[str] = []
+    row_keys.extend(
+        store._row_key_for_tweet_object(item.tweet_id) for item in graph.tweet_objects.values()
+    )
+    row_keys.extend(
+        store._row_key_for_tweet_relation(
+            item.source_tweet_id,
+            item.relation_type,
+            item.target_tweet_id,
+        )
+        for item in graph.relations.values()
+    )
+    row_keys.extend(
+        store._row_key_for_media(item.tweet_id, item.media_key) for item in graph.media.values()
+    )
+    row_keys.extend(store._row_key_for_url(item.url_hash) for item in graph.urls.values())
+    row_keys.extend(
+        store._row_key_for_url_ref(item.tweet_id, item.position) for item in graph.url_refs.values()
+    )
+    row_keys.extend(store._row_key_for_article(item.tweet_id) for item in graph.articles.values())
+    return row_keys
+
+
 def _import_authored_tweets(
     store: ArchiveStore,
     tweets: list[Any],
@@ -515,8 +559,8 @@ def _import_authored_tweets(
     progress: Callable[[int, int], None] | None = None,
 ) -> None:
     buffer = _PageBuffer()
-    total = len(tweets)
-    for index, item in enumerate(tweets, start=1):
+    prepared: list[_PreparedAuthoredImport] = []
+    for item in tweets:
         payload = item.get("tweet") if isinstance(item, dict) else None
         if not isinstance(payload, dict):
             continue
@@ -526,35 +570,49 @@ def _import_authored_tweets(
             sort_index=str(payload.get("id_str") or payload.get("id") or ""),
         )
         deleted_at = deleted_headers.get(timeline_tweet.tweet_id) or payload.get("deleted_at")
-        store.upsert_tweet(timeline_tweet, cursor=buffer)
-        store.upsert_membership(
-            timeline_tweet.tweet_id,
-            "tweet",
-            source=ARCHIVE_SOURCE,
-            deleted_at=deleted_at if isinstance(deleted_at, str) else None,
-            sort_index=timeline_tweet.sort_index,
-            cursor=buffer,
+        prepared.append(
+            _PreparedAuthoredImport(
+                timeline_tweet=timeline_tweet,
+                deleted_at=deleted_at if isinstance(deleted_at, str) else None,
+                graph=extract_secondary_objects(timeline_tweet.raw_json),
+            )
         )
-        _queue_secondary_graph(
-            store,
-            buffer,
-            extract_secondary_objects(timeline_tweet.raw_json),
-            source=ARCHIVE_SOURCE,
-            deleted_at_by_tweet_id=(
-                {timeline_tweet.tweet_id: deleted_at}
-                if isinstance(deleted_at, str) and deleted_at
-                else {}
-            ),
-        )
-        if isinstance(deleted_at, str) and deleted_at:
-            counts["deleted_authored_tweets"] += 1
-        else:
-            counts["authored_tweets"] += 1
-        if len(buffer.records) >= _IMPORT_BATCH_SIZE:
-            _flush_buffer(store, buffer)
-        if progress:
-            progress(index, total)
-    _flush_buffer(store, buffer)
+    total = len(prepared)
+    processed = 0
+    for chunk in _chunked(prepared, _AUTHORED_IMPORT_PREFETCH_CHUNK):
+        row_keys: list[str] = []
+        for item in chunk:
+            row_keys.append(store._row_key_for_tweet(item.timeline_tweet.tweet_id, "tweet"))
+            row_keys.extend(_secondary_graph_row_keys(store, item.graph))
+        store.prefetch_rows(row_keys, cursor=buffer)
+        for item in chunk:
+            timeline_tweet = item.timeline_tweet
+            store.upsert_tweet(timeline_tweet, cursor=buffer)
+            store.upsert_membership(
+                timeline_tweet.tweet_id,
+                "tweet",
+                source=ARCHIVE_SOURCE,
+                deleted_at=item.deleted_at,
+                sort_index=timeline_tweet.sort_index,
+                cursor=buffer,
+            )
+            _queue_secondary_graph(
+                store,
+                buffer,
+                item.graph,
+                source=ARCHIVE_SOURCE,
+                deleted_at_by_tweet_id=(
+                    {timeline_tweet.tweet_id: item.deleted_at} if item.deleted_at else {}
+                ),
+            )
+            if item.deleted_at:
+                counts["deleted_authored_tweets"] += 1
+            else:
+                counts["authored_tweets"] += 1
+            processed += 1
+            if progress:
+                progress(processed, total)
+        _flush_buffer(store, buffer)
 
 
 def _should_seed_like_placeholder(store: ArchiveStore, buffer: _PageBuffer, tweet_id: str) -> bool:
@@ -577,7 +635,7 @@ def _import_likes(
     progress: Callable[[int, int], None] | None = None,
 ) -> None:
     buffer = _PageBuffer()
-    total = len(likes)
+    prepared: list[_PreparedLikeImport] = []
     for index, item in enumerate(likes, start=1):
         payload = item.get("like") if isinstance(item, dict) else None
         if not isinstance(payload, dict):
@@ -585,43 +643,57 @@ def _import_likes(
         tweet_id = str(payload.get("tweetId") or "").strip()
         if not tweet_id:
             continue
-        raw_json = {"like": payload}
-        timeline_tweet = TimelineTweet(
-            tweet_id=tweet_id,
-            text=str(payload.get("fullText") or ""),
-            author_id=None,
-            author_username=None,
-            author_display_name=None,
-            created_at=None,
-            # Existing list/view code sorts these numerically descending, so -1 stays ahead of -2
-            # and preserves the original archive file order without a special-case code path.
-            sort_index=str(-index),
-            raw_json=raw_json,
-        )
-        store.upsert_tweet(timeline_tweet, cursor=buffer)
-        store.upsert_membership(
-            tweet_id,
-            "like",
-            source=ARCHIVE_SOURCE,
-            sort_index=timeline_tweet.sort_index,
-            cursor=buffer,
-        )
-        if _should_seed_like_placeholder(store, buffer, tweet_id):
-            store._queue_record(
-                store._tweet_object_record(
-                    _placeholder_tweet_object(payload),
-                    source=ARCHIVE_SOURCE,
-                    enrichment_state="pending",
-                    cursor=buffer,
+        prepared.append(
+            _PreparedLikeImport(
+                tweet_id=tweet_id,
+                timeline_tweet=TimelineTweet(
+                    tweet_id=tweet_id,
+                    text=str(payload.get("fullText") or ""),
+                    author_id=None,
+                    author_username=None,
+                    author_display_name=None,
+                    created_at=None,
+                    # Existing list/view code sorts these numerically descending, so -1 stays
+                    # ahead of -2 and preserves the original archive file order without a
+                    # special-case code path.
+                    sort_index=str(-index),
+                    raw_json={"like": payload},
                 ),
+                payload=payload,
+            )
+        )
+    total = len(prepared)
+    processed = 0
+    for chunk in _chunked(prepared, _LIKE_IMPORT_PREFETCH_CHUNK):
+        row_keys: list[str] = []
+        for item in chunk:
+            row_keys.append(store._row_key_for_tweet(item.tweet_id, "like"))
+            row_keys.append(store._row_key_for_tweet_object(item.tweet_id))
+        store.prefetch_rows(row_keys, cursor=buffer)
+        for item in chunk:
+            store.upsert_tweet(item.timeline_tweet, cursor=buffer)
+            store.upsert_membership(
+                item.tweet_id,
+                "like",
+                source=ARCHIVE_SOURCE,
+                sort_index=item.timeline_tweet.sort_index,
                 cursor=buffer,
             )
-        counts["likes"] += 1
-        if len(buffer.records) >= _IMPORT_BATCH_SIZE:
-            _flush_buffer(store, buffer)
-        if progress:
-            progress(index, total)
-    _flush_buffer(store, buffer)
+            if _should_seed_like_placeholder(store, buffer, item.tweet_id):
+                store._queue_record(
+                    store._tweet_object_record(
+                        _placeholder_tweet_object(item.payload),
+                        source=ARCHIVE_SOURCE,
+                        enrichment_state="pending",
+                        cursor=buffer,
+                    ),
+                    cursor=buffer,
+                )
+            counts["likes"] += 1
+            processed += 1
+            if progress:
+                progress(processed, total)
+        _flush_buffer(store, buffer)
 
 
 def _url_basename(value: Any) -> str | None:

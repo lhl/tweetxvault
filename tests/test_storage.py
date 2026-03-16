@@ -13,6 +13,7 @@ from tests.conftest import (
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.exceptions import ArchiveOwnerMismatchError
 from tweetxvault.storage import open_archive_store
+from tweetxvault.storage.backend import _PageBuffer
 
 
 class _FakeQueryBuilder:
@@ -198,6 +199,38 @@ def test_owner_guardrail(paths) -> None:
     store.set_archive_owner_id("42")
     with pytest.raises(ArchiveOwnerMismatchError):
         store.ensure_archive_owner_id("84")
+    store.close()
+
+
+def test_prefetch_rows_populates_buffer_cache(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out="cursor-1",
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[_complex_tweet()],
+        last_head_tweet_id="100",
+        backfill_cursor="cursor-1",
+        backfill_incomplete=True,
+    )
+
+    buffer = _PageBuffer()
+    store.prefetch_rows(
+        [
+            "tweet:bookmark::100",
+            "tweet_object:100",
+            "tweet_object:missing",
+        ],
+        cursor=buffer,
+    )
+
+    assert buffer.existing_rows["tweet:bookmark::100"]["tweet_id"] == "100"
+    assert buffer.existing_rows["tweet_object:100"]["tweet_id"] == "100"
+    assert buffer.existing_rows["tweet_object:missing"] is None
     store.close()
 
 
