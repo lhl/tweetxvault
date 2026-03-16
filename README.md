@@ -76,7 +76,23 @@ uv run tweetxvault sync all --browser brave --profile "Profile 2"
 uv run tweetxvault sync all --browser firefox --profile-path /path/to/profile
 ```
 
-When `--browser` is used, tweetxvault still accepts explicit `TWEETXVAULT_USER_ID` or `auth.user_id` as the fallback for likes and authored-tweet sync; the override only forces cookie sourcing (`auth_token` / `ct0`) from the selected browser/profile.
+How `--browser` behaves:
+
+- `--browser`, `--profile`, and `--profile-path` force tweetxvault to take `auth_token` and `ct0` from that browser/profile.
+- `user_id` still uses the normal precedence order: `TWEETXVAULT_USER_ID` -> `auth.user_id` -> browser `twid`.
+- That means you can still pin `user_id` explicitly for likes or authored-tweet sync if needed, even while forcing cookies from a specific browser profile.
+- If you do not set `user_id` explicitly, tweetxvault will use the browser profile's `twid` cookie when available.
+
+For example, this uses Firefox cookies from the selected profile, but still pins `user_id` from the environment:
+
+```bash
+export TWEETXVAULT_USER_ID="123456789"
+uv run tweetxvault sync likes --browser firefox --profile my-profile
+```
+
+This matters most if you use multiple X accounts. Make sure the selected browser profile and resolved `user_id` belong to the same account. If you mix cookies from one account with a `user_id` from another, likes/authored-tweet sync may fail, and tweetxvault's archive-owner guardrail will refuse writes if the local archive already belongs to a different user.
+
+Run `uv run tweetxvault auth check --browser ...` first if you want to verify which sources are being used before a sync.
 
 To persist a browser preference in the environment or config:
 

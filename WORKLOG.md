@@ -2,6 +2,12 @@
 
 ## 2026-03-16
 
+- Clarified the user-facing `--browser` docs in `README.md`:
+  - Replaced the terse internal-style note with explicit source precedence for `auth_token` / `ct0` / `user_id`
+  - Added a concrete example showing forced browser cookies plus explicit `TWEETXVAULT_USER_ID`
+  - Added a multi-account warning explaining that browser cookies and `user_id` must still refer to the same X account, or likes/authored-tweet sync may fail and the archive-owner guardrail can block writes
+  - Validation: docs-only change; no code/tests run
+
 - Resolved the remaining review-driven semantics around auth override, thread reruns, and platform support:
   - Changed `tweetxvault/cli.py` so `--browser` only forces cookie sourcing (`auth_token` / `ct0`) from the selected browser/profile; explicit env/config `user_id` now remains a fallback for likes and authored-tweet sync to avoid surprising breakage
   - Changed `tweetxvault/threads.py` so explicit `threads expand <id/url>...` is idempotent by default, added `--refresh` for intentional re-fetches, and de-duped failing linked status-URL targets to one attempt per run even if repeated across many `url_ref` rows
