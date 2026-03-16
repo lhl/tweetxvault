@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 13 for early thread-expansion startup logging and lighter preload work:
+  - Updated `tweetxvault/threads.py` so `tweetxvault threads expand` now prints immediately while it is preparing the job, resolving query IDs, and loading archive state instead of waiting for multiple full-table scans to finish before the first line
+  - Deferred the expensive `known_tweet_ids` scan until the linked-status pass actually needs it, so explicit-target runs and some limit-bounded runs avoid one unnecessary archive-wide preload
+  - Expanded `tests/test_threads.py` to lock in the new preload/startup logging for both the normal membership+linked-status path and the explicit-target/rate-limit path
+  - Validation:
+    - `uv run pytest`
+    - `uv run ruff check tweetxvault/threads.py tests/test_threads.py tweetxvault/client/base.py tweetxvault/client/timelines.py tests/test_client.py`
+    - `uv run ruff format --check tweetxvault/threads.py tests/test_threads.py tweetxvault/client/base.py tweetxvault/client/timelines.py tests/test_client.py`
+
 - Landed review cleanup item 12 for long-running thread-expansion observability:
   - Added a shared request-status callback path in `tweetxvault/client/base.py` / `tweetxvault/client/timelines.py` so callers can surface 429 retry, cooldown, and query-id refresh events without hard-coding that logic into each runner
   - Updated `tweetxvault/threads.py` to print phase-level progress (`explicit`, `membership`, `linked-status`) plus tweet-scoped retry/cooldown/failure messages, so `tweetxvault threads expand` no longer looks hung during long backoff windows

@@ -408,3 +408,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `tweetxvault threads expand` only emits per-target failures plus the final summary, so long runs can appear hung while they are retrying, cooling down on 429s, or scanning a large archive.
   - Landed approach: added a shared request-status callback path in the HTTP client, then wired `threads expand` to print pass-level progress plus tweet-scoped 429 retry/cooldown and query-id-refresh messages.
   - Coverage: client tests now lock in retry/cooldown and 404-refresh status messages, and thread tests now cover visible rate-limit diagnostics during an explicit-target expansion failure.
+- [x] Review item 13: show startup progress before thread-expansion preload scans and defer unnecessary archive scans.
+  - Current problem: `tweetxvault threads expand` still stays silent at startup on large archives because it eagerly loads prior expansion targets, known tweet ids, and membership ids before the first progress line.
+  - Landed approach: added immediate startup/preload status lines, then deferred the expensive `known_tweet_ids` scan until the linked-status pass actually needs it so explicit-target runs and some limit-bounded runs stop paying that cost up front.
+  - Coverage: thread tests now lock in early preload logging for both the normal membership+linked-status path and the explicit-target/rate-limit path.

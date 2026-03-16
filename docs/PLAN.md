@@ -634,6 +634,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: stopped doing one merge per media/url update in the runners, and folded in the small readability/safety fixes in `cli.py` and `extractor.py`.
 - [x] Improve long-running runner observability where network retries make the CLI look stalled.
   - Next cleanup item landed: `tweetxvault threads expand` now prints phase/progress output plus visible 429 retry/cooldown diagnostics so large thread-expansion jobs no longer look dead while the HTTP layer is backing off.
+- [x] Reduce startup silence and unnecessary preload scans in `tweetxvault threads expand`.
+  - Next cleanup item landed: the runner now prints preload progress before the archive scans begin, and it defers the expensive known-tweet-id scan until the linked-status pass actually needs it.
 
 ## Open Questions (Remaining)
 

@@ -75,6 +75,8 @@ async def test_expand_threads_fetches_membership_and_linked_status(
     linked_raw = make_tweet_result("300", "linked tweet", user_id="3000")
     QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
     requests: list[str] = []
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, color_system=None)
 
     def handler(request: httpx.Request) -> httpx.Response:
         focal = request.url.params["variables"]
@@ -99,12 +101,19 @@ async def test_expand_threads_fetches_membership_and_linked_status(
         paths=paths,
         auth_bundle=auth_bundle,
         transport=httpx.MockTransport(handler),
+        console=console,
     )
 
     assert result.processed == 2
     assert result.expanded == 2
     assert result.failed == 0
     assert requests == ["100", "300"]
+    text = output.getvalue()
+    assert "threads: preparing archive expansion job" in text
+    assert "threads: loading archived thread expansion state..." in text
+    assert "threads: loading archived membership tweets..." in text
+    assert "threads: loading known tweet ids for linked-status pass..." in text
+    assert "threads: loading archived url refs..." in text
 
     store = open_archive_store(paths, create=False)
     assert store is not None
@@ -274,6 +283,9 @@ async def test_expand_threads_logs_rate_limit_progress(
     assert result.expanded == 0
     assert result.failed == 1
     text = output.getvalue()
+    assert "threads: preparing archive expansion job" in text
+    assert "threads: resolving TweetDetail query ID" in text
+    assert "threads: loading archived thread expansion state..." in text
     assert "threads: explicit target pass over 1 targets" in text
     assert "thread 100: rate limited (HTTP 429), retry 1/1 in 0.1s" in text
     assert "thread 100: rate limited repeatedly, cooling down for 0.0s" in text

@@ -53,6 +53,10 @@ def _log_thread_status(console: Console, tweet_id: str, message: str) -> None:
     console.print(f"thread {tweet_id}: {message}", highlight=False)
 
 
+def _log_threads(console: Console, message: str) -> None:
+    console.print(f"threads: {message}", highlight=False)
+
+
 def _log_scan_progress(
     console: Console,
     *,
@@ -63,13 +67,13 @@ def _log_scan_progress(
 ) -> None:
     if scanned % _SCAN_PROGRESS_EVERY != 0 and scanned != total:
         return
-    console.print(
-        f"threads: {phase} {scanned}/{total} scanned, "
+    _log_threads(
+        console,
+        f"{phase} {scanned}/{total} scanned, "
         f"{result.processed} processed, "
         f"{result.expanded} expanded, "
         f"{result.skipped} skipped, "
         f"{result.failed} failed",
-        highlight=False,
     )
 
 
@@ -177,11 +181,13 @@ async def expand_threads(
     console: Console | None = None,
 ) -> ThreadExpandResult:
     config, paths = resolve_job_context(config=config, paths=paths)
-    auth_bundle = auth_bundle or resolve_auth_bundle(config)
     console = console or Console(stderr=True)
+    _log_threads(console, "preparing archive expansion job")
+    auth_bundle = auth_bundle or resolve_auth_bundle(config)
 
     async with locked_archive_job(config=config, paths=paths) as job:
         store = job.store
+        _log_threads(console, "resolving TweetDetail query ID")
         query_store = QueryIdStore(paths)
         query_ids = await _resolve_query_ids(
             query_store,
@@ -196,9 +202,13 @@ async def expand_threads(
             transport=transport,
         )
         try:
+            _log_threads(console, "loading archived thread expansion state...")
             expanded_targets = set(store.list_raw_capture_target_ids("ThreadExpandDetail"))
-            known_tweet_ids = store.list_known_tweet_ids()
-            membership_ids = store.list_membership_tweet_ids()
+            _log_threads(
+                console,
+                f"loaded {len(expanded_targets)} previously expanded thread targets",
+            )
+            known_tweet_ids: set[str] = set()
 
             if targets:
                 requested, duplicate_count = _dedupe_targets(
@@ -206,10 +216,7 @@ async def expand_threads(
                 )
                 result.skipped += duplicate_count
                 target_ids = requested[:limit] if limit is not None else requested
-                console.print(
-                    f"threads: explicit target pass over {len(target_ids)} targets",
-                    highlight=False,
-                )
+                _log_threads(console, f"explicit target pass over {len(target_ids)} targets")
                 for scanned, tweet_id in enumerate(target_ids, start=1):
                     await _try_expand_target(
                         tweet_id=tweet_id,
@@ -231,11 +238,13 @@ async def expand_threads(
                         result=result,
                     )
             else:
-                console.print(
-                    "threads: membership pass over "
+                _log_threads(console, "loading archived membership tweets...")
+                membership_ids = store.list_membership_tweet_ids()
+                _log_threads(
+                    console,
+                    "membership pass over "
                     f"{len(membership_ids)} archived tweets "
                     f"({len(expanded_targets)} already expanded)",
-                    highlight=False,
                 )
                 for scanned, tweet_id in enumerate(membership_ids, start=1):
                     if limit is not None and result.processed >= limit:
@@ -271,10 +280,17 @@ async def expand_threads(
                     )
 
                 if limit is None or result.processed < limit:
+                    _log_threads(console, "loading known tweet ids for linked-status pass...")
+                    known_tweet_ids = store.list_known_tweet_ids()
+                    _log_threads(
+                        console,
+                        f"loaded {len(known_tweet_ids)} known tweet ids for linked-status dedupe",
+                    )
+                    _log_threads(console, "loading archived url refs...")
                     url_ref_rows = store.list_url_ref_rows()
-                    console.print(
-                        f"threads: linked-status pass over {len(url_ref_rows)} archived url refs",
-                        highlight=False,
+                    _log_threads(
+                        console,
+                        f"linked-status pass over {len(url_ref_rows)} archived url refs",
                     )
                     for scanned, row in enumerate(url_ref_rows, start=1):
                         if limit is not None and result.processed >= limit:
