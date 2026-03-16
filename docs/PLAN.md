@@ -36,7 +36,7 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 - HTML export UI
 - Extended collections (tweets/reposts/replies/feed) beyond likes/bookmarks
 - Multi-account support
-- Archive-import parsing beyond a requirements stub (we need a fresh real archive sample first)
+- Archive-import implementation beyond the current requirements/fixture analysis (fresh sample cataloged on 2026-03-16; importer still pending)
 
 ## Why Build From Scratch
 
@@ -327,9 +327,11 @@ Current implementation status:
   - `record_type = "tweet"`
   - `tweet_id`, `collection_type`, `folder_id`
   - `sort_index`
+  - `source`
   - `text`
   - `author_id`, `author_username`, `author_display_name`
   - `created_at`
+  - `deleted_at` (nullable; used for archive-imported deleted authored tweets)
   - `raw_json`
   - `first_seen_at`, `last_seen_at`
   - `added_at`, `synced_at`
@@ -399,6 +401,7 @@ Extend the single-table LanceDB archive with additional `record_type` values:
   - `row_key = tweet_object:{tweet_id}`
   - Canonical snapshot for the underlying tweet object across collections.
   - Stores the latest raw tweet object plus normalized text fields that are global to the tweet (`text`, `created_at`, author fields, later `conversation_id`, `lang`, note-tweet text if present).
+  - Carries `source` for the current winning normalized snapshot plus nullable `deleted_at` when the only surviving payload comes from the official archive.
   - Consumers should prefer this row over collection-scoped `tweet.raw_json` once it exists, but the existing `tweet` row remains the membership/projection layer.
 
 - `tweet_relation`
@@ -506,7 +509,7 @@ We want a second ingestion path for downloaded X account archives. A fresh sampl
 - Imported rows must preserve provenance (`live_graphql` vs `x_archive`) and be idempotent/resumable.
 - Archive import should map into the same `tweet_object`, collection-scoped `tweet`, `media`, `url`, and `article` rows so search/export code does not care where data came from.
 - Never delete or downgrade richer live-captured data when importing thinner archive data later.
-- Record one manifest row per imported archive (path/hash, imported-at, warnings, source export timestamp) so repeated imports can short-circuit safely.
+- Record one dedicated `import_manifest` row per imported archive digest (generation date, started/completed timestamps, status, warnings, counts) so repeated imports can short-circuit safely.
 
 Current sample-driven scope:
 
@@ -527,9 +530,12 @@ Concrete merge rules from the first real fixture:
 
 - `tweets.js` rows are close enough to Twitter legacy tweet payloads that archive import should adapt them into the existing tweet/extractor path rather than inventing a second tweet model.
 - `like.js` rows are intentionally much thinner (`tweetId`, `fullText`, `expandedUrl` only), so likes import should create sparse collection/provenance rows and let later live sync upgrade tweet metadata when available.
-- `tweets_media/` should register existing exported binaries against `media` rows via `local_path` / `download_state`, preferring the already-exported file over a later re-download.
+- `tweets_media/` should be copied into the managed tweetxvault media layout during import, then registered against `media` rows via `local_path` / `download_state`.
 - Live GraphQL stays authoritative for richer normalized tweet/media/url/article metadata when both sources overlap; archive data fills null gaps and covers deleted/offline-only content.
-- Because the current extractor/storage coalescing behavior prefers the newest non-empty value, archive import must add explicit source-aware merge logic instead of relying on naive re-use of the existing upsert path.
+- Because the current extractor/storage coalescing behavior prefers the newest non-empty value, archive import must add explicit source-aware merge logic inside `ArchiveStore` instead of relying on naive re-use of the existing upsert path from the caller side.
+- Reuse one generic `parse_ytd_js(...)` loader for `window.YTD.*` files, then map specific files through small adapters.
+- Import `like.js` with a stable synthetic archive-order `sort_index`; later live sync may replace it with the real GraphQL timeline value.
+- Import deleted authored tweets into the normal `tweets` collection membership and surface nullable `deleted_at` rather than inventing a separate tombstone collection.
 
 ### Parser Boundary
 
@@ -591,16 +597,16 @@ Reserved for future (not implemented in MVP):
 
 ### Phase 1: Core Sync (MVP)
 
-- [ ] Auth extraction (env vars, config file, Firefox + Chromium-family browsers)
-- [ ] Query ID auto-discovery + fallback + TTL cache
-- [ ] GraphQL client (httpx async) + per-operation feature flags
-- [ ] Bookmarks sync
-- [ ] Likes sync
-- [ ] Append raw captures + upsert tweets + collections
-- [ ] Checkpoint/resume for interrupted sync
-- [ ] Single-process locking + atomic page commits
-- [ ] Rate limit handling (backoff + cooldown)
-- [ ] Minimal JSON export (optional but helpful early)
+- [x] Auth extraction (env vars, config file, Firefox + Chromium-family browsers)
+- [x] Query ID auto-discovery + fallback + TTL cache
+- [x] GraphQL client (httpx async) + per-operation feature flags
+- [x] Bookmarks sync
+- [x] Likes sync
+- [x] Append raw captures + upsert tweets + collections
+- [x] Checkpoint/resume for interrupted sync
+- [x] Single-process locking + atomic page commits
+- [x] Rate limit handling (backoff + cooldown)
+- [x] Minimal JSON export (optional but helpful early)
 
 ### Phase 2: Export + Media Foundations
 
@@ -608,17 +614,17 @@ Reserved for future (not implemented in MVP):
 - [x] Terminal view command
 - [x] HTML export viewer
 - [ ] Export: CSV / Markdown
-- [ ] Add canonical `tweet_object` rows alongside collection-scoped membership rows
-- [ ] Extract media metadata to DB (types, dimensions, variants, note-tweet text)
-- [ ] Extract attached tweet relations (retweets, quotes)
-- [ ] Extract URL metadata / per-tweet URL refs
-- [ ] Media download (photos first; video later)
+- [x] Add canonical `tweet_object` rows alongside collection-scoped membership rows
+- [x] Extract media metadata to DB (types, dimensions, variants, note-tweet text)
+- [x] Extract attached tweet relations (retweets, quotes)
+- [x] Extract URL metadata / per-tweet URL refs
+- [x] Media download (photos first; video later)
 
 ### Phase 3: Search + Embeddings
 
-- [ ] Embeddings (local model + LanceDB vector column)
-- [ ] Semantic search CLI
-- [ ] Hybrid search (LanceDB FTS + vector + metadata)
+- [x] Embeddings (local model + LanceDB vector column)
+- [x] Semantic search CLI
+- [x] Hybrid search (LanceDB FTS + vector + metadata)
 - [ ] Similar tweet lookup
 - [ ] Search/filter by URL/domain/media/article metadata
 

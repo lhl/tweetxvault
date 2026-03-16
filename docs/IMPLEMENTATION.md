@@ -16,6 +16,7 @@ Planning note (2026-03-15):
 - The SQLite -> LanceDB migration landed on 2026-03-15.
 - Capture expansion landed after the LanceDB migration.
 - The active next milestone is turning the X-archive import stub into a real importer using the fresh 2026-03-16 archive fixture.
+- The review-cleanup checklist lower in this file is complete and retained as historical record.
 
 ---
 
@@ -359,12 +360,12 @@ Fresh fixture status (2026-03-16):
   - Do not rely on the current new-non-empty-wins coalescing semantics for live/archive merges.
 - [ ] Reserve CLI shape:
   - `tweetxvault import x-archive <zip-or-dir>`
-- [ ] Add an import manifest record type or equivalent metadata row so archive imports are resumable/idempotent.
-- [ ] Define source-provenance semantics (`live_graphql` vs `x_archive`) for normalized rows.
-- [ ] Add a zip/directory loader for `manifest.js` plus YTD `data/*.js` parts.
-- [ ] Import authored tweets from `tweets.js` / `deleted-tweets.js` through a YTD-to-internal adapter instead of a second tweet model.
-- [ ] Import `like.js` into collection rows with archive-order fallback and raw provenance, without pretending it contains full tweet objects.
-- [ ] Register `tweets_media/` exports against `media.local_path` / `download_state` so we do not re-download binaries we already have.
+- [ ] Add storage-layer source-aware merge logic in `ArchiveStore`, using the normalized row `source` field as the winning-source marker instead of caller-side ad hoc merges.
+- [ ] Add a dedicated `import_manifest` record type keyed by archive digest with generation date, status, warnings, and per-dataset counts.
+- [ ] Add a generic `parse_ytd_js(...)` / zip-directory loader for `manifest.js` plus `window.YTD.*` `data/*.js` parts, then layer per-file adapters on top.
+- [ ] Import authored tweets from `tweets.js` / `deleted-tweets.js` through a YTD-to-internal adapter, including nullable `deleted_at` support on the normalized tweet rows.
+- [ ] Import `like.js` into collection rows with a synthetic archive-order `sort_index` and raw provenance, without pretending it contains full tweet objects.
+- [ ] Copy `tweets_media/` exports into the managed tweetxvault media layout, then register them on `media.local_path` / `download_state`.
 - [ ] Add regression fixtures/tests for repeated imports, live+archive merges, and archive-after-live precedence behavior.
 
 ## Review Cleanup

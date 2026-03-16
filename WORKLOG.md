@@ -1,5 +1,13 @@
 # WORKLOG
 
+## 2026-03-17
+
+- Resolved the archive-import review questions in the planning docs and cleaned up stale roadmap notes:
+  - Updated `docs/ANALYSIS-archive-import.md` with concrete decisions for storage-layer merge precedence, dedicated `import_manifest` rows, generic `parse_ytd_js(...)` loading, synthetic `like.js` ordering, nullable `deleted_at`, and copy-on-import media handling
+  - Updated `docs/PLAN.md` to reflect the fresh archive fixture in the early scope note, added the new archive-import decisions to the requirements section, documented `source` / nullable `deleted_at` in the archive model, and refreshed the stale Phase 1/2/3 roadmap checkboxes to match shipped functionality
+  - Updated `docs/IMPLEMENTATION.md` so Task 16 now points at the chosen merge/manifest/loader/media-copy approach and explicitly notes that the review-cleanup checklist is historical/completed
+  - Continued the public-doc redaction rule for archive-specific digests/filenames; keep those values out of committed docs and logs
+
 ## 2026-03-16
 
 - Cataloged the fresh X archive sample in `data/` and updated the archive-import docs:

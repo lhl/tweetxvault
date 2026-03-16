@@ -96,3 +96,32 @@ Additional guardrail:
 - Do not let import order decide the winner.
 - The current extractor/storage merge behavior is effectively “new non-empty value wins”, which is fine within one source but unsafe for live-vs-archive merges.
 - Archive import therefore needs explicit source-aware merge logic instead of blindly routing `x_archive` payloads through the existing upsert/coalesce paths.
+
+## Resolved Scaffolding Choices
+
+- **Source-aware merge location**
+  - Put the precedence logic in `ArchiveStore`, not in the import command.
+  - Reuse the existing `source` column on normalized rows as the current winning-source marker.
+  - Keep raw per-source provenance in `raw_capture` rows plus a dedicated import manifest row; callers should not hand-roll merge policy.
+
+- **Import manifest shape**
+  - Use a dedicated `import_manifest` record type keyed by archive digest.
+  - Store: archive digest, archive generation date, detected partial/full status, import started/completed timestamps, completion status, warning list, and per-dataset counts.
+  - Keep public docs/logs redacted; do not print or commit real archive digests.
+
+- **YTD loader boundary**
+  - Implement one generic `parse_ytd_js(...)` helper that strips the `window.YTD.* = ...` wrapper and parses JSON.
+  - Layer per-file adapters (`tweets.js`, `deleted-tweets.js`, `like.js`, etc.) on top of that generic parser.
+
+- **`like.js` ordering**
+  - Preserve the array order with a synthetic archive-derived `sort_index`.
+  - Treat it as a fallback signal only; a later live sync can replace it with the real GraphQL timeline sort index.
+
+- **Deleted tweet handling**
+  - Import deleted authored tweets as `collection_type = "tweets"` membership rows because they were authored timeline items.
+  - Extend the normalized tweet shape with nullable `deleted_at` so deleted tweets remain first-class without inventing a separate tombstone model.
+
+- **`tweets_media/` policy**
+  - Copy exported media into the managed tweetxvault media layout during import.
+  - Register the copied file paths on `media.local_path` / `download_state = done`.
+  - Do not depend on the extracted archive directory remaining in place after import.
