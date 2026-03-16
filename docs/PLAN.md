@@ -624,6 +624,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: moved state/type/preview filters out of Python loops and into `ArchiveStore` `.where(...)` clauses while preserving the existing sorted return order.
 - [x] Reduce repetition in thread-expansion target handling.
   - Next cleanup item landed: extracted the shared `_expand_target(...)` try/except/result-counting path so the explicit-target, membership, and linked-status loops no longer carry three copies of the same expansion logic.
+- [x] Make Firefox cookie extraction WAL-safe.
+  - Next cleanup item landed: replaced manual `cookies.sqlite` / `-wal` / `-shm` copying with a proper SQLite snapshot so live Firefox profiles no longer rely on sidecar copy timing.
 
 ## Open Questions (Remaining)
 

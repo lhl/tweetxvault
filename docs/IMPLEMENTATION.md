@@ -388,3 +388,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: the explicit-target loop, membership loop, and linked-status loop all repeat the same `_expand_target(...)` error-handling and result-counting path.
   - Landed approach: extracted one `_try_expand_target(...)` helper that owns the shared processed/expanded/failed bookkeeping plus `expanded_targets` / `known_tweet_ids` updates, while leaving the loop-specific skip/selection rules unchanged.
   - Coverage: thread tests now cover both the existing membership+linked-status path and an explicit-target case that locks in duplicate skipping plus failure counting.
+- [x] Review item 8: make Firefox cookie snapshotting WAL-safe in `tweetxvault/auth/firefox.py`.
+  - Current problem: copying `cookies.sqlite` plus `-wal` / `-shm` sidecars separately can still race a live Firefox write and produce an inconsistent snapshot.
+  - Landed approach: replaced manual sidecar copying with a real SQLite backup snapshot into a temp DB before querying cookies.
+  - Coverage: auth tests now cover reading cookies from a WAL-mode Firefox DB while the source connection remains live.

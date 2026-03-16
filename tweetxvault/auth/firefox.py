@@ -7,7 +7,8 @@ import os
 import shutil
 import sqlite3
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote
@@ -186,15 +187,29 @@ def discover_default_profile(
     return resolve_firefox_profile(explicit_path=explicit_path, env=env).path
 
 
-def _copy_sqlite_bundle(cookies_db: Path) -> Path:
+@contextmanager
+def _sqlite_snapshot(cookies_db: Path) -> Iterator[Path]:
     temp_dir = Path(tempfile.mkdtemp(prefix="tweetxvault-firefox-"))
-    target = temp_dir / "cookies.sqlite"
-    shutil.copy2(cookies_db, target)
-    for suffix in ("-wal", "-shm"):
-        sidecar = cookies_db.with_name(cookies_db.name + suffix)
-        if sidecar.exists():
-            shutil.copy2(sidecar, temp_dir / sidecar.name)
-    return target
+    target = temp_dir / cookies_db.name
+    source: sqlite3.Connection | None = None
+    snapshot: sqlite3.Connection | None = None
+    try:
+        try:
+            source = sqlite3.connect(f"file:{cookies_db}?mode=ro", uri=True, timeout=5.0)
+            snapshot = sqlite3.connect(target)
+            source.backup(snapshot)
+            snapshot.commit()
+        except sqlite3.Error as exc:
+            raise AuthResolutionError(
+                f"Failed to snapshot Firefox cookies under {cookies_db.parent}: {exc}"
+            ) from exc
+        yield target
+    finally:
+        if snapshot is not None:
+            snapshot.close()
+        if source is not None:
+            source.close()
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def extract_firefox_cookies(profile_path: Path) -> FirefoxCookieBundle:
@@ -202,8 +217,7 @@ def extract_firefox_cookies(profile_path: Path) -> FirefoxCookieBundle:
     if not cookies_db.exists():
         raise AuthResolutionError(f"Firefox cookies DB not found under {profile_path}")
 
-    copied_db = _copy_sqlite_bundle(cookies_db)
-    try:
+    with _sqlite_snapshot(cookies_db) as copied_db:
         try:
             connection = sqlite3.connect(f"file:{copied_db}?mode=ro", uri=True)
             connection.row_factory = sqlite3.Row
@@ -227,8 +241,6 @@ def extract_firefox_cookies(profile_path: Path) -> FirefoxCookieBundle:
             raise AuthResolutionError(
                 f"Failed to read Firefox cookies under {profile_path}: {exc}"
             ) from exc
-    finally:
-        shutil.rmtree(copied_db.parent, ignore_errors=True)
 
     values: dict[str, str] = {}
     for row in rows:

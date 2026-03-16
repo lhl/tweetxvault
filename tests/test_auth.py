@@ -98,6 +98,54 @@ def test_extract_firefox_cookies_reads_sqlite_fixture(tmp_path: Path) -> None:
     assert bundle.user_id == "42"
 
 
+def test_extract_firefox_cookies_reads_live_wal_snapshot(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    cookies_db = profile / "cookies.sqlite"
+    connection = sqlite3.connect(cookies_db)
+    try:
+        journal_mode = connection.execute("PRAGMA journal_mode=WAL").fetchone()
+        assert journal_mode is not None
+        assert str(journal_mode[0]).lower() == "wal"
+        connection.execute("PRAGMA wal_autocheckpoint=0")
+        connection.execute(
+            """
+            CREATE TABLE moz_cookies (
+                id INTEGER PRIMARY KEY,
+                host TEXT,
+                path TEXT,
+                isSecure INTEGER,
+                expiry INTEGER,
+                name TEXT,
+                value TEXT
+            )
+            """
+        )
+        connection.executemany(
+            (
+                "INSERT INTO moz_cookies "
+                "(host, path, isSecure, expiry, name, value) "
+                "VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            [
+                (".x.com", "/", 1, 0, "auth_token", "token-wal"),
+                (".x.com", "/", 1, 0, "ct0", "ct0-wal"),
+                (".x.com", "/", 1, 0, "twid", "u%3D84"),
+            ],
+        )
+        connection.commit()
+        assert (profile / "cookies.sqlite-wal").exists()
+
+        bundle = extract_firefox_cookies(profile)
+    finally:
+        connection.close()
+
+    assert bundle.auth_token == "token-wal"
+    assert bundle.ct0 == "ct0-wal"
+    assert bundle.twid == "u%3D84"
+    assert bundle.user_id == "84"
+
+
 def test_discover_default_profile_prefers_profile_with_x_cookies(tmp_path: Path) -> None:
     profiles_ini = _write_profiles_ini(
         tmp_path,

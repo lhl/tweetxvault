@@ -2,6 +2,15 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 8 for Firefox WAL-safe cookie snapshots:
+  - Reworked `tweetxvault/auth/firefox.py` so Firefox cookie extraction now snapshots `cookies.sqlite` via SQLite's backup API instead of manually copying `cookies.sqlite` plus `-wal` / `-shm` sidecars
+  - Kept the extraction query unchanged after the snapshot, but removed the race-prone assumption that sidecar file copies happen at a coherent point in time for a live Firefox profile
+  - Added an auth regression in `tests/test_auth.py` that reads cookies from a WAL-mode Firefox DB while the source connection remains open
+  - Validation:
+    - `uv run pytest tests/test_auth.py`
+    - `uv run ruff check tweetxvault/auth/firefox.py tests/test_auth.py`
+    - `uv run ruff format --check tweetxvault/auth/firefox.py tests/test_auth.py`
+
 - Landed review cleanup item 7 for thread-expansion control-flow repetition:
   - Refactored `tweetxvault/threads.py` so the repeated `_expand_target(...)` try/except/result-counting logic now lives in one `_try_expand_target(...)` helper
   - Kept the loop-specific rules unchanged: explicit targets still dedupe inputs first, membership targets still skip already-expanded tweets, and linked-status targets still skip source/self/known targets before attempting expansion
