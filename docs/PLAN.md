@@ -610,6 +610,11 @@ Reserved for future (not implemented in MVP):
 - [ ] X archive import (`tweetxvault import x-archive ...`)
 - [ ] attention-export integration
 
+### Near-Term Cleanup
+
+- [x] Reduce command-layer repetition after the content-expansion milestone.
+  - First cleanup item landed: de-duplicate the `sync bookmarks|likes|tweets|all` command implementations while preserving the existing CLI UX and option set.
+
 ## Open Questions (Remaining)
 
 1. **Embedding runtime**: which local embedding model/runtime do we standardize on for Phase 3 (quality, footprint, licensing)?

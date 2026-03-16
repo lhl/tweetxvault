@@ -6,9 +6,10 @@ import asyncio
 import os
 import resource
 import sys
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from loguru import logger
@@ -65,6 +66,19 @@ ARTICLE_BACKFILL_HELP = (
     "Rewalk existing timeline pages without resetting sync state so older items can pick up "
     "new article fields."
 )
+SYNC_BROWSER_OPTION = Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)]
+SYNC_PROFILE_OPTION = Annotated[
+    str | None,
+    typer.Option("--profile", help="Browser profile name or directory name."),
+]
+SYNC_PROFILE_PATH_OPTION = Annotated[
+    Path | None,
+    typer.Option("--profile-path", help="Explicit browser profile directory path."),
+]
+SYNC_ARTICLE_BACKFILL_OPTION = Annotated[
+    bool,
+    typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
+]
 
 
 def _configure_logging() -> Console:
@@ -199,6 +213,66 @@ def _with_auto_optimize(store, paths, console: Console, fn):
         return fn(store)
 
 
+def _run_sync_command(
+    *,
+    browser: str | None,
+    profile: str | None,
+    profile_path: Path | None,
+    runner: Callable[[Any, Any, Console], Awaitable[Any]],
+) -> tuple[Console, Any]:
+    console = _configure_logging()
+    try:
+        config, _ = load_config()
+        config, auth_bundle = _prepare_auth_override(
+            config,
+            console,
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+        )
+        return console, asyncio.run(runner(config, auth_bundle, console))
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+
+def _register_sync_collection_command(collection: str):
+    def command(
+        full: bool = False,
+        backfill: bool = False,
+        article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
+        limit: int | None = None,
+        browser: SYNC_BROWSER_OPTION = None,
+        profile: SYNC_PROFILE_OPTION = None,
+        profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    ) -> None:
+        console, result = _run_sync_command(
+            browser=browser,
+            profile=profile,
+            profile_path=profile_path,
+            runner=lambda config, auth_bundle, runner_console: sync_collection(
+                collection,
+                full=full,
+                backfill=backfill,
+                article_backfill=article_backfill,
+                limit=limit,
+                config=config,
+                auth_bundle=auth_bundle,
+                console=runner_console,
+            ),
+        )
+        console.print(
+            f"{collection}: {result.pages_fetched} pages, {result.tweets_seen} tweets, "
+            f"{result.stop_reason}"
+        )
+
+    command.__name__ = f"sync_{collection}"
+    return sync_app.command(collection)(command)
+
+
 def _format_created_at(raw: str | None) -> str:
     if not raw:
         return ""
@@ -259,211 +333,35 @@ def _render_archive_view(
     console.print(table)
 
 
-@sync_app.command("bookmarks")
-def sync_bookmarks(
-    full: bool = False,
-    backfill: bool = False,
-    article_backfill: Annotated[
-        bool,
-        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
-    ] = False,
-    limit: int | None = None,
-    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
-    profile: Annotated[
-        str | None,
-        typer.Option("--profile", help="Browser profile name or directory name."),
-    ] = None,
-    profile_path: Annotated[
-        Path | None,
-        typer.Option("--profile-path", help="Explicit browser profile directory path."),
-    ] = None,
-) -> None:
-    console = _configure_logging()
-    try:
-        config, _ = load_config()
-        config, auth_bundle = _prepare_auth_override(
-            config,
-            console,
-            browser=browser,
-            profile=profile,
-            profile_path=profile_path,
-        )
-        result = asyncio.run(
-            sync_collection(
-                "bookmarks",
-                full=full,
-                backfill=backfill,
-                article_backfill=article_backfill,
-                limit=limit,
-                config=config,
-                auth_bundle=auth_bundle,
-                console=console,
-            )
-        )
-    except ConfigError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    except TweetXVaultError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
-    console.print(
-        "bookmarks: "
-        f"{result.pages_fetched} pages, "
-        f"{result.tweets_seen} tweets, "
-        f"{result.stop_reason}"
-    )
-
-
-@sync_app.command("likes")
-def sync_likes(
-    full: bool = False,
-    backfill: bool = False,
-    article_backfill: Annotated[
-        bool,
-        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
-    ] = False,
-    limit: int | None = None,
-    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
-    profile: Annotated[
-        str | None,
-        typer.Option("--profile", help="Browser profile name or directory name."),
-    ] = None,
-    profile_path: Annotated[
-        Path | None,
-        typer.Option("--profile-path", help="Explicit browser profile directory path."),
-    ] = None,
-) -> None:
-    console = _configure_logging()
-    try:
-        config, _ = load_config()
-        config, auth_bundle = _prepare_auth_override(
-            config,
-            console,
-            browser=browser,
-            profile=profile,
-            profile_path=profile_path,
-        )
-        result = asyncio.run(
-            sync_collection(
-                "likes",
-                full=full,
-                backfill=backfill,
-                article_backfill=article_backfill,
-                limit=limit,
-                config=config,
-                auth_bundle=auth_bundle,
-                console=console,
-            )
-        )
-    except ConfigError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    except TweetXVaultError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
-    console.print(
-        f"likes: {result.pages_fetched} pages, {result.tweets_seen} tweets, {result.stop_reason}"
-    )
-
-
-@sync_app.command("tweets")
-def sync_tweets(
-    full: bool = False,
-    backfill: bool = False,
-    article_backfill: Annotated[
-        bool,
-        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
-    ] = False,
-    limit: int | None = None,
-    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
-    profile: Annotated[
-        str | None,
-        typer.Option("--profile", help="Browser profile name or directory name."),
-    ] = None,
-    profile_path: Annotated[
-        Path | None,
-        typer.Option("--profile-path", help="Explicit browser profile directory path."),
-    ] = None,
-) -> None:
-    console = _configure_logging()
-    try:
-        config, _ = load_config()
-        config, auth_bundle = _prepare_auth_override(
-            config,
-            console,
-            browser=browser,
-            profile=profile,
-            profile_path=profile_path,
-        )
-        result = asyncio.run(
-            sync_collection(
-                "tweets",
-                full=full,
-                backfill=backfill,
-                article_backfill=article_backfill,
-                limit=limit,
-                config=config,
-                auth_bundle=auth_bundle,
-                console=console,
-            )
-        )
-    except ConfigError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    except TweetXVaultError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
-    console.print(
-        f"tweets: {result.pages_fetched} pages, {result.tweets_seen} tweets, {result.stop_reason}"
-    )
+sync_bookmarks = _register_sync_collection_command("bookmarks")
+sync_likes = _register_sync_collection_command("likes")
+sync_tweets = _register_sync_collection_command("tweets")
 
 
 @sync_app.command("all")
 def sync_everything(
     full: bool = False,
     backfill: bool = False,
-    article_backfill: Annotated[
-        bool,
-        typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
-    ] = False,
+    article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
     limit: int | None = None,
-    browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
-    profile: Annotated[
-        str | None,
-        typer.Option("--profile", help="Browser profile name or directory name."),
-    ] = None,
-    profile_path: Annotated[
-        Path | None,
-        typer.Option("--profile-path", help="Explicit browser profile directory path."),
-    ] = None,
+    browser: SYNC_BROWSER_OPTION = None,
+    profile: SYNC_PROFILE_OPTION = None,
+    profile_path: SYNC_PROFILE_PATH_OPTION = None,
 ) -> None:
-    console = _configure_logging()
-    try:
-        config, _ = load_config()
-        config, auth_bundle = _prepare_auth_override(
-            config,
-            console,
-            browser=browser,
-            profile=profile,
-            profile_path=profile_path,
-        )
-        outcome = asyncio.run(
-            sync_all(
-                full=full,
-                backfill=backfill,
-                article_backfill=article_backfill,
-                limit=limit,
-                config=config,
-                auth_bundle=auth_bundle,
-                console=console,
-            )
-        )
-    except ConfigError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    except TweetXVaultError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
+    console, outcome = _run_sync_command(
+        browser=browser,
+        profile=profile,
+        profile_path=profile_path,
+        runner=lambda config, auth_bundle, runner_console: sync_all(
+            full=full,
+            backfill=backfill,
+            article_backfill=article_backfill,
+            limit=limit,
+            config=config,
+            auth_bundle=auth_bundle,
+            console=runner_console,
+        ),
+    )
     for result in outcome.results:
         console.print(
             f"{result.collection}: {result.pages_fetched} pages, {result.tweets_seen} tweets"

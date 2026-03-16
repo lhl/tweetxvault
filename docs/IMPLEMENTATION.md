@@ -354,3 +354,12 @@ We do not have a fresh archive fixture yet, so this task starts as interface + p
   - identify the bookmark/like/media files
   - map them into the existing extractor layer instead of building a second data model
   - add regression fixtures/tests for repeated imports and live+archive merges
+
+## Review Cleanup
+
+Follow-up maintenance work after the content-expansion milestone. Land these as small, well-tested refactors instead of rolling them into feature work.
+
+- [x] Review item 1: de-duplicate the sync CLI command implementations in `tweetxvault/cli.py`.
+  - Current problem: `sync bookmarks`, `sync likes`, `sync tweets`, and `sync all` repeat the same config/auth/error-handling flow.
+  - Landed approach: registered the per-collection sync commands through one factory and moved shared config/auth/error handling into one helper, while keeping the existing command names and options unchanged.
+  - Coverage: CLI forwarding now exercises `sync bookmarks`, `sync likes`, `sync tweets`, and `sync all` against the shared path.

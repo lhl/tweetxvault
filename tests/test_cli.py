@@ -258,6 +258,53 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
     assert "bookmarks: 2 pages, 3 tweets, empty" in buffer.getvalue()
 
 
+def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_collection(
+        collection,
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        forwarded.update(
+            {
+                "collection": collection,
+                "full": full,
+                "backfill": backfill,
+                "article_backfill": article_backfill,
+                "limit": limit,
+            }
+        )
+        return SimpleNamespace(pages_fetched=2, tweets_seen=3, stop_reason="empty")
+
+    monkeypatch.setattr(cli, "sync_collection", fake_sync_collection)
+
+    cli.sync_likes(article_backfill=True)
+
+    assert forwarded == {
+        "collection": "likes",
+        "full": False,
+        "backfill": False,
+        "article_backfill": True,
+        "limit": None,
+    }
+    assert "likes: 2 pages, 3 tweets, empty" in buffer.getvalue()
+
+
 def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)
@@ -303,6 +350,58 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
         "limit": None,
     }
     assert "tweets: 2 pages, 3 tweets, empty" in buffer.getvalue()
+
+
+def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_all(
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        forwarded.update(
+            {
+                "full": full,
+                "backfill": backfill,
+                "article_backfill": article_backfill,
+                "limit": limit,
+            }
+        )
+        return SimpleNamespace(
+            results=[SimpleNamespace(collection="bookmarks", pages_fetched=2, tweets_seen=3)],
+            errors={"likes": "boom"},
+            exit_code=2,
+        )
+
+    monkeypatch.setattr(cli, "sync_all", fake_sync_all)
+
+    with pytest.raises(typer.Exit) as excinfo:
+        cli.sync_everything(article_backfill=True)
+
+    assert excinfo.value.exit_code == 2
+    assert forwarded == {
+        "full": False,
+        "backfill": False,
+        "article_backfill": True,
+        "limit": None,
+    }
+    output = buffer.getvalue()
+    assert "bookmarks: 2 pages, 3 tweets" in output
+    assert "likes: failed (boom)" in output
 
 
 def test_media_download_reports_runner_result(paths, monkeypatch) -> None:

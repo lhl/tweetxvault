@@ -2,6 +2,16 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 1 for sync CLI repetition:
+  - Refactored `tweetxvault/cli.py` so `sync bookmarks`, `sync likes`, and `sync tweets` are registered through one command factory and share one config/auth/error-handling helper with `sync all`
+  - Kept the existing CLI command names, options, and output format stable while removing the copy-pasted sync command bodies
+  - Expanded CLI coverage so the shared sync path is exercised for bookmarks, likes, tweets, and `sync all`
+  - Validation:
+    - `uv run pytest tests/test_cli.py tests/test_sync.py`
+    - `uv run ruff check tweetxvault/cli.py tests/test_cli.py`
+    - `uv run ruff format --check tweetxvault/cli.py tests/test_cli.py`
+    - `uv run tweetxvault sync --help`
+
 - Landed Task 15 thread/context expansion:
   - Added `tweetxvault/threads.py` plus `tweetxvault threads expand`, which fetches archived tweet context through authenticated `TweetDetail` and also follows linked `x.com/.../status/...` / `twitter.com/.../status/...` URLs found in archived `url_ref` rows
   - Extended `tweetxvault/client/timelines.py` with `parse_tweet_detail_tweets(...)` so full detail payloads can be harvested, not just the focal tweet
