@@ -11,9 +11,10 @@ from rich.console import Console
 
 import tweetxvault.archive_import as archive_import
 from tweetxvault.archive_import import import_x_archive
+from tweetxvault.auth import ResolvedAuthBundle
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
-from tweetxvault.exceptions import ArchiveOwnerMismatchError, ConfigError
+from tweetxvault.exceptions import APIResponseError, ArchiveOwnerMismatchError, ConfigError
 from tweetxvault.storage import open_archive_store
 
 
@@ -22,7 +23,11 @@ def _wrap_ytd(name: str, payload: object) -> str:
 
 
 def _write_archive_dir(
-    base: Path, *, like_tweet_id: str = "300", media_kind: str = "photo"
+    base: Path,
+    *,
+    like_tweet_id: str = "300",
+    media_kind: str = "photo",
+    include_video_main_asset: bool = False,
 ) -> Path:
     root = base / "archive"
     data_dir = root / "data"
@@ -117,7 +122,9 @@ def _write_archive_dir(
                 ],
             },
         }
-        exported_media_name = "100-archive-poster.jpg"
+        exported_media_names = ["100-archive-poster.jpg"]
+        if include_video_main_asset:
+            exported_media_names.append("100-archive-video.mp4")
     else:
         media_item = {
             "id": "500",
@@ -130,7 +137,7 @@ def _write_archive_dir(
             "type": "photo",
             "sizes": {"large": {"w": "1200", "h": "675", "resize": "fit"}},
         }
-        exported_media_name = "100-archive-photo.jpg"
+        exported_media_names = ["100-archive-photo.jpg"]
 
     authored_tweet = {
         "tweet": {
@@ -222,7 +229,9 @@ def _write_archive_dir(
         ),
         encoding="utf-8",
     )
-    (media_dir / exported_media_name).write_bytes(b"archive-photo")
+    for exported_media_name in exported_media_names:
+        payload = b"archive-video" if exported_media_name.endswith(".mp4") else b"archive-photo"
+        (media_dir / exported_media_name).write_bytes(payload)
     return root
 
 
@@ -269,6 +278,17 @@ def _live_tweet(tweet_id: str, *, text: str) -> TimelineTweet:
 
 def _console() -> Console:
     return Console(file=StringIO(), force_terminal=False, color_system=None)
+
+
+def _auth_bundle() -> ResolvedAuthBundle:
+    return ResolvedAuthBundle(
+        auth_token="auth",
+        ct0="ct0",
+        user_id="42",
+        auth_token_source="test",
+        ct0_source="test",
+        user_id_source="test",
+    )
 
 
 def _disable_live_reconciliation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -555,4 +575,120 @@ def test_import_x_archive_reuses_existing_thumbnail_destination(
     assert media_row["thumbnail_local_path"] == "media/100/7_500-poster.jpg"
     assert media_row["thumbnail_sha256"] is None
     assert media_row["thumbnail_byte_size"] is None
+    store.close()
+
+
+def test_import_x_archive_preserves_main_and_thumbnail_updates_for_video_media(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(
+        tmp_path,
+        media_kind="video",
+        include_video_main_asset=True,
+    )
+    _disable_live_reconciliation(monkeypatch)
+
+    result = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert result.counts["media_files_copied"] == 2
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    media_row = store.table.search().where("record_type = 'media'").limit(1).to_list()[0]
+    assert media_row["local_path"] == "media/100/7_500.mp4"
+    assert media_row["thumbnail_local_path"] == "media/100/7_500-poster.jpg"
+    assert (paths.data_dir / "media" / "100" / "7_500.mp4").exists()
+    assert (paths.data_dir / "media" / "100" / "7_500-poster.jpg").exists()
+    store.close()
+
+
+def test_import_x_archive_detail_api_errors_become_transient_failures(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+
+    async def fake_reconciliation(**_kwargs):
+        return [], [], _auth_bundle()
+
+    async def fake_resolve_query_ids(*_args, **_kwargs):
+        return {"TweetDetail": "detail-query-id"}
+
+    async def fake_fetch_page(*_args, **_kwargs):
+        raise APIResponseError("server error", status_code=500)
+
+    class DummyClient:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(archive_import, "_run_live_reconciliation", fake_reconciliation)
+    monkeypatch.setattr(archive_import, "resolve_query_ids", fake_resolve_query_ids)
+    monkeypatch.setattr(
+        archive_import, "build_async_client", lambda *_args, **_kwargs: DummyClient()
+    )
+    monkeypatch.setattr(archive_import, "fetch_page", fake_fetch_page)
+
+    result = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            detail_lookups=1,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert result.detail_lookups == 0
+    assert result.detail_transient_failures == 1
+    assert result.pending_enrichment == 1
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    tweet_object = store.table.search().where("row_key = 'tweet_object:300'").limit(1).to_list()[0]
+    assert tweet_object["enrichment_state"] == "transient_failure"
+    assert tweet_object["enrichment_http_status"] == 500
+    manifest_row = (
+        store.table.search().where("record_type = 'import_manifest'").limit(1).to_list()[0]
+    )
+    manifest_counts = json.loads(manifest_row["counts_json"])
+    assert manifest_counts["detail_transient_failures"] == 1
+    store.close()
+
+
+def test_import_x_archive_preserves_attempt_start_time(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+    timestamps = iter(
+        [
+            "2026-03-17T00:00:00Z",
+            "2026-03-17T00:00:01Z",
+            "2026-03-17T00:00:02Z",
+            "2026-03-17T00:00:03Z",
+        ]
+    )
+    monkeypatch.setattr(archive_import, "utc_now", lambda: next(timestamps))
+
+    asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    manifest_row = (
+        store.table.search().where("record_type = 'import_manifest'").limit(1).to_list()[0]
+    )
+    assert manifest_row["import_started_at"] == "2026-03-17T00:00:00Z"
+    assert manifest_row["import_completed_at"] == "2026-03-17T00:00:03Z"
     store.close()

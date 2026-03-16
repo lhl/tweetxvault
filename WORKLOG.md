@@ -2,6 +2,18 @@
 
 ## 2026-03-17
 
+- Applied the second post-Task-16 archive-import review fixes:
+  - Collapsed archive media download updates per `media` row so importing both a main asset and thumbnail for the same normalized row no longer clears the first field written
+  - Made `--detail-lookups` best-effort for non-terminal API failures by marking rows `transient_failure` with the HTTP status instead of aborting the whole import after archive writes succeeded
+  - Preserved one attempt-scoped `import_started_at` across the `in_progress` / `completed` / `failed` manifest writes instead of recomputing it near completion
+  - Added archive-import regressions for combined video+thumbnail imports, transient TweetDetail API failures, and manifest start-time preservation
+  - Validation:
+    - `uv run ruff format tweetxvault/archive_import.py tests/test_archive_import.py`
+    - `uv run pytest tests/test_archive_import.py -q`
+    - `uv run ruff check`
+    - `uv run ruff format --check`
+    - `uv run pytest -q`
+
 - Applied the first post-Task-16 archive-import review fixes:
   - Fixed the existing-thumbnail fallback in `tweetxvault/archive_import.py` so a reused poster file no longer turns missing thumbnail metadata into `"None"` or `int(None)`
   - Closed zip inputs if `_ArchiveInput` manifest loading fails, added context-manager support for the helper, and rejected `..` path segments before resolving extracted-directory reads

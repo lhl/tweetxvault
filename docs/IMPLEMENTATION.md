@@ -386,6 +386,11 @@ Fresh fixture status (2026-03-16):
   - closed zip inputs on manifest-load failure and made `_ArchiveInput` usable as a context manager
   - rejected `..` path segments in manifest-provided archive filenames before resolving extracted-directory paths
   - added regressions for missing manifests, owner mismatch, zip-close-on-init-failure, malicious manifest filenames, and pre-existing thumbnail destinations
+- [x] Landed the second post-review hardening pass for Task 16:
+  - coalesced media download updates per normalized `media` row so importing both the main asset and thumbnail cannot clobber whichever field was written first
+  - downgraded non-terminal `TweetDetail` API failures during `--detail-lookups` to tracked `transient_failure` states instead of aborting the overall import after archive writes had already completed
+  - preserved one attempt-scoped `import_started_at` value across all import-manifest rewrites for the run
+  - added regressions for combined main+thumbnail media import, transient detail API failures, and manifest start-time preservation
 
 ## Review Cleanup
 

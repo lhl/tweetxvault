@@ -544,7 +544,7 @@ def _copy_exported_media(
         if thumbnail_name and thumbnail_name != media_name:
             row_by_asset[(tweet_id, thumbnail_name)] = (row, True)
 
-    pending_updates: list[dict[str, Any]] = []
+    pending_updates: dict[str, dict[str, Any]] = {}
     unmatched = 0
     for relative_path in files:
         filename = Path(relative_path).name
@@ -571,33 +571,34 @@ def _copy_exported_media(
                 (row.get("thumbnail_byte_size") if is_thumbnail else row.get("byte_size")) or 0
             )
         content_type = mimetypes.guess_type(destination.name)[0]
-        pending_updates.append(
-            store.build_media_download_update(
-                row,
-                download_state="done",
-                local_path=(row.get("local_path") if is_thumbnail else relative_dest.as_posix()),
-                sha256=(row.get("sha256") if is_thumbnail else sha256 or None),
-                byte_size=(row.get("byte_size") if is_thumbnail else byte_size or None),
-                content_type=(row.get("content_type") if is_thumbnail else content_type),
-                thumbnail_local_path=(
-                    relative_dest.as_posix() if is_thumbnail else row.get("thumbnail_local_path")
-                ),
-                thumbnail_sha256=(sha256 or None) if is_thumbnail else row.get("thumbnail_sha256"),
-                thumbnail_byte_size=(byte_size or None)
-                if is_thumbnail
-                else row.get("thumbnail_byte_size"),
-                thumbnail_content_type=content_type
-                if is_thumbnail
-                else row.get("thumbnail_content_type"),
-                downloaded_at=utc_now(),
-                download_error=None,
-            )
+        base_row = pending_updates.get(str(row["row_key"]), row)
+        pending_updates[str(row["row_key"])] = store.build_media_download_update(
+            base_row,
+            download_state="done",
+            local_path=(base_row.get("local_path") if is_thumbnail else relative_dest.as_posix()),
+            sha256=(base_row.get("sha256") if is_thumbnail else sha256 or None),
+            byte_size=(base_row.get("byte_size") if is_thumbnail else byte_size or None),
+            content_type=(base_row.get("content_type") if is_thumbnail else content_type),
+            thumbnail_local_path=(
+                relative_dest.as_posix() if is_thumbnail else base_row.get("thumbnail_local_path")
+            ),
+            thumbnail_sha256=(
+                (sha256 or None) if is_thumbnail else base_row.get("thumbnail_sha256")
+            ),
+            thumbnail_byte_size=(byte_size or None)
+            if is_thumbnail
+            else base_row.get("thumbnail_byte_size"),
+            thumbnail_content_type=content_type
+            if is_thumbnail
+            else base_row.get("thumbnail_content_type"),
+            downloaded_at=utc_now(),
+            download_error=None,
         )
         if len(pending_updates) >= 100:
-            store.merge_rows(pending_updates.copy())
+            store.merge_rows(list(pending_updates.values()))
             pending_updates.clear()
     if pending_updates:
-        store.merge_rows(pending_updates)
+        store.merge_rows(list(pending_updates.values()))
     if unmatched:
         warnings.append(f"{unmatched} archive media files did not match normalized media rows.")
 
@@ -714,7 +715,15 @@ async def _enrich_pending_rows(
                         terminal += 1
                         job.mark_dirty()
                         continue
-                    raise
+                    store.update_tweet_object_enrichment(
+                        tweet_id,
+                        enrichment_state="transient_failure",
+                        enrichment_checked_at=utc_now(),
+                        enrichment_http_status=exc.status_code,
+                        enrichment_reason=exc.__class__.__name__,
+                    )
+                    transient += 1
+                    job.mark_dirty()
                 except Exception as exc:
                     store.update_tweet_object_enrichment(
                         tweet_id,
@@ -780,6 +789,7 @@ async def import_x_archive(
         identity = _archive_identity(source.manifest, account_items)
         existing_manifest: dict[str, Any] | None = None
         store: ArchiveStore | None = None
+        import_started_at = utc_now()
 
         lock = ProcessLock(paths.lock_file)
         lock.acquire()
@@ -800,7 +810,7 @@ async def import_x_archive(
                 digest,
                 archive_generation_date=generation_date,
                 status="in_progress",
-                import_started_at=utc_now(),
+                import_started_at=import_started_at,
                 warnings=warnings,
                 counts=counts,
             )
@@ -853,9 +863,7 @@ async def import_x_archive(
                 digest,
                 archive_generation_date=generation_date,
                 status="completed",
-                import_started_at=existing_manifest.get("import_started_at")
-                if existing_manifest
-                else utc_now(),
+                import_started_at=import_started_at,
                 import_completed_at=utc_now(),
                 warnings=warnings,
                 counts=counts,
@@ -869,9 +877,7 @@ async def import_x_archive(
                         digest,
                         archive_generation_date=generation_date,
                         status="failed",
-                        import_started_at=existing_manifest.get("import_started_at")
-                        if existing_manifest
-                        else utc_now(),
+                        import_started_at=import_started_at,
                         import_completed_at=utc_now(),
                         warnings=warnings,
                         counts=counts,
@@ -900,19 +906,24 @@ async def import_x_archive(
         detail_transient = 0
         pending = 0
         if resolved_auth is not None:
-            (
-                detail_succeeded,
-                detail_terminal,
-                detail_transient,
-                pending,
-            ) = await _enrich_pending_rows(
-                limit=detail_lookups,
-                config=config,
-                paths=paths,
-                auth_bundle=resolved_auth,
-                transport=transport,
-                console=console,
-            )
+            try:
+                (
+                    detail_succeeded,
+                    detail_terminal,
+                    detail_transient,
+                    pending,
+                ) = await _enrich_pending_rows(
+                    limit=detail_lookups,
+                    config=config,
+                    paths=paths,
+                    auth_bundle=resolved_auth,
+                    transport=transport,
+                    console=console,
+                )
+            except Exception as exc:
+                warnings.append(f"detail enrichment failed after import: {exc}")
+                async with locked_archive_job(config=config, paths=paths) as job:
+                    pending = len(job.store.list_tweet_objects_for_enrichment())
         else:
             async with locked_archive_job(config=config, paths=paths) as job:
                 pending = len(job.store.list_tweet_objects_for_enrichment())
@@ -931,9 +942,7 @@ async def import_x_archive(
                 digest,
                 archive_generation_date=generation_date,
                 status="completed",
-                import_started_at=existing_manifest.get("import_started_at")
-                if existing_manifest
-                else utc_now(),
+                import_started_at=import_started_at,
                 import_completed_at=utc_now(),
                 warnings=warnings,
                 counts=final_counts,
