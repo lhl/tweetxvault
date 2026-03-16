@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.conftest import make_article_result, make_tweet_result
+from tests.conftest import make_article_result, make_tweet_detail_response, make_tweet_result
 from tweetxvault.articles import normalize_article_target, refresh_articles
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.query_ids import QueryIdStore
@@ -20,9 +20,9 @@ def _fixture_payload() -> dict[str, object]:
     return json.loads(fixture.read_text(encoding="utf-8"))
 
 
-def _seed_preview_article(paths) -> None:
-    preview_tweet = TimelineTweet(
-        tweet_id=TWEET_ID,
+def _preview_tweet(tweet_id: str, *, plain_text: str | None = None) -> TimelineTweet:
+    return TimelineTweet(
+        tweet_id=tweet_id,
         text="preview tweet",
         author_id="1000",
         author_username="user1000",
@@ -30,17 +30,21 @@ def _seed_preview_article(paths) -> None:
         created_at="Sat Mar 14 00:00:00 +0000 2026",
         sort_index="10",
         raw_json=make_tweet_result(
-            TWEET_ID,
+            tweet_id,
             "preview tweet",
             user_id="1000",
             article=make_article_result(
-                "preview-article",
+                f"preview-article-{tweet_id}",
                 title="Preview title",
                 preview_text="Preview only",
-                plain_text=None,
+                plain_text=plain_text,
             ),
         ),
     )
+
+
+def _seed_preview_article(paths, *tweet_ids: str) -> None:
+    tweets = [_preview_tweet(tweet_id) for tweet_id in (tweet_ids or (TWEET_ID,))]
     store = open_archive_store(paths, create=True)
     assert store is not None
     store.persist_page(
@@ -50,12 +54,31 @@ def _seed_preview_article(paths) -> None:
         cursor_out=None,
         http_status=200,
         raw_json={"ok": True},
-        tweets=[preview_tweet],
-        last_head_tweet_id=TWEET_ID,
+        tweets=tweets,
+        last_head_tweet_id=tweets[-1].tweet_id,
         backfill_cursor=None,
         backfill_incomplete=False,
     )
     store.close()
+
+
+def _article_detail_payload(tweet_id: str, *, plain_text: str = "Body") -> dict[str, object]:
+    return make_tweet_detail_response(
+        [
+            make_tweet_result(
+                tweet_id,
+                "detail tweet",
+                user_id="1000",
+                article=make_article_result(
+                    f"detail-article-{tweet_id}",
+                    title=f"Title {tweet_id}",
+                    preview_text="Preview only",
+                    plain_text=plain_text,
+                    url=f"https://x.com/i/article/{tweet_id}",
+                ),
+            )
+        ]
+    )
 
 
 def test_normalize_article_target_accepts_ids_and_urls() -> None:
@@ -100,5 +123,86 @@ async def test_refresh_articles_updates_preview_rows_from_tweet_detail(
         media_rows = store.list_media_rows()
         assert len(media_rows) == 10
         assert any(row["source"] == "article_cover" for row in media_rows)
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_marks_missing_focal_tweet_as_failure(
+    paths,
+    config,
+    auth_bundle,
+) -> None:
+    _seed_preview_article(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_article_detail_payload("999", plain_text="Wrong tweet"),
+            request=request,
+        )
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 1
+    assert result.updated == 0
+    assert result.failed == 1
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        article_rows = store.list_article_rows(preview_only=True)
+        assert len(article_rows) == 1
+        assert article_rows[0]["status"] == "preview_only"
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_respects_limit(paths, config, auth_bundle) -> None:
+    _seed_preview_article(paths, "100", "101")
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        variables = request.url.params["variables"]
+        if '"focalTweetId":"100"' in variables:
+            requests.append("100")
+            return httpx.Response(
+                200,
+                json=_article_detail_payload("100", plain_text="Body 100"),
+                request=request,
+            )
+        raise AssertionError(f"unexpected request {request.url}")
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        limit=1,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 1
+    assert result.updated == 1
+    assert result.failed == 0
+    assert requests == ["100"]
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        preview_rows = store.list_article_rows(preview_only=True)
+        all_rows = store.list_article_rows(preview_only=False)
+        assert [row["tweet_id"] for row in preview_rows] == ["101"]
+        assert {row["tweet_id"]: row["status"] for row in all_rows} == {
+            "100": "body_present",
+            "101": "preview_only",
+        }
     finally:
         store.close()

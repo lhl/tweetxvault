@@ -392,3 +392,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: copying `cookies.sqlite` plus `-wal` / `-shm` sidecars separately can still race a live Firefox write and produce an inconsistent snapshot.
   - Landed approach: replaced manual sidecar copying with a real SQLite backup snapshot into a temp DB before querying cookies.
   - Coverage: auth tests now cover reading cookies from a WAL-mode Firefox DB while the source connection remains live.
+- [x] Review item 9: broaden runner and extractor test coverage for error paths and edge cases.
+  - Current problem: the new runner modules mostly only have happy-path tests, and extractor coverage is still thin on malformed payloads.
+  - Landed approach: added focused tests for runner failure states, retries, limits, non-HTML responses, invalid detail payloads, and malformed extractor inputs without changing runner behavior.
+  - Coverage: media/unfurl now cover retry + limit flows, articles/threads cover invalid-response or limit behavior, and extractor tests cover malformed article/attached/url/media payload shapes.

@@ -163,3 +163,46 @@ def test_extract_secondary_objects_reuses_one_url_candidate_helper() -> None:
     assert short_only.canonical_url == "https://t.co/shortonly"
     short_only_resolved = urls_by_canonical["https://t.co/shortonly"]
     assert short_only_resolved.final_url is None
+
+
+def test_extract_secondary_objects_ignores_invalid_article_and_attached_payloads() -> None:
+    root = make_tweet_result("100", "root", user_id="1000")
+    root["article"] = {"article_results": {"result": "bad"}}
+    root["quoted_status_result"] = {"result": {"__typename": "TweetUnavailable"}}
+    root["legacy"]["retweeted_status_result"] = {"result": {"not": "a tweet"}}
+
+    graph = extract_secondary_objects(root)
+
+    assert set(graph.tweet_objects) == {"100"}
+    assert not graph.relations
+    assert not graph.articles
+
+
+def test_extract_secondary_objects_handles_sparse_url_and_media_items() -> None:
+    root = make_tweet_result("100", "root", user_id="1000")
+    root["legacy"]["entities"] = {
+        "urls": [
+            {"url": "https://t.co/shortonly"},
+            {"expanded_url": "relative/path"},
+            "bad",
+        ]
+    }
+    root["legacy"]["extended_entities"] = {
+        "media": [
+            {"type": "photo"},
+            {
+                "media_key": "7",
+                "type": "video",
+                "video_info": {"variants": ["bad", {"url": ""}]},
+            },
+            "bad",
+        ]
+    }
+
+    graph = extract_secondary_objects(root)
+
+    assert len(graph.urls) == 1
+    assert next(iter(graph.urls.values())).canonical_url == "https://t.co/shortonly"
+    assert set(graph.media) == {("100", "idx-0"), ("100", "7")}
+    assert graph.media[("100", "idx-0")].media_url is None
+    assert graph.media[("100", "7")].media_url is None

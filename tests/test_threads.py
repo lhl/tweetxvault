@@ -186,3 +186,47 @@ async def test_expand_threads_explicit_targets_preserve_duplicate_and_failure_co
     assert result.failed == 1
     assert result.skipped == 1
     assert requests == ["100", "200"]
+
+
+@pytest.mark.asyncio
+async def test_expand_threads_respects_limit_before_linked_status_pass(
+    paths,
+    config,
+    auth_bundle,
+) -> None:
+    root_raw = _seed_thread_archive(paths)
+    parent_raw = make_tweet_result("200", "parent tweet", user_id="2000")
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        focal = request.url.params["variables"]
+        if '"focalTweetId":"100"' in focal:
+            requests.append("100")
+            return httpx.Response(
+                200,
+                json=make_tweet_detail_response([root_raw, parent_raw], module=True),
+                request=request,
+            )
+        raise AssertionError(f"unexpected request {request.url}")
+
+    result = await expand_threads(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        limit=1,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 1
+    assert result.expanded == 1
+    assert result.failed == 0
+    assert result.skipped == 0
+    assert requests == ["100"]
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        assert store.list_raw_capture_target_ids("ThreadExpandDetail") == ["100"]
+    finally:
+        store.close()

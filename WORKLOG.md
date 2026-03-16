@@ -2,6 +2,17 @@
 
 ## 2026-03-16
 
+- Landed review cleanup item 9 for runner/extractor coverage gaps:
+  - Expanded `tests/test_media.py` with failed-download retry coverage plus `retry_failed` and `limit` behavior for photo downloads
+  - Expanded `tests/test_unfurl.py` with failed-unfurl retry coverage, `retry_failed` + `limit` behavior, and a non-HTML response case
+  - Expanded `tests/test_articles.py` with invalid-detail failure handling and `limit` behavior for preview article refreshes
+  - Expanded `tests/test_threads.py` with a `limit` case that proves thread expansion stops before the linked-status pass once the requested count is reached
+  - Expanded `tests/test_extractor.py` with malformed article/attached payload coverage plus sparse URL/media entry handling
+  - Validation:
+    - `uv run pytest tests/test_media.py tests/test_unfurl.py tests/test_articles.py tests/test_threads.py tests/test_extractor.py`
+    - `uv run ruff check tests/test_media.py tests/test_unfurl.py tests/test_articles.py tests/test_threads.py tests/test_extractor.py`
+    - `uv run ruff format --check tests/test_media.py tests/test_unfurl.py tests/test_articles.py tests/test_threads.py tests/test_extractor.py`
+
 - Landed review cleanup item 8 for Firefox WAL-safe cookie snapshots:
   - Reworked `tweetxvault/auth/firefox.py` so Firefox cookie extraction now snapshots `cookies.sqlite` via SQLite's backup API instead of manually copying `cookies.sqlite` plus `-wal` / `-shm` sidecars
   - Kept the extraction query unchanged after the snapshot, but removed the race-prone assumption that sidecar file copies happen at a coherent point in time for a live Firefox profile

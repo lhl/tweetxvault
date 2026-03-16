@@ -626,6 +626,8 @@ Reserved for future (not implemented in MVP):
   - Next cleanup item landed: extracted the shared `_expand_target(...)` try/except/result-counting path so the explicit-target, membership, and linked-status loops no longer carry three copies of the same expansion logic.
 - [x] Make Firefox cookie extraction WAL-safe.
   - Next cleanup item landed: replaced manual `cookies.sqlite` / `-wal` / `-shm` copying with a proper SQLite snapshot so live Firefox profiles no longer rely on sidecar copy timing.
+- [x] Expand failure-path coverage for post-sync runners and extractor edge cases.
+  - Next cleanup item landed: added targeted tests for retries, limits, invalid responses, and malformed payload handling across media, unfurl, articles, threads, and extractor.
 
 ## Open Questions (Remaining)
 

@@ -130,3 +130,65 @@ async def test_download_media_updates_rows_and_files(paths, config) -> None:
     assert repeat.processed == 0
     assert repeat.downloaded == 0
     assert repeat.skipped == 0
+
+
+@pytest.mark.asyncio
+async def test_download_media_retries_failed_rows_and_respects_limit(paths, config) -> None:
+    _seed_archive(paths)
+
+    def failing_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="nope", request=request)
+
+    failed = await download_media(
+        config=config,
+        paths=paths,
+        photos_only=True,
+        transport=httpx.MockTransport(failing_handler),
+    )
+
+    assert failed.processed == 2
+    assert failed.downloaded == 0
+    assert failed.failed == 2
+
+    skipped = await download_media(
+        config=config,
+        paths=paths,
+        photos_only=True,
+        transport=httpx.MockTransport(failing_handler),
+    )
+    assert skipped.processed == 0
+    assert skipped.downloaded == 0
+    assert skipped.failed == 0
+
+    def success_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=b"image-bytes",
+            headers={"content-type": "image/jpeg"},
+            request=request,
+        )
+
+    retried = await download_media(
+        config=config,
+        paths=paths,
+        photos_only=True,
+        retry_failed=True,
+        limit=1,
+        transport=httpx.MockTransport(success_handler),
+    )
+
+    assert retried.processed == 1
+    assert retried.downloaded == 1
+    assert retried.failed == 0
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        done_photos = store.list_media_rows(states={"done"}, media_types={"photo"})
+        failed_photos = store.list_media_rows(states={"failed"}, media_types={"photo"})
+        pending_video = store.list_media_rows(states={"pending"}, media_types={"video"})
+        assert len(done_photos) == 1
+        assert len(failed_photos) == 1
+        assert len(pending_video) == 1
+    finally:
+        store.close()

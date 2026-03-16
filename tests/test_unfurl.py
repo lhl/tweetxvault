@@ -137,3 +137,103 @@ async def test_unfurl_urls_persists_html_metadata(paths, config) -> None:
         assert quoted["description"] == "Quoted description"
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_unfurl_urls_retries_failed_rows_and_respects_limit(paths, config) -> None:
+    _seed_archive(paths)
+
+    def failing_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="nope", request=request)
+
+    failed = await unfurl_urls(
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(failing_handler),
+    )
+
+    assert failed.processed == 2
+    assert failed.updated == 0
+    assert failed.failed == 2
+
+    skipped = await unfurl_urls(
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(failing_handler),
+    )
+    assert skipped.processed == 0
+    assert skipped.updated == 0
+    assert skipped.failed == 0
+
+    def success_handler(request: httpx.Request) -> httpx.Response:
+        html = """
+        <html><head>
+        <title>Recovered</title>
+        </head><body></body></html>
+        """
+        return httpx.Response(
+            200,
+            text=html,
+            headers={"content-type": "text/html"},
+            request=request,
+        )
+
+    retried = await unfurl_urls(
+        config=config,
+        paths=paths,
+        retry_failed=True,
+        limit=1,
+        transport=httpx.MockTransport(success_handler),
+    )
+
+    assert retried.processed == 1
+    assert retried.updated == 1
+    assert retried.failed == 0
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        done_rows = store.list_url_rows(states={"done"})
+        failed_rows = store.list_url_rows(states={"failed"})
+        assert len(done_rows) == 1
+        assert len(failed_rows) == 1
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_unfurl_urls_accepts_non_html_responses(paths, config) -> None:
+    _seed_archive(paths)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"ok": True},
+            headers={"content-type": "application/json"},
+            request=request,
+        )
+
+    result = await unfurl_urls(
+        config=config,
+        paths=paths,
+        limit=1,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 1
+    assert result.updated == 1
+    assert result.failed == 0
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        done_rows = store.list_url_rows(states={"done"})
+        pending_rows = store.list_url_rows(states={"pending"})
+        assert len(done_rows) == 1
+        assert len(pending_rows) == 1
+        row = done_rows[0]
+        assert row["content_type"] == "application/json"
+        assert row["title"] is None
+        assert row["description"] is None
+    finally:
+        store.close()
