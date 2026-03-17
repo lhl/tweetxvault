@@ -14,7 +14,12 @@ from tweetxvault.archive_import import enrich_imported_archive, import_x_archive
 from tweetxvault.auth import ResolvedAuthBundle
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
-from tweetxvault.exceptions import APIResponseError, ArchiveOwnerMismatchError, ConfigError
+from tweetxvault.exceptions import (
+    APIResponseError,
+    ArchiveOwnerMismatchError,
+    ConfigError,
+    StaleQueryIdError,
+)
 from tweetxvault.storage import open_archive_store
 
 
@@ -527,6 +532,56 @@ def test_repeated_import_can_reuse_existing_archive_for_enrich_followup(
     store.close()
 
 
+def test_repeated_import_enrich_preserves_existing_manifest_warnings(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+
+    first = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    async def fake_followup(**_kwargs):
+        return archive_import.ArchiveEnrichResult(
+            warnings=["detail enrichment failed: upstream 429"],
+            pending_enrichment=first.pending_enrichment,
+        )
+
+    monkeypatch.setattr(archive_import, "_run_archive_followup", fake_followup)
+
+    second = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            enrich=True,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    expected_warning = (
+        "archive does not contain a bookmark dataset (expected for current official X archives)"
+    )
+    assert expected_warning in second.warnings
+    assert "detail enrichment failed: upstream 429" in second.warnings
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    manifest_row = (
+        store.table.search().where("record_type = 'import_manifest'").limit(1).to_list()[0]
+    )
+    manifest_warnings = json.loads(manifest_row["warnings_json"])
+    assert expected_warning in manifest_warnings
+    assert "detail enrichment failed: upstream 429" in manifest_warnings
+    store.close()
+
+
 def test_enrich_imported_archive_requires_completed_import(paths) -> None:
     with pytest.raises(ConfigError, match="No completed X archive import found"):
         asyncio.run(
@@ -923,6 +978,60 @@ def test_import_x_archive_detail_api_errors_become_transient_failures(
     store.close()
 
 
+def test_import_x_archive_detail_stale_query_id_leaves_rows_retryable(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+
+    async def fake_reconciliation(**_kwargs):
+        return [], [], _auth_bundle()
+
+    async def fake_resolve_query_ids(*_args, **_kwargs):
+        return {"TweetDetail": "detail-query-id"}
+
+    async def fake_fetch_page(*_args, **_kwargs):
+        raise StaleQueryIdError("stale query id", status_code=404)
+
+    class DummyClient:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(archive_import, "_run_live_reconciliation", fake_reconciliation)
+    monkeypatch.setattr(archive_import, "resolve_query_ids", fake_resolve_query_ids)
+    monkeypatch.setattr(
+        archive_import, "build_async_client", lambda *_args, **_kwargs: DummyClient()
+    )
+    monkeypatch.setattr(archive_import, "fetch_page", fake_fetch_page)
+
+    result = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            detail_lookups=1,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    assert result.detail_lookups == 0
+    assert result.detail_terminal_unavailable == 0
+    assert result.detail_transient_failures == 0
+    assert result.pending_enrichment == 1
+    assert any("detail enrichment failed: stale query id" in warning for warning in result.warnings)
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    tweet_object = store.table.search().where("row_key = 'tweet_object:300'").limit(1).to_list()[0]
+    assert tweet_object["enrichment_state"] == "pending"
+    assert tweet_object["enrichment_http_status"] is None
+    manifest_row = (
+        store.table.search().where("record_type = 'import_manifest'").limit(1).to_list()[0]
+    )
+    manifest_counts = json.loads(manifest_row["counts_json"])
+    assert manifest_counts["pending_enrichment"] == 1
+    store.close()
+
+
 def test_import_x_archive_preserves_attempt_start_time(
     paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1139,3 +1248,22 @@ def test_import_x_archive_regen_clears_archive_rows_but_keeps_live_rows(
     assert live_row["source"] == "live_graphql"
     assert store.counts()["import_manifests"] == 1
     store.close()
+
+
+def test_remove_archive_owned_files_only_removes_media_subtree(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    media_path = data_dir / "media" / "100" / "asset.jpg"
+    notes_path = data_dir / "notes" / "asset.jpg"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"media")
+    notes_path.write_bytes(b"notes")
+
+    removed = archive_import._remove_archive_owned_files(
+        data_dir,
+        ["media/100/asset.jpg", "notes/asset.jpg", "../escape.jpg", "/tmp/escape.jpg"],
+    )
+
+    assert removed == 1
+    assert not media_path.exists()
+    assert notes_path.exists()

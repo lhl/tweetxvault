@@ -29,7 +29,14 @@ from tweetxvault.client.timelines import (
     parse_tweet_detail_response,
 )
 from tweetxvault.config import AppConfig, XDGPaths
-from tweetxvault.exceptions import APIResponseError, ConfigError
+from tweetxvault.exceptions import (
+    APIResponseError,
+    AuthExpiredError,
+    ConfigError,
+    FeatureFlagDriftError,
+    RateLimitExhaustedError,
+    StaleQueryIdError,
+)
 from tweetxvault.extractor import ExtractedTweetGraph, extract_secondary_objects
 from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
@@ -521,8 +528,9 @@ def _deleted_headers_map(items: list[Any]) -> dict[str, str]:
     return result
 
 
-def _chunked(items: list[_T], size: int) -> list[list[_T]]:
-    return [items[index : index + size] for index in range(0, len(items), size)]
+def _chunked(items: list[_T], size: int):
+    for index in range(0, len(items), size):
+        yield items[index : index + size]
 
 
 def _secondary_graph_row_keys(store: ArchiveStore, graph: ExtractedTweetGraph) -> list[str]:
@@ -559,33 +567,36 @@ def _import_authored_tweets(
     progress: Callable[[int, int], None] | None = None,
 ) -> None:
     buffer = _PageBuffer()
-    prepared: list[_PreparedAuthoredImport] = []
-    for item in tweets:
-        payload = item.get("tweet") if isinstance(item, dict) else None
-        if not isinstance(payload, dict):
-            continue
-        timeline_tweet = _timeline_tweet_from_archive(
-            payload,
-            identity,
-            sort_index=str(payload.get("id_str") or payload.get("id") or ""),
-        )
-        deleted_at = deleted_headers.get(timeline_tweet.tweet_id) or payload.get("deleted_at")
-        prepared.append(
-            _PreparedAuthoredImport(
-                timeline_tweet=timeline_tweet,
-                deleted_at=deleted_at if isinstance(deleted_at, str) else None,
-                graph=extract_secondary_objects(timeline_tweet.raw_json),
-            )
-        )
-    total = len(prepared)
+    valid_items = [
+        item for item in tweets if isinstance(item, dict) and isinstance(item.get("tweet"), dict)
+    ]
+    total = len(valid_items)
     processed = 0
-    for chunk in _chunked(prepared, _AUTHORED_IMPORT_PREFETCH_CHUNK):
+    for chunk_items in _chunked(valid_items, _AUTHORED_IMPORT_PREFETCH_CHUNK):
+        prepared: list[_PreparedAuthoredImport] = []
+        for item in chunk_items:
+            payload = item["tweet"]
+            timeline_tweet = _timeline_tweet_from_archive(
+                payload,
+                identity,
+                sort_index=str(payload.get("id_str") or payload.get("id") or ""),
+            )
+            deleted_at = deleted_headers.get(timeline_tweet.tweet_id) or payload.get("deleted_at")
+            prepared.append(
+                _PreparedAuthoredImport(
+                    timeline_tweet=timeline_tweet,
+                    deleted_at=deleted_at if isinstance(deleted_at, str) else None,
+                    graph=extract_secondary_objects(timeline_tweet.raw_json),
+                )
+            )
+        if not prepared:
+            continue
         row_keys: list[str] = []
-        for item in chunk:
+        for item in prepared:
             row_keys.append(store._row_key_for_tweet(item.timeline_tweet.tweet_id, "tweet"))
             row_keys.extend(_secondary_graph_row_keys(store, item.graph))
         store.prefetch_rows(row_keys, cursor=buffer)
-        for item in chunk:
+        for item in prepared:
             timeline_tweet = item.timeline_tweet
             store.upsert_tweet(timeline_tweet, cursor=buffer)
             store.upsert_membership(
@@ -1052,7 +1063,15 @@ async def _enrich_pending_rows(
                         succeeded += 1
                         job.mark_dirty()
                     except APIResponseError as exc:
-                        if exc.status_code in {404, 410}:
+                        if isinstance(
+                            exc,
+                            StaleQueryIdError
+                            | AuthExpiredError
+                            | FeatureFlagDriftError
+                            | RateLimitExhaustedError,
+                        ):
+                            raise
+                        if exc.status_code == 410:
                             store.update_tweet_object_enrichment(
                                 tweet_id,
                                 enrichment_state="terminal_unavailable",
@@ -1132,7 +1151,7 @@ def _remove_archive_owned_files(base_dir: Path, relative_paths: list[str]) -> in
     removed = 0
     for relative_path in sorted(set(relative_paths)):
         relative = _safe_relative_data_path(relative_path)
-        if relative is None:
+        if relative is None or relative.parts[:1] != ("media",):
             continue
         destination = base_dir / relative
         if not destination.exists() or not destination.is_file():
@@ -1176,6 +1195,21 @@ def _manifest_counts(manifest_row: dict[str, Any] | None) -> dict[str, int]:
         if isinstance(value, int):
             counts[key] = value
     return counts
+
+
+def _manifest_warnings(manifest_row: dict[str, Any] | None) -> list[str]:
+    if not manifest_row:
+        return []
+    raw = manifest_row.get("warnings_json")
+    if not isinstance(raw, str) or not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [item for item in parsed if isinstance(item, str) and item]
 
 
 def _list_import_manifest_rows(store: ArchiveStore) -> list[dict[str, Any]]:
@@ -1347,6 +1381,7 @@ async def import_x_archive(
             existing_manifest = store.get_import_manifest(digest)
             if existing_manifest and existing_manifest.get("status") == "completed":
                 counts = _manifest_counts(existing_manifest)
+                warnings = _manifest_warnings(existing_manifest)
                 store.close()
                 if not followup_requested:
                     return ArchiveImportResult(
@@ -1388,7 +1423,10 @@ async def import_x_archive(
                 if "bookmark" not in {
                     key.lower() for key in (source.manifest.get("dataTypes") or {})
                 }:
-                    warnings.append("archive does not contain a bookmark dataset")
+                    warnings.append(
+                        "archive does not contain a bookmark dataset "
+                        "(expected for current official X archives)"
+                    )
 
                 _, tweet_header_parts = source.load_dataset("tweetHeaders")
                 deleted_tweets, deleted_tweet_parts = source.load_dataset("deletedTweets")

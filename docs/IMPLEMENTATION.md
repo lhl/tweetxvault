@@ -421,6 +421,12 @@ Fresh fixture status (2026-03-16):
   - changed the shared sync logger used by live sync and archive follow-up to label `head` vs `backfill` passes explicitly instead of printing one ambiguous cumulative `tweets N` counter
   - per-page reconciliation lines now report both `page_tweets` and `total_tweets`, and resumed runs emit a `resuming saved backfill pass` line before continuing older pages
   - confirmed the large speedup fix was specific to archive ingest's LanceDB point-lookups; `import enrich`, `threads expand`, and the other follow-up jobs remain primarily network-bound and did not need the same storage prefetch optimization
+- [x] Hardened archive follow-up safety and rerun semantics before first real enrichment use:
+  - stopped systemic TweetDetail failures (`StaleQueryIdError`, auth expiry, feature-flag drift, rate-limit exhaustion) from mutating per-tweet enrichment state; those now bubble once as follow-up warnings so pending rows remain retryable
+  - restricted terminal TweetDetail classification to `410` instead of treating all `404` responses as not-found in the archive enrichment path
+  - preserved existing manifest warnings when reusing a completed archive with `import x-archive --enrich`
+  - constrained `--regen` archive-managed file deletion to the `media/` subtree and changed the bookmark-dataset warning/docs to note that missing bookmarks are expected for current official X archives
+  - removed the full-archive authored secondary-graph precompute by preparing authored import chunks lazily inside the batched merge loop
 
 ## Review Cleanup
 

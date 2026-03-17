@@ -2,6 +2,19 @@
 
 ## 2026-03-17
 
+- Tightened archive follow-up safety before the first real `import enrich` run:
+  - stopped `_enrich_pending_rows(...)` from classifying systemic `TweetDetail` failures (`StaleQueryIdError`, auth expiry, feature-flag drift, rate-limit exhaustion) as per-tweet terminal/transient states; those now bubble once to follow-up warnings so rows remain retryable
+  - restricted terminal archive detail classification to HTTP `410`; unsafe `404 => not found` handling is no longer used in the TweetDetail enrichment path
+  - preserved prior manifest warnings when reusing an existing completed archive with `import x-archive --enrich`
+  - constrained `--regen` archive-owned file cleanup to the managed `media/` subtree only
+  - changed authored archive import to build secondary graphs per chunk instead of precomputing them for the full archive up front
+  - clarified the missing-bookmarks warning/docs to say this is expected for current official X archives
+  - validation:
+    - `uv run pytest tests/test_archive_import.py -q`
+    - `uv run ruff check tweetxvault/archive_import.py tests/test_archive_import.py`
+    - `uv run ruff format --check tweetxvault/archive_import.py tests/test_archive_import.py`
+    - `uv run pytest -q`
+
 - Clarified live reconciliation output during archive follow-up and standalone sync/enrich runs:
   - changed the shared sync logger to print explicit `head` vs `backfill` pass labels instead of one ambiguous cumulative `tweets N` counter
   - per-page progress now includes both `page_tweets` and `total_tweets`, and resumed syncs print a `resuming saved backfill pass` line before continuing older pages
