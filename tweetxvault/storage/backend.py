@@ -11,7 +11,7 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +63,15 @@ def _state_filter_expr(field: str, states: set[str]) -> str:
 
 def _and_expr(*clauses: str) -> str:
     return " AND ".join(clause for clause in clauses if clause)
+
+
+def _parse_created_at(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass(slots=True)
@@ -1765,8 +1774,31 @@ class ArchiveStore:
             filter_expr += f" AND collection_type = {_expr_quote(collection)}"
         tweet_rows = self.table.search().where(filter_expr).to_list()
 
-        def sort_key(row: dict[str, Any]) -> int:
-            return int(row["sort_index"]) if row["sort_index"] else -1
+        def sort_index_value(row: dict[str, Any]) -> int:
+            raw = row.get("sort_index")
+            if not raw:
+                return 0
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return 0
+
+        def oldest_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+            created_at = _parse_created_at(row.get("created_at"))
+            if created_at is not None:
+                return (0, created_at, sort_index_value(row), row.get("tweet_id") or "")
+            return (1, datetime.max, sort_index_value(row), row.get("tweet_id") or "")
+
+        def newest_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+            created_at = _parse_created_at(row.get("created_at"))
+            if created_at is not None:
+                return (
+                    0,
+                    -created_at.timestamp(),
+                    -sort_index_value(row),
+                    row.get("tweet_id") or "",
+                )
+            return (1, 0.0, -sort_index_value(row), row.get("tweet_id") or "")
 
         tweet_ids = [row["tweet_id"] for row in tweet_rows if row.get("tweet_id")]
         media_rows = self._rows_for_values("media", "tweet_id", tweet_ids)
@@ -1815,7 +1847,8 @@ class ArchiveStore:
             )
 
         exported = []
-        for row in sorted(tweet_rows, key=sort_key, reverse=(sort != "oldest")):
+        sort_key = oldest_sort_key if sort == "oldest" else newest_sort_key
+        for row in sorted(tweet_rows, key=sort_key):
             tweet_media = media_by_tweet.get(row["tweet_id"], [])
             article = articles_by_tweet.get(row["tweet_id"])
             if article is not None:

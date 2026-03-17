@@ -79,6 +79,24 @@ def _tweet(tweet_id: str) -> TimelineTweet:
     )
 
 
+def _tweet_with_created_at(
+    tweet_id: str,
+    *,
+    created_at: str | None,
+    sort_index: str,
+) -> TimelineTweet:
+    return TimelineTweet(
+        tweet_id=tweet_id,
+        text=f"tweet {tweet_id}",
+        author_id="1",
+        author_username=f"user{tweet_id}",
+        author_display_name=f"User {tweet_id}",
+        created_at=created_at,
+        sort_index=sort_index,
+        raw_json={"tweet": tweet_id},
+    )
+
+
 def _complex_tweet(tweet_id: str = "100") -> TimelineTweet:
     quoted = make_tweet_result(
         "200",
@@ -326,6 +344,48 @@ def test_export_rows_filters_collection_without_table_scan(
 
     assert [row["tweet_id"] for row in exported] == ["1"]
     assert exported[0]["collection"]["type"] == "bookmark"
+    store.close()
+
+
+def test_export_rows_sorts_by_created_at_and_puts_unknown_dates_last(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    tweets = [
+        _tweet_with_created_at(
+            "older",
+            created_at="Tue Oct 09 21:39:26 +0000 2012",
+            sort_index="999",
+        ),
+        _tweet_with_created_at(
+            "newer",
+            created_at="Thu Apr 11 03:55:13 +0000 2024",
+            sort_index="-999",
+        ),
+        _tweet_with_created_at(
+            "unknown",
+            created_at=None,
+            sort_index="-1000",
+        ),
+    ]
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=tweets,
+        last_head_tweet_id="newer",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    oldest = store.export_rows("like", sort="oldest")
+    newest = store.export_rows("like", sort="newest")
+
+    assert [row["tweet_id"] for row in oldest] == ["older", "newer", "unknown"]
+    assert [row["tweet_id"] for row in newest] == ["newer", "older", "unknown"]
     store.close()
 
 

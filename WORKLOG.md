@@ -2,6 +2,11 @@
 
 ## 2026-03-17
 
+- Fixed archive `view ... --sort oldest|newest` chronology so exported rows are ordered by parsed tweet `created_at` instead of collection `sort_index`:
+  - this corrects misleading archive views where imported likes/bookmarks could surface recent rows first even when older tweet timestamps were present
+  - rows missing `created_at` now sort after known timestamps instead of interleaving via synthetic archive sort indices
+  - added focused storage coverage for `oldest`/`newest` ordering when `sort_index` conflicts with tweet time and when timestamps are missing
+
 - Tracked the remaining post-rollout archive-import cleanup/perf items in the docs:
   - updated `docs/PLAN.md` to reflect that X-archive import is shipped and to capture the remaining follow-ups (media-copy row-scan narrowing, `--regen`/manifest-history semantics, and possible lighter-weight prefetching) as explicit plan items
   - added a matching unchecked follow-up block to `docs/IMPLEMENTATION.md` so those items stay visible in the implementation checklist instead of getting lost in review notes
