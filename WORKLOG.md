@@ -2,6 +2,12 @@
 
 ## 2026-03-17
 
+- Optimized `tweetxvault view ... --limit N` for large archives so interactive views stop doing full-export work before slicing:
+  - added `ArchiveStore.count_export_rows(...)` and extended `export_rows(...)` with `limit` and `include_raw_json` options
+  - the CLI `view` commands now count separately, export only the visible rows, and skip `raw_json` materialization for terminal rendering while preserving the existing full JSON/HTML export path
+  - added storage coverage proving limited exports only hydrate secondary rows for the selected tweet ids
+  - real-data timing on the live archive: `count_export_rows('all')` ~`0.025s`, limited `export_rows('all', limit=10, include_raw_json=False)` ~`1.04s`, full `uv run tweetxvault view all --limit 10` ~`2.3s` wall-clock instead of the prior multi-second/full-scan stall
+
 - Unified tweet/list CLI rendering behind one shared renderer in `tweetxvault/cli.py`:
   - archive `view ...` and `search` now share the same table layout, local-time formatting, divider style, text truncation, and URL column
   - this removes the older inline search table path so future tweet/list output changes only need to be made in one place

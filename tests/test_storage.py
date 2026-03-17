@@ -347,6 +347,48 @@ def test_export_rows_filters_collection_without_table_scan(
     store.close()
 
 
+def test_export_rows_limit_only_fetches_secondary_rows_for_selected_tweets(
+    paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    older = _complex_tweet("100")
+    newer = _complex_tweet("200")
+    newer.created_at = "Sun Mar 15 00:00:00 +0000 2026"
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[older, newer],
+        last_head_tweet_id="200",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    seen: list[tuple[str, tuple[str, ...]]] = []
+    original = store._rows_for_values
+
+    def wrapped(record_type: str, field_name: str, values):
+        if field_name == "tweet_id":
+            seen.append((record_type, tuple(values)))
+        return original(record_type, field_name, values)
+
+    monkeypatch.setattr(store, "_rows_for_values", wrapped)
+
+    exported = store.export_rows("bookmark", sort="newest", limit=1, include_raw_json=False)
+
+    assert [row["tweet_id"] for row in exported] == ["200"]
+    assert exported[0]["raw_json"] is None
+    assert seen
+    for record_type, values in seen:
+        assert values == ("200",), f"{record_type} fetched secondary rows for unexpected tweets"
+    store.close()
+
+
 def test_export_rows_sorts_by_created_at_and_puts_unknown_dates_last(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

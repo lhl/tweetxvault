@@ -1768,11 +1768,39 @@ class ArchiveStore:
             "error": row.get("download_error"),
         }
 
-    def export_rows(self, collection: str, *, sort: str = "newest") -> list[dict[str, Any]]:
+    def count_export_rows(self, collection: str) -> int:
         filter_expr = "record_type = 'tweet'"
         if collection != "all":
             filter_expr += f" AND collection_type = {_expr_quote(collection)}"
-        tweet_rows = self.table.search().where(filter_expr).to_list()
+        return self.table.count_rows(filter_expr)
+
+    def export_rows(
+        self,
+        collection: str,
+        *,
+        sort: str = "newest",
+        limit: int | None = None,
+        include_raw_json: bool = True,
+    ) -> list[dict[str, Any]]:
+        filter_expr = "record_type = 'tweet'"
+        if collection != "all":
+            filter_expr += f" AND collection_type = {_expr_quote(collection)}"
+        tweet_columns = [
+            "tweet_id",
+            "text",
+            "author_id",
+            "author_username",
+            "author_display_name",
+            "created_at",
+            "collection_type",
+            "folder_id",
+            "sort_index",
+            "added_at",
+            "synced_at",
+        ]
+        if include_raw_json:
+            tweet_columns.append("raw_json")
+        tweet_rows = self.table.search().where(filter_expr).select(tweet_columns).to_list()
 
         def sort_index_value(row: dict[str, Any]) -> int:
             raw = row.get("sort_index")
@@ -1800,7 +1828,12 @@ class ArchiveStore:
                 )
             return (1, 0.0, -sort_index_value(row), row.get("tweet_id") or "")
 
-        tweet_ids = [row["tweet_id"] for row in tweet_rows if row.get("tweet_id")]
+        sort_key = oldest_sort_key if sort == "oldest" else newest_sort_key
+        sorted_rows = sorted(tweet_rows, key=sort_key)
+        if limit is not None:
+            sorted_rows = sorted_rows[:limit]
+
+        tweet_ids = [row["tweet_id"] for row in sorted_rows if row.get("tweet_id")]
         media_rows = self._rows_for_values("media", "tweet_id", tweet_ids)
         article_rows = self._rows_for_values("article", "tweet_id", tweet_ids)
         url_ref_rows = self._rows_for_values("url_ref", "tweet_id", tweet_ids)
@@ -1847,8 +1880,7 @@ class ArchiveStore:
             )
 
         exported = []
-        sort_key = oldest_sort_key if sort == "oldest" else newest_sort_key
-        for row in sorted(tweet_rows, key=sort_key):
+        for row in sorted_rows:
             tweet_media = media_by_tweet.get(row["tweet_id"], [])
             article = articles_by_tweet.get(row["tweet_id"])
             if article is not None:
@@ -1878,7 +1910,7 @@ class ArchiveStore:
                     "media": tweet_media,
                     "urls": url_refs_by_tweet.get(row["tweet_id"], []),
                     "article": article,
-                    "raw_json": json.loads(row["raw_json"]),
+                    "raw_json": json.loads(row["raw_json"]) if include_raw_json else None,
                 }
             )
         return exported

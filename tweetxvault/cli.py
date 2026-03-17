@@ -393,11 +393,17 @@ def _render_archive_view(
     normalized = _normalize_collection_or_exit(collection, console)
     store, paths = _open_store_for_read(console)
     try:
+        total_rows = store.count_export_rows(normalized)
         rows = _with_auto_optimize(
             store,
             paths,
             console,
-            lambda s: s.export_rows(normalized, sort=sort),
+            lambda s: s.export_rows(
+                normalized,
+                sort=sort,
+                limit=limit,
+                include_raw_json=False,
+            ),
         )
     finally:
         store.close()
@@ -407,7 +413,6 @@ def _render_archive_view(
         console.print(f"[yellow]No archived {label} rows found.[/yellow]")
         return
 
-    shown = rows[:limit]
     display_rows = [
         _TweetListRow(
             tweet_id=row.get("tweet_id"),
@@ -416,13 +421,13 @@ def _render_archive_view(
             author_id=(row.get("author") or {}).get("id"),
             text=_format_tweet_text(row.get("text")),
         )
-        for row in shown
+        for row in rows
     ]
     _render_tweet_list(
         console,
         title=f"{label} archive",
         rows=display_rows,
-        count_line=f"showing {len(shown)} of {len(rows)} archived {label} tweets",
+        count_line=f"showing {len(rows)} of {total_rows} archived {label} tweets",
     )
 
 
