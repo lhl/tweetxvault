@@ -2,6 +2,13 @@
 
 ## 2026-03-18
 
+- Prepared release metadata for `v0.2.0`:
+  - bumped package version from `0.1.1` to `0.2.0`
+  - updated the PyPI package summary to mention official X archive import support
+  - verified `README.md` and CLI help still match the shipped sync/import UX
+  - `uv build` succeeded and `uvx --from twine twine check dist/*` passed
+  - full test suite passed with `uv run pytest -q`
+
 - Added `sync --head-only` as a first-class escape hatch for stale saved backfill state:
   - `tweetxvault sync bookmarks|likes|tweets --head-only` now clears the saved backfill cursor for the targeted collection, runs only the head pass, and leaves the collection without a resumable historical backfill cursor
   - `tweetxvault sync all --head-only` applies the same behavior to bookmarks + likes
