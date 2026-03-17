@@ -21,7 +21,7 @@ from tests.conftest import (
 )
 from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig
-from tweetxvault.exceptions import ProcessLockError, TweetXVaultError
+from tweetxvault.exceptions import ConfigError, ProcessLockError, TweetXVaultError
 from tweetxvault.query_ids import QueryIdStore
 from tweetxvault.storage import open_archive_store
 from tweetxvault.sync import ProcessLock, RemotePreflightError, sync_all, sync_collection
@@ -273,7 +273,7 @@ async def test_sync_collection_logs_head_and_backfill_progress(
 
 
 @pytest.mark.asyncio
-async def test_sync_collection_can_skip_resuming_saved_backfill(
+async def test_sync_collection_head_only_clears_saved_backfill_state(
     paths, config: AppConfig, auth_bundle
 ) -> None:
     _save_query_ids(paths)
@@ -326,7 +326,7 @@ async def test_sync_collection_can_skip_resuming_saved_backfill(
     second = await sync_collection(
         "bookmarks",
         full=False,
-        resume_backfill=False,
+        head_only=True,
         limit=None,
         config=config,
         paths=paths,
@@ -347,11 +347,38 @@ async def test_sync_collection_can_skip_resuming_saved_backfill(
     assert store is not None
     try:
         state = store.get_sync_state("bookmark")
-        assert state.backfill_incomplete is True
-        assert state.backfill_cursor == "c1"
+        assert state.backfill_incomplete is False
+        assert state.backfill_cursor is None
         assert state.last_head_tweet_id == "new"
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_head_only_cannot_be_combined_with_backfill_modes(
+    paths, config: AppConfig, auth_bundle
+) -> None:
+    _save_query_ids(paths)
+
+    with pytest.raises(ConfigError, match="--head-only cannot be combined"):
+        await sync_collection(
+            "bookmarks",
+            full=False,
+            backfill=True,
+            head_only=True,
+            limit=None,
+            config=config,
+            paths=paths,
+            auth_bundle=auth_bundle,
+            query_ids={"Bookmarks": "qid-bookmarks"},
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200, json=make_bookmarks_response(["1"]), request=request
+                )
+            ),
+            console=_console(),
+            sleep=lambda _: asyncio.sleep(0),
+        )
 
 
 @pytest.mark.asyncio

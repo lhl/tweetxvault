@@ -1,5 +1,14 @@
 # WORKLOG
 
+## 2026-03-18
+
+- Added `sync --head-only` as a first-class escape hatch for stale saved backfill state:
+  - `tweetxvault sync bookmarks|likes|tweets --head-only` now clears the saved backfill cursor for the targeted collection, runs only the head pass, and leaves the collection without a resumable historical backfill cursor
+  - `tweetxvault sync all --head-only` applies the same behavior to bookmarks + likes
+  - `--head-only` is rejected when combined with `--full`, `--backfill`, or `--article-backfill`
+  - kept the earlier archive-import fix intact: archive import/enrich already uses head-only reconciliation internally rather than resuming normal sync backfills
+  - added sync/CLI regressions for the new flag, including state clearing and forwarding coverage
+
 ## 2026-03-17
 
 - Stopped archive follow-up from resuming old normal sync backfills:

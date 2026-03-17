@@ -72,6 +72,10 @@ ARTICLE_BACKFILL_HELP = (
     "Rewalk existing timeline pages without resetting sync state so older items can pick up "
     "new article fields."
 )
+HEAD_ONLY_HELP = (
+    "Clear any saved backfill cursor for the targeted collection and run only the head pass. "
+    "Does not resume older historical backfill state."
+)
 SYNC_BROWSER_OPTION = Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)]
 SYNC_PROFILE_OPTION = Annotated[
     str | None,
@@ -84,6 +88,10 @@ SYNC_PROFILE_PATH_OPTION = Annotated[
 SYNC_ARTICLE_BACKFILL_OPTION = Annotated[
     bool,
     typer.Option("--article-backfill", help=ARTICLE_BACKFILL_HELP),
+]
+SYNC_HEAD_ONLY_OPTION = Annotated[
+    bool,
+    typer.Option("--head-only", help=HEAD_ONLY_HELP),
 ]
 DEBUG_AUTH_OPTION = Annotated[
     bool,
@@ -281,6 +289,7 @@ def _register_sync_collection_command(collection: str):
         full: bool = False,
         backfill: bool = False,
         article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
+        head_only: SYNC_HEAD_ONLY_OPTION = False,
         limit: int | None = None,
         browser: SYNC_BROWSER_OPTION = None,
         profile: SYNC_PROFILE_OPTION = None,
@@ -295,6 +304,7 @@ def _register_sync_collection_command(collection: str):
                 full=full,
                 backfill=backfill,
                 article_backfill=article_backfill,
+                head_only=head_only,
                 limit=limit,
                 config=config,
                 auth_bundle=auth_bundle,
@@ -452,6 +462,7 @@ def sync_everything(
     full: bool = False,
     backfill: bool = False,
     article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
+    head_only: SYNC_HEAD_ONLY_OPTION = False,
     limit: int | None = None,
     browser: SYNC_BROWSER_OPTION = None,
     profile: SYNC_PROFILE_OPTION = None,
@@ -465,6 +476,7 @@ def sync_everything(
             full=full,
             backfill=backfill,
             article_backfill=article_backfill,
+            head_only=head_only,
             limit=limit,
             config=config,
             auth_bundle=auth_bundle,

@@ -374,6 +374,7 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
         full,
         backfill=False,
         article_backfill=False,
+        head_only=False,
         limit=None,
         config=None,
         auth_bundle=None,
@@ -385,6 +386,7 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
                 "full": full,
                 "backfill": backfill,
                 "article_backfill": article_backfill,
+                "head_only": head_only,
                 "limit": limit,
             }
         )
@@ -399,6 +401,7 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
         "full": False,
         "backfill": False,
         "article_backfill": True,
+        "head_only": False,
         "limit": None,
     }
     assert "bookmarks: 2 pages, 3 tweets, empty" in buffer.getvalue()
@@ -421,6 +424,7 @@ def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
         full,
         backfill=False,
         article_backfill=False,
+        head_only=False,
         limit=None,
         config=None,
         auth_bundle=None,
@@ -432,6 +436,7 @@ def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
                 "full": full,
                 "backfill": backfill,
                 "article_backfill": article_backfill,
+                "head_only": head_only,
                 "limit": limit,
             }
         )
@@ -446,6 +451,7 @@ def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
         "full": False,
         "backfill": False,
         "article_backfill": True,
+        "head_only": False,
         "limit": None,
     }
     assert "likes: 2 pages, 3 tweets, empty" in buffer.getvalue()
@@ -468,6 +474,7 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
         full,
         backfill=False,
         article_backfill=False,
+        head_only=False,
         limit=None,
         config=None,
         auth_bundle=None,
@@ -479,6 +486,7 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
                 "full": full,
                 "backfill": backfill,
                 "article_backfill": article_backfill,
+                "head_only": head_only,
                 "limit": limit,
             }
         )
@@ -493,6 +501,7 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
         "full": False,
         "backfill": False,
         "article_backfill": True,
+        "head_only": False,
         "limit": None,
     }
     assert "tweets: 2 pages, 3 tweets, empty" in buffer.getvalue()
@@ -514,6 +523,7 @@ def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
         full,
         backfill=False,
         article_backfill=False,
+        head_only=False,
         limit=None,
         config=None,
         auth_bundle=None,
@@ -524,6 +534,7 @@ def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
                 "full": full,
                 "backfill": backfill,
                 "article_backfill": article_backfill,
+                "head_only": head_only,
                 "limit": limit,
             }
         )
@@ -543,11 +554,62 @@ def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
         "full": False,
         "backfill": False,
         "article_backfill": True,
+        "head_only": False,
         "limit": None,
     }
     output = buffer.getvalue()
     assert "bookmarks: 2 pages, 3 tweets" in output
     assert "likes: failed (boom)" in output
+
+
+def test_sync_likes_forwards_head_only(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_collection(
+        collection,
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        head_only=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+    ):
+        forwarded.update(
+            {
+                "collection": collection,
+                "full": full,
+                "backfill": backfill,
+                "article_backfill": article_backfill,
+                "head_only": head_only,
+                "limit": limit,
+            }
+        )
+        return SimpleNamespace(pages_fetched=1, tweets_seen=20, stop_reason="duplicate")
+
+    monkeypatch.setattr(cli, "sync_collection", fake_sync_collection)
+
+    cli.sync_likes(head_only=True)
+
+    assert forwarded == {
+        "collection": "likes",
+        "full": False,
+        "backfill": False,
+        "article_backfill": False,
+        "head_only": True,
+        "limit": None,
+    }
+    assert "likes: 1 pages, 20 tweets, duplicate" in buffer.getvalue()
 
 
 def test_media_download_reports_runner_result(paths, monkeypatch) -> None:

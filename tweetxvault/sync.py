@@ -378,6 +378,7 @@ async def sync_collection(
     full: bool,
     backfill: bool = False,
     article_backfill: bool = False,
+    head_only: bool = False,
     resume_backfill: bool = True,
     limit: int | None = None,
     config: AppConfig | None = None,
@@ -408,6 +409,7 @@ async def sync_collection(
         full=full,
         backfill=backfill,
         article_backfill=article_backfill,
+        head_only=head_only,
         resume_backfill=resume_backfill,
         limit=limit,
         config=config,
@@ -453,6 +455,7 @@ async def _sync_collection_ready(
     full: bool,
     backfill: bool = False,
     article_backfill: bool = False,
+    head_only: bool = False,
     resume_backfill: bool = True,
     limit: int | None,
     config: AppConfig,
@@ -479,10 +482,23 @@ async def _sync_collection_ready(
             store.close()
             raise
 
+        if head_only and (full or backfill or article_backfill):
+            raise ConfigError(
+                "--head-only cannot be combined with --full, --backfill, or --article-backfill."
+            )
+
         if full:
             store.reset_sync_state(COLLECTION_TO_STORAGE[collection])
 
         previous_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
+        if head_only and previous_state.backfill_incomplete:
+            store.set_sync_state(
+                COLLECTION_TO_STORAGE[collection],
+                last_head_tweet_id=previous_state.last_head_tweet_id,
+                backfill_cursor=None,
+                backfill_incomplete=False,
+            )
+            previous_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
         prior_backfill_cursor = (
             previous_state.backfill_cursor if previous_state.backfill_incomplete else None
         )
@@ -524,7 +540,17 @@ async def _sync_collection_ready(
             stop_reason = head_reason
             remaining = None if limit is None else max(limit - head_pages, 0)
 
-            if resume_backfill and prior_backfill_incomplete and remaining != 0:
+            if head_only:
+                refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
+                store.set_sync_state(
+                    COLLECTION_TO_STORAGE[collection],
+                    last_head_tweet_id=refreshed_state.last_head_tweet_id
+                    or previous_state.last_head_tweet_id,
+                    backfill_cursor=None,
+                    backfill_incomplete=False,
+                )
+
+            if resume_backfill and not head_only and prior_backfill_incomplete and remaining != 0:
                 console.print(f"{collection}: resuming saved backfill pass", highlight=False)
                 refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
                 backfill_pages, backfill_tweets, backfill_reason, _, _ = await _run_pass(
@@ -579,6 +605,7 @@ async def sync_all(
     full: bool,
     backfill: bool = False,
     article_backfill: bool = False,
+    head_only: bool = False,
     limit: int | None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -615,6 +642,7 @@ async def sync_all(
                 full=full,
                 backfill=backfill,
                 article_backfill=article_backfill,
+                head_only=head_only,
                 limit=limit,
                 config=config,
                 paths=paths,

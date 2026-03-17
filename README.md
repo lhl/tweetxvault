@@ -154,6 +154,9 @@ uv run tweetxvault sync all --full
 # Continue past duplicates without resetting state
 uv run tweetxvault sync all --backfill
 
+# Clear a saved historical backfill cursor and run only the head pass
+uv run tweetxvault sync likes --head-only
+
 # Rewalk existing pages to refresh article-bearing tweets after article fields change
 uv run tweetxvault sync bookmarks --article-backfill
 
@@ -164,6 +167,7 @@ uv run tweetxvault sync all --limit 5
 If the `[embed]` extra is installed, new tweets are automatically embedded after each sync on a best-effort basis; if embedding fails, sync still succeeds and you can retry later with `tweetxvault embed`.
 `--article-backfill` updates stored `raw_json` and normalized secondary rows inline, so it does not require a follow-up `tweetxvault rehydrate`.
 `tweetxvault sync all` still covers bookmarks + likes only; authored tweets stay opt-in via `tweetxvault sync tweets`.
+`--head-only` is the escape hatch when an old saved backfill cursor is no longer useful: it clears that cursor for the targeted collection and runs only the normal head pass. It cannot be combined with `--full`, `--backfill`, or `--article-backfill`.
 
 ### Importing an X archive
 
