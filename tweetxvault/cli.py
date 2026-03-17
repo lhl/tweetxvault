@@ -8,6 +8,7 @@ import re
 import resource
 import sys
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -34,7 +35,6 @@ from tweetxvault.export.common import (
     default_export_path,
     display_collection_name,
     normalize_collection_name,
-    tweet_url,
 )
 from tweetxvault.media import download_media
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
@@ -323,6 +323,70 @@ def _format_created_at(raw: str | None) -> str:
         return raw
 
 
+@dataclass(slots=True)
+class _TweetListRow:
+    tweet_id: str | None
+    created_at: str | None
+    author_username: str | None
+    author_id: str | None
+    text: Text
+    score: str | None = None
+
+
+def _format_tweet_text(raw: str | None, *, highlight_query: str | None = None) -> Text:
+    text = (raw or "").replace("\n", " ")
+    rendered = _highlight_search_matches(text, highlight_query) if highlight_query else Text(text)
+    if len(rendered.plain) > 280:
+        rendered.truncate(280, overflow="ellipsis")
+    return rendered
+
+
+def _tweet_row_url(row: _TweetListRow) -> str:
+    if row.author_username and row.tweet_id:
+        return f"https://x.com/{row.author_username}/status/{row.tweet_id}"
+    return f"https://x.com/i/web/status/{row.tweet_id or ''}"
+
+
+def _render_tweet_list(
+    console: Console,
+    *,
+    title: str,
+    rows: list[_TweetListRow],
+    count_line: str | None = None,
+) -> None:
+    include_score = any(row.score is not None for row in rows)
+    table = Table(
+        title=title,
+        box=box.HORIZONTALS,
+        show_lines=True,
+    )
+    if include_score:
+        table.add_column("Score", style="yellow", no_wrap=True)
+    table.add_column("Created", style="cyan", no_wrap=True)
+    table.add_column("Author", style="green", no_wrap=True)
+    table.add_column("Text", overflow="fold")
+    table.add_column("URL", style="magenta", overflow="fold")
+
+    for row in rows:
+        username = row.author_username or row.author_id or "unknown"
+        values: list[Any] = []
+        if include_score:
+            values.append(row.score or "")
+        values.extend(
+            [
+                _format_created_at(row.created_at),
+                f"@{username}",
+                row.text,
+                _tweet_row_url(row),
+            ]
+        )
+        table.add_row(*values)
+
+    if count_line:
+        console.print(count_line)
+    console.print(table)
+
+
 def _render_archive_view(
     console: Console, *, collection: str, limit: int, sort: str = "newest"
 ) -> None:
@@ -344,30 +408,22 @@ def _render_archive_view(
         return
 
     shown = rows[:limit]
-    table = Table(
-        title=f"{label} archive",
-        box=box.HORIZONTALS,
-        show_lines=True,
-    )
-    table.add_column("Created", style="cyan", no_wrap=True)
-    table.add_column("Author", style="green", no_wrap=True)
-    table.add_column("Text", overflow="fold")
-    table.add_column("URL", style="magenta", overflow="fold")
-
-    for row in shown:
-        author = row["author"]
-        username = author["username"] if author["username"] else author["id"] or "unknown"
-        raw_text = (row["text"] or "").replace("\n", " ")
-        text = raw_text[:280] + "…" if len(raw_text) > 280 else raw_text
-        table.add_row(
-            _format_created_at(row["created_at"]),
-            f"@{username}",
-            text,
-            tweet_url(row),
+    display_rows = [
+        _TweetListRow(
+            tweet_id=row.get("tweet_id"),
+            created_at=row.get("created_at"),
+            author_username=(row.get("author") or {}).get("username"),
+            author_id=(row.get("author") or {}).get("id"),
+            text=_format_tweet_text(row.get("text")),
         )
-
-    console.print(f"showing {len(shown)} of {len(rows)} archived {label} tweets")
-    console.print(table)
+        for row in shown
+    ]
+    _render_tweet_list(
+        console,
+        title=f"{label} archive",
+        rows=display_rows,
+        count_line=f"showing {len(shown)} of {len(rows)} archived {label} tweets",
+    )
 
 
 def _highlight_search_matches(text: str, query: str) -> Text:
@@ -1073,24 +1129,27 @@ def search_archive(
             console.print("[yellow]No results found.[/yellow]")
             return
 
-        table = Table(title=f"search: {query}")
-        table.add_column("Score", style="yellow", no_wrap=True)
-        table.add_column("Created", style="cyan", no_wrap=True)
-        table.add_column("Author", style="green", no_wrap=True)
-        table.add_column("Text", overflow="fold")
+        display_rows: list[_TweetListRow] = []
         for row in results:
             score = row.get("_relevance_score") or row.get("_distance") or ""
             if isinstance(score, float):
                 score = f"{score:.3f}"
-            username = row.get("author_username") or row.get("author_id") or "?"
-            text = (row.get("text") or "").replace("\n", " ")
-            table.add_row(
-                str(score),
-                row.get("created_at") or "",
-                f"@{username}",
-                _highlight_search_matches(text, query),
+            display_rows.append(
+                _TweetListRow(
+                    tweet_id=row.get("tweet_id"),
+                    created_at=row.get("created_at"),
+                    author_username=row.get("author_username"),
+                    author_id=row.get("author_id"),
+                    text=_format_tweet_text(row.get("text"), highlight_query=query),
+                    score=str(score),
+                )
             )
-        console.print(table)
+        _render_tweet_list(
+            console,
+            title=f"search: {query}",
+            rows=display_rows,
+            count_line=f"showing {len(display_rows)} search results",
+        )
     finally:
         store.close()
 

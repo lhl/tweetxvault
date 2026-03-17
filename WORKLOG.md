@@ -2,6 +2,11 @@
 
 ## 2026-03-17
 
+- Unified tweet/list CLI rendering behind one shared renderer in `tweetxvault/cli.py`:
+  - archive `view ...` and `search` now share the same table layout, local-time formatting, divider style, text truncation, and URL column
+  - this removes the older inline search table path so future tweet/list output changes only need to be made in one place
+  - added CLI coverage to lock search onto the shared renderer and to keep the archive view URL/local-time formatting under test
+
 - Fixed archive `view ... --sort oldest|newest` chronology so exported rows are ordered by parsed tweet `created_at` instead of collection `sort_index`:
   - this corrects misleading archive views where imported likes/bookmarks could surface recent rows first even when older tweet timestamps were present
   - rows missing `created_at` now sort after known timestamps instead of interleaving via synthetic archive sort indices

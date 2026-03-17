@@ -86,12 +86,15 @@ def test_view_bookmarks_prints_rows(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)
     monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(cli, "_format_created_at", lambda raw: "LOCAL-TIME")
 
     cli.view_bookmarks(limit=5)
 
     output = buffer.getvalue()
     assert "bookmark tweet" in output
     assert "bookmarks archive" in output
+    assert "LOCAL-TIME" in output
+    assert "https://x.com/user1/status/1" in output
     assert "like tweet" not in output
 
 
@@ -120,6 +123,46 @@ def test_highlight_search_matches_marks_query_terms() -> None:
     assert (8, 16, "black on yellow") in spans
     assert (31, 37, "black on yellow") in spans
     assert (42, 48, "black on yellow") in spans
+
+
+def test_search_uses_shared_tweet_list_rendering(monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "_format_created_at", lambda raw: "LOCAL-TIME")
+    monkeypatch.setattr(cli, "_with_auto_optimize", lambda store, paths, console, fn: fn(store))
+
+    class _FakeStore:
+        def has_embeddings(self) -> bool:
+            return False
+
+        def search_fts(self, query: str, limit: int):
+            assert query == "bookmark"
+            assert limit == 5
+            return [
+                {
+                    "tweet_id": "1",
+                    "author_username": "user1",
+                    "author_id": "1",
+                    "created_at": "Sat Mar 14 00:00:00 +0000 2026",
+                    "text": "bookmark tweet",
+                    "_relevance_score": 0.75,
+                }
+            ]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "_open_store_for_read", lambda console: (_FakeStore(), object()))
+
+    cli.search_archive("bookmark", limit=5, mode="fts")
+
+    output = buffer.getvalue()
+    assert "search: bookmark" in output
+    assert "showing 1 search results" in output
+    assert "LOCAL-TIME" in output
+    assert "https://x.com/user1/status/1" in output
+    assert "0.750" in output
+    assert "bookmark tweet" in output
 
 
 def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path: Path) -> None:
