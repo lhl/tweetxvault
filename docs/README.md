@@ -3,6 +3,7 @@
 ## Plans
 
 - **`PLAN.md`** — Current implementation plan (LanceDB backend, direct GraphQL API, query-id auto-discovery, rate limiting, phased roadmap)
+- **`PLAN-FUTURE.md`** — Deferred post-v0.2 roadmap for discoverability work (link-centric search, ArchiveBox integration, VLM, clustering, knowledge graph)
 - `initial/` — Historical, frozen planning snapshots (do not edit; may contradict current plan):
 - `initial/PLAN-A.md` — Playwright browser automation + GraphQL interception approach
 - `initial/PLAN-B.md` — Direct GraphQL API client (requests) approach

@@ -2,6 +2,12 @@
 
 ## 2026-03-17
 
+- Split the stale future-roadmap idea out of the active plan docs:
+  - added `docs/PLAN-FUTURE.md` as a deferred post-v0.2 roadmap focused on discoverability work rather than current implementation
+  - queued v0.3 around link-centric discovery first, with ArchiveBox integration as the main future search expansion path
+  - captured VLM/media understanding, clustering, and knowledge-graph work as explicitly future-only items so they do not blur the active archive/import plan
+  - updated `docs/README.md` to index the new future-plan document
+
 - Optimized `tweetxvault view ... --limit N` for large archives so interactive views stop doing full-export work before slicing:
   - added `ArchiveStore.count_export_rows(...)` and extended `export_rows(...)` with `limit` and `include_raw_json` options
   - the CLI `view` commands now count separately, export only the visible rows, and skip `raw_json` materialization for terminal rendering while preserving the existing full JSON/HTML export path
