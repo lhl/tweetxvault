@@ -1,12 +1,13 @@
 # tweetxvault
 
-A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tweets into a local [LanceDB](https://lancedb.github.io/lancedb/) database. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
+A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tweets into a local [LanceDB](https://lancedb.github.io/lancedb/) database, with support for importing official X archive exports into the same store. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
 
 <img src="https://raw.githubusercontent.com/lhl/tweetxvault/main/docs/screenshot.png" alt="tweetxvault view all" width="800">
 
 ## Features
 
 - **Incremental sync** — fetches only new items by default; resumes interrupted backfills automatically
+- **Official X archive import** — imports authored tweets, deleted tweets, likes, and exported media from official X archive ZIPs/directories into the same local archive
 - **Raw capture preservation** — every API response page is stored verbatim alongside parsed tweet records
 - **Secondary object extraction** — archives canonical tweet objects, attached-tweet relations, media metadata, URL refs, and article payloads alongside collection memberships
 - **Crash-safe checkpoints** — sync state advances atomically with data writes; safe to kill mid-run
@@ -198,10 +199,14 @@ Import follow-up options:
 - `--detail-lookups N` runs a bounded TweetDetail pass for at most `N` pending sparse tweets after the bulk live syncs.
 - `--enrich` runs the TweetDetail pass for **all** currently pending sparse tweets after the bulk live syncs.
 - `--regen` clears archive-import-owned rows, import manifests, and copied archive media files before reimporting. It leaves live-synced rows intact.
+- Archive import itself works without live auth, but the automatic reconciliation and any TweetDetail follow-up only run when auth is available.
 - If the same archive digest was already imported, a plain re-run still short-circuits, but `--enrich` reuses the existing import and runs only the follow-up enrichment instead of re-importing the ZIP contents.
+- If an import is interrupted during the archive-write phase, rerunning the same `import x-archive ...` command is the normal recovery path. If the archive write already completed and only the follow-up was interrupted, use `tweetxvault import enrich` or rerun with `--enrich`.
 - `tweetxvault import enrich` reruns that same archive-specific follow-up later against already imported archive data, without needing the original ZIP or directory path again.
+- `tweetxvault import enrich --limit N` limits the TweetDetail phase only; it still reruns the archive-specific bulk live reconciliation first.
 - `tweetxvault threads expand` is the broader TweetDetail-based context/thread capture command; use it when you want parents, replies, and linked status URLs beyond the archive-placeholder follow-up.
 - Interactive TTY runs show tqdm progress bars for hashing, tweet/like import, media copy, and detail enrichment by default.
+- Non-interactive runs stay quiet by default aside from warnings/errors, so cron/piped runs do not get interactive progress output.
 - `--debug` adds per-phase timing diagnostics on top of that interactive progress output.
 - `--limit N` requires `--debug` and is a sampled diagnostic import: tweetxvault still hashes and parses the full archive files, but only imports the first `N` authored tweets, deleted tweets, likes, and media files after load. Sampled runs are stored as `sampled`, not `completed`, and skip the automatic live follow-up unless you explicitly ask for `--enrich` / `--detail-lookups`.
 
@@ -220,6 +225,8 @@ uv run tweetxvault view tweets
 # View all archived tweets
 uv run tweetxvault view all --limit 50
 ```
+
+Terminal views render tweet timestamps in your local timezone. Sort order uses tweet `created_at`, not collection position. For likes, that means `uv run tweetxvault view likes --sort oldest` shows the oldest liked tweet by tweet timestamp when one is known; X does not expose a reliable `liked_at` timestamp for reconstructing the exact order in which you liked posts.
 
 ### Searching
 

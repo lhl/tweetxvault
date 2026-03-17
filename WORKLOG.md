@@ -2,6 +2,11 @@
 
 ## 2026-03-17
 
+- Refreshed the root `README.md` so the PyPI/project landing page matches the current shipped UX:
+  - promoted official X archive import to a first-class feature in the project overview/features list
+  - updated the archive-import section with the current follow-up/rerun semantics (`--enrich`, standalone `import enrich`, `--regen`, interrupt recovery, auth-dependent reconciliation, interactive progress, and sampled `--debug --limit`)
+  - clarified terminal view semantics so users know timestamps render in local time and likes sort chronologically by tweet `created_at`, not an unavailable `liked_at`
+
 - Split the stale future-roadmap idea out of the active plan docs:
   - added `docs/PLAN-FUTURE.md` as a deferred post-v0.2 roadmap focused on discoverability work rather than current implementation
   - queued v0.3 around link-centric discovery first, with ArchiveBox integration as the main future search expansion path
