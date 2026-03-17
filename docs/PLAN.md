@@ -36,7 +36,7 @@ This is part of the broader [attention-export](~/github/lhl/attention-export) sy
 - HTML export UI
 - Extended collections (tweets/reposts/replies/feed) beyond likes/bookmarks
 - Multi-account support
-- Archive-import implementation beyond the current requirements/fixture analysis (fresh sample cataloged on 2026-03-16; importer still pending)
+- Additional archive-import follow-up work beyond the shipped importer (perf/cleanup items are tracked below)
 
 ## Why Build From Scratch
 
@@ -557,6 +557,10 @@ Concrete merge rules from the first real fixture:
 - Shipped import behavior: if auth is available, `tweetxvault import x-archive ...` runs the bulk `tweets` / `likes` follow-up automatically, but explicit per-item `TweetDetail` lookups stay operator-bounded via `--detail-lookups` (default `0`) so large archives do not fan out into an unbounded reconciliation crawl.
 - Track per-tweet live-enrichment status/result so explicit terminal misses stop retrying; only item-level lookup failures should mark `terminal_unavailable`.
 - Absence from a later live likes/bookmarks collection does **not** by itself mean the tweet is unavailable or that archive provenance should be removed.
+- Remaining archive-import follow-ups after the initial production rollout:
+  - tighten `_copy_exported_media(...)` so archive media copy does not scan every `media` row when only one imported archive's tweet ids are relevant
+  - revisit `clear_archive_import_data()` / `--regen` manifest semantics so archive-only cleanup can preserve multi-digest import history when needed
+  - consider a lighter-weight storage prefetch path if another real-world archive-ingest perf pass is needed beyond the current row-prefetch optimization
 
 ### Parser Boundary
 
@@ -659,7 +663,8 @@ Reserved for future (not implemented in MVP):
 - [ ] URL snapshot queue / ArchiveBox integration
 - [ ] Following/followers lists
 - [x] HTML export viewer
-- [ ] X archive import (`tweetxvault import x-archive ...`)
+- [x] X archive import (`tweetxvault import x-archive ...`)
+  - Remaining follow-up work is tracked in the archive-import section above.
 - [ ] attention-export integration
 
 ### Near-Term Cleanup

@@ -2,6 +2,10 @@
 
 ## 2026-03-17
 
+- Tracked the remaining post-rollout archive-import cleanup/perf items in the docs:
+  - updated `docs/PLAN.md` to reflect that X-archive import is shipped and to capture the remaining follow-ups (media-copy row-scan narrowing, `--regen`/manifest-history semantics, and possible lighter-weight prefetching) as explicit plan items
+  - added a matching unchecked follow-up block to `docs/IMPLEMENTATION.md` so those items stay visible in the implementation checklist instead of getting lost in review notes
+
 - Tightened archive follow-up safety before the first real `import enrich` run:
   - stopped `_enrich_pending_rows(...)` from classifying systemic `TweetDetail` failures (`StaleQueryIdError`, auth expiry, feature-flag drift, rate-limit exhaustion) as per-tweet terminal/transient states; those now bubble once to follow-up warnings so rows remain retryable
   - restricted terminal archive detail classification to HTTP `410`; unsafe `404 => not found` handling is no longer used in the TweetDetail enrichment path

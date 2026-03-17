@@ -427,6 +427,10 @@ Fresh fixture status (2026-03-16):
   - preserved existing manifest warnings when reusing a completed archive with `import x-archive --enrich`
   - constrained `--regen` archive-managed file deletion to the `media/` subtree and changed the bookmark-dataset warning/docs to note that missing bookmarks are expected for current official X archives
   - removed the full-archive authored secondary-graph precompute by preparing authored import chunks lazily inside the batched merge loop
+- [ ] Post-rollout archive-import follow-ups:
+  - narrow archive media copy lookups so `_copy_exported_media(...)` only scans rows relevant to the imported archive's tweet ids / provenance instead of materializing the full `media` table
+  - revisit `clear_archive_import_data()` / `--regen` manifest semantics so archive-only cleanup can preserve multi-digest manifest history when desired
+  - evaluate whether `ArchiveStore.prefetch_rows(...)` should gain a lighter-weight projection mode if another real-world ingest perf pass is needed
 
 ## Review Cleanup
 
