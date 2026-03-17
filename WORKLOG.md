@@ -2,6 +2,12 @@
 
 ## 2026-03-17
 
+- Stopped archive follow-up from resuming old normal sync backfills:
+  - added `resume_backfill=True` to `sync_collection(...)` and gated the second-pass backfill resume behind it while preserving the saved backfill cursor/state
+  - changed archive import/enrich live reconciliation to use `resume_backfill=False`, so archive follow-up now does a head-only live pass instead of unexpectedly continuing an old likes/tweets backfill
+  - this keeps normal `sync likes` / `sync tweets` resumable behavior intact while making archive reconciliation better match the import/enrich use case, especially when older archive rows are no longer reachable from the current X frontend timelines
+  - added regressions for both the skipped-backfill sync path and the archive reconciliation wiring, and updated the README to document the new behavior
+
 - Refreshed the root `README.md` so the PyPI/project landing page matches the current shipped UX:
   - promoted official X archive import to a first-class feature in the project overview/features list
   - updated the archive-import section with the current follow-up/rerun semantics (`--enrich`, standalone `import enrich`, `--regen`, interrupt recovery, auth-dependent reconciliation, interactive progress, and sampled `--debug --limit`)

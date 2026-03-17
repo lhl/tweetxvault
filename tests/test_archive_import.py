@@ -5,6 +5,7 @@ import json
 import zipfile
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
@@ -637,6 +638,35 @@ def test_enrich_imported_archive_reuses_existing_import_state(
     assert result.detail_terminal_unavailable == 1
     assert result.detail_transient_failures == 2
     assert result.pending_enrichment == 3
+
+
+def test_archive_live_reconciliation_skips_resuming_saved_backfills(
+    paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    async def fake_sync_collection(*args, **kwargs):
+        captured.append({"collection": args[0], **kwargs})
+        return SimpleNamespace(pages_fetched=1, tweets_seen=1, stop_reason="duplicate")
+
+    monkeypatch.setattr(archive_import, "sync_collection", fake_sync_collection)
+
+    reconciled, warnings, resolved_auth = asyncio.run(
+        archive_import._run_live_reconciliation(
+            collections=["likes", "tweets"],
+            config=AppConfig(),
+            paths=paths,
+            auth_bundle=_auth_bundle(),
+            transport=None,
+            console=_console(),
+        )
+    )
+
+    assert reconciled == ["likes", "tweets"]
+    assert warnings == []
+    assert resolved_auth is not None
+    assert [kwargs["collection"] for kwargs in captured] == ["likes", "tweets"]
+    assert all(kwargs["resume_backfill"] is False for kwargs in captured)
 
 
 def test_archive_import_does_not_downgrade_existing_live_tweet_object(

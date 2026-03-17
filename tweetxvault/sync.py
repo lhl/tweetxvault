@@ -378,6 +378,7 @@ async def sync_collection(
     full: bool,
     backfill: bool = False,
     article_backfill: bool = False,
+    resume_backfill: bool = True,
     limit: int | None = None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -407,6 +408,7 @@ async def sync_collection(
         full=full,
         backfill=backfill,
         article_backfill=article_backfill,
+        resume_backfill=resume_backfill,
         limit=limit,
         config=config,
         paths=paths,
@@ -451,6 +453,7 @@ async def _sync_collection_ready(
     full: bool,
     backfill: bool = False,
     article_backfill: bool = False,
+    resume_backfill: bool = True,
     limit: int | None,
     config: AppConfig,
     paths: XDGPaths,
@@ -521,7 +524,7 @@ async def _sync_collection_ready(
             stop_reason = head_reason
             remaining = None if limit is None else max(limit - head_pages, 0)
 
-            if prior_backfill_incomplete and remaining != 0:
+            if resume_backfill and prior_backfill_incomplete and remaining != 0:
                 console.print(f"{collection}: resuming saved backfill pass", highlight=False)
                 refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
                 backfill_pages, backfill_tweets, backfill_reason, _, _ = await _run_pass(

@@ -200,6 +200,7 @@ Import follow-up options:
 - `--enrich` runs the TweetDetail pass for **all** currently pending sparse tweets after the bulk live syncs.
 - `--regen` clears archive-import-owned rows, import manifests, and copied archive media files before reimporting. It leaves live-synced rows intact.
 - Archive import itself works without live auth, but the automatic reconciliation and any TweetDetail follow-up only run when auth is available.
+- Archive import/enrich uses a head-only live reconciliation pass; it does **not** resume an old saved likes/tweets backfill from the normal sync state machine.
 - If the same archive digest was already imported, a plain re-run still short-circuits, but `--enrich` reuses the existing import and runs only the follow-up enrichment instead of re-importing the ZIP contents.
 - If an import is interrupted during the archive-write phase, rerunning the same `import x-archive ...` command is the normal recovery path. If the archive write already completed and only the follow-up was interrupted, use `tweetxvault import enrich` or rerun with `--enrich`.
 - `tweetxvault import enrich` reruns that same archive-specific follow-up later against already imported archive data, without needing the original ZIP or directory path again.
