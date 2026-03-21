@@ -421,7 +421,6 @@ All configuration is optional. Defaults work out of the box with browser cookie 
 | Setting | Default | Env var |
 |---------|---------|---------|
 | `sync.page_delay` | `2.0` s | `TWEETXVAULT_PAGE_DELAY` |
-| `sync.detail_delay` | `1.0` s | `TWEETXVAULT_DETAIL_DELAY` |
 | `sync.max_retries` | `3` | `TWEETXVAULT_MAX_RETRIES` |
 | `sync.backoff_base` | `2.0` s | `TWEETXVAULT_BACKOFF_BASE` |
 | `sync.detail_max_retries` | `2` | `TWEETXVAULT_DETAIL_MAX_RETRIES` |
@@ -431,9 +430,9 @@ All configuration is optional. Defaults work out of the box with browser cookie 
 | `sync.timeout` | `30.0` s | `TWEETXVAULT_TIMEOUT` |
 
 TweetDetail-heavy jobs such as `tweetxvault import enrich`, `tweetxvault threads expand`,
-and `tweetxvault articles refresh` wait `1.0s` between detail requests by default and use
-the `sync.detail_*` retry settings before falling back to the shared cooldown controls.
-Those commands also accept `--sleep` to override the per-request pacing for a single run.
+and `tweetxvault articles refresh` pace themselves from X's live rate-limit headers when
+those headers are present. If X does not expose reset/remaining headers for a request, the
+client falls back to the shared `sync.detail_*` retry settings and cooldown controls.
 
 ## Data storage
 

@@ -59,7 +59,7 @@ Config and auth are tightly coupled — build them together.
   - Central constants: API base URL (`https://x.com/i/api/graphql`), bearer token (see PLAN.md Auth section), user agent string, cache filenames.
 - [x] Define Pydantic v2 config model(s):
   - Auth: optional `auth_token`, `ct0`, `user_id` overrides.
-  - Sync: `page_delay` (default 2s), TweetDetail-specific `detail_delay` (default 1s), `max_retries` (default 3), `backoff_base` (default 2s), TweetDetail-specific `detail_max_retries` (default 2) and `detail_backoff_base` (default 30s), `cooldown_threshold` (default 3), `cooldown_duration` (default 300s).
+  - Sync: `page_delay` (default 2s), TweetDetail-specific `detail_delay` (default 0s floor, with live header-based pacing when available), `max_retries` (default 3), `backoff_base` (default 2s), TweetDetail-specific `detail_max_retries` (default 2) and `detail_backoff_base` (default 30s), `cooldown_threshold` (default 3), `cooldown_duration` (default 300s).
 - [x] Implement config loading: read `config.toml` from XDG config dir (optional — tool works without it). Env var overrides with `TWEETXVAULT_` prefix.
 - [x] Implement `tweetxvault/auth/cookies.py` — cookie resolution chain:
   - Priority: env vars (`TWEETXVAULT_AUTH_TOKEN`, `TWEETXVAULT_CT0`, `TWEETXVAULT_USER_ID`) → config file → browser extraction.

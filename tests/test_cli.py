@@ -771,7 +771,7 @@ def test_refresh_archived_articles_reports_runner_result(paths, monkeypatch) -> 
 
     monkeypatch.setattr(cli, "refresh_articles", fake_refresh_articles)
 
-    cli.refresh_archived_articles(["https://x.com/example/status/2026531440414925307"], sleep=0)
+    cli.refresh_archived_articles(["https://x.com/example/status/2026531440414925307"])
 
     output = buffer.getvalue()
     assert captured == {"detail_delay": 0}
@@ -823,7 +823,7 @@ def test_expand_archive_threads_forwards_refresh_flag(paths, monkeypatch) -> Non
 
     monkeypatch.setattr(cli, "expand_threads", fake_expand_threads)
 
-    cli.expand_archive_threads(["100"], refresh=True, sleep=0)
+    cli.expand_archive_threads(["100"], refresh=True)
 
     assert "threads: 1 processed, 1 expanded, 0 skipped, 0 failed" in buffer.getvalue()
 
@@ -914,7 +914,6 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         detail_lookups=25,
         limit=100,
         debug=True,
-        sleep=0,
     )
 
     assert captured == {
@@ -1044,7 +1043,7 @@ def test_import_enrich_runs_followup_for_existing_imports(paths, monkeypatch) ->
 
     monkeypatch.setattr(cli, "enrich_imported_archive", fake_enrich_imported_archive)
 
-    cli.import_archive_enrich(limit=50, sleep=0)
+    cli.import_archive_enrich(limit=50)
 
     assert captured == {"limit": 50, "auth_bundle": None, "detail_delay": 0}
     output = buffer.getvalue()

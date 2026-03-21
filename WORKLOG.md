@@ -20,6 +20,20 @@
     - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/client/base.py tweetxvault/archive_import.py tweetxvault/articles.py tweetxvault/threads.py tests/test_client.py tests/test_articles.py`
     - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_client.py tests/test_articles.py tests/test_threads.py tests/test_archive_import.py -q`
     - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+- Simplified TweetDetail follow-up controls after confirming live header pacing:
+  - removed the user-facing `--sleep` overrides from archive import/enrich,
+    thread expansion, and article refresh
+  - changed the default `detail_delay` floor from `1.0s` to `0.0s`, so the
+    normal path relies on live `x-rate-limit-*` headers when available and only
+    falls back to retry/backoff/cooldown when they are absent or a `429`
+    actually occurs
+  - kept the internal `detail_delay` config field as a compatibility floor, but
+    stopped documenting it as a normal knob
+  - validation:
+    - `uv run ruff check tweetxvault/cli.py tweetxvault/config.py tests/test_cli.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/cli.py tweetxvault/config.py tests/test_cli.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli.py tests/test_client.py tests/test_articles.py tests/test_threads.py tests/test_archive_import.py -q`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
 
 - Published `v0.2.1`:
   - pushed `main` and the annotated `v0.2.1` tag to GitHub
