@@ -86,10 +86,14 @@ async def request_with_backoff(
     url: str,
     sync_config: SyncConfig,
     *,
+    max_retries: int | None = None,
+    backoff_base: float | None = None,
     refresh_once: Callable[[], Awaitable[str]] | None = None,
     status: Callable[[str], None] | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> httpx.Response:
+    effective_max_retries = sync_config.max_retries if max_retries is None else max_retries
+    effective_backoff_base = sync_config.backoff_base if backoff_base is None else backoff_base
     retries = 0
     consecutive_429 = 0
     used_cooldown = False
@@ -102,12 +106,12 @@ async def request_with_backoff(
 
         if is_rate_limit(response):
             consecutive_429 += 1
-            if retries < sync_config.max_retries:
-                delay = sync_config.backoff_base * (2**retries)
+            if retries < effective_max_retries:
+                delay = effective_backoff_base * (2**retries)
                 if status:
                     status(
                         "rate limited (HTTP 429), "
-                        f"retry {retries + 1}/{sync_config.max_retries} in {delay:.1f}s"
+                        f"retry {retries + 1}/{effective_max_retries} in {delay:.1f}s"
                     )
                 retries += 1
                 await sleep(delay)

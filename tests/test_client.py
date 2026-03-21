@@ -199,3 +199,44 @@ async def test_fetch_page_raises_after_repeated_429() -> None:
         "rate limited repeatedly, cooling down for 0.2s",
         "rate limited (HTTP 429), retry 1/1 in 0.1s",
     ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_page_honors_rate_limit_overrides() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    delays: list[float] = []
+    messages: list[str] = []
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    try:
+        with pytest.raises(RateLimitExhaustedError):
+            await fetch_page(
+                client,
+                "https://example.com",
+                SyncConfig(
+                    max_retries=5,
+                    backoff_base=9.0,
+                    cooldown_threshold=3,
+                    cooldown_duration=0.2,
+                ),
+                max_retries=2,
+                backoff_base=0.1,
+                status=messages.append,
+                sleep=fake_sleep,
+            )
+    finally:
+        await client.aclose()
+
+    assert delays == [0.1, 0.2, 0.2, 0.1, 0.2]
+    assert messages == [
+        "rate limited (HTTP 429), retry 1/2 in 0.1s",
+        "rate limited (HTTP 429), retry 2/2 in 0.2s",
+        "rate limited repeatedly, cooling down for 0.2s",
+        "rate limited (HTTP 429), retry 1/2 in 0.1s",
+        "rate limited (HTTP 429), retry 2/2 in 0.2s",
+    ]

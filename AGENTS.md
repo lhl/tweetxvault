@@ -37,6 +37,12 @@ For multi-step work, maintain `docs/IMPLEMENTATION.md` as a checklist:
 
 Index of all documentation. Keep in sync when adding/removing docs.
 
+### docs/PUBLISH.md
+
+When preparing or publishing a new version, follow `docs/PUBLISH.md` as the
+release punch list. Release work must update version metadata, `CHANGELOG.md`,
+related docs, validation/build steps, tag creation, and PyPI/GitHub bookkeeping.
+
 ## Concurrent Work
 
 - Run `git status -sb` before starting work and before each commit.

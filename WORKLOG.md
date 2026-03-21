@@ -31,6 +31,14 @@
   - some X timeline backfill responses can return `page_tweets 0` while still echoing the same bottom cursor back, which left `backfill_incomplete=True` even though the resumed pass had effectively finished
   - changed the sync-state transition so an empty resumed backfill page clears the saved cursor instead of preserving it
   - added a regression covering the exact case: duplicate-stopped head pass, resumed backfill, empty page, repeated cursor
+- Added release-process docs and backfilled user-facing release history:
+  - added `docs/PUBLISH.md` as the canonical release punch list covering version bumps, changelog updates, validation, tagging, PyPI publication, and post-publish verification
+  - added a root `CHANGELOG.md` with backfilled entries for `v0.1.0`, `v0.1.1`, and `v0.2.0`, plus an `Unreleased` section for current work
+  - updated `AGENTS.md` and `docs/README.md` so future release work points directly at the publish checklist and changelog
+- Slowed 429 retries for TweetDetail-heavy follow-up jobs without penalizing normal timeline sync:
+  - added separate `sync.detail_max_retries` / `sync.detail_backoff_base` knobs, defaulting to `2` retries at `30s` / `60s` before the existing `300s` cooldown
+  - wired those slower retry settings into archive enrich, thread expansion, and article refresh while leaving the timeline sync path on the faster `2s`-based retry schedule
+  - added coverage for per-request retry overrides in the HTTP client and for detail-specific retry config in thread expansion tests
 - Validation:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`

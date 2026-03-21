@@ -100,6 +100,8 @@ async def _fetch_detail(
         client,
         build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
         config.sync,
+        max_retries=config.sync.detail_max_retries,
+        backoff_base=config.sync.detail_backoff_base,
         refresh_once=refresh_once,
         status=lambda message: _log_thread_status(console, tweet_id, message),
     )

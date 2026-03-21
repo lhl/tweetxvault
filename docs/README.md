@@ -25,3 +25,8 @@
 
 - `IMPLEMENTATION.md` — Active checklist (created when implementation begins)
 - `../WORKLOG.md` — Running session log (lives in repo root)
+
+## Release
+
+- `PUBLISH.md` — Release/versioning punch list for version bumps, validation, tagging, and PyPI publication
+- `../CHANGELOG.md` — User-facing release history with backfilled tagged versions and release validation notes

@@ -440,6 +440,8 @@ async def test_expand_threads_logs_rate_limit_progress(
                 update={
                     "max_retries": 1,
                     "backoff_base": 0.1,
+                    "detail_max_retries": 1,
+                    "detail_backoff_base": 0.1,
                     "cooldown_threshold": 1,
                     "cooldown_duration": 0.0,
                 }

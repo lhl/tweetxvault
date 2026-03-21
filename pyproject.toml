@@ -56,6 +56,7 @@ tweetxvault = "tweetxvault.cli:app"
 Homepage = "https://github.com/lhl/tweetxvault"
 Repository = "https://github.com/lhl/tweetxvault"
 Issues = "https://github.com/lhl/tweetxvault/issues"
+Changelog = "https://github.com/lhl/tweetxvault/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["tweetxvault"]
@@ -63,6 +64,7 @@ packages = ["tweetxvault"]
 [tool.hatch.build.targets.sdist]
 include = [
   "/tweetxvault",
+  "/CHANGELOG.md",
   "/README.md",
   "/LICENSE",
   "/pyproject.toml",

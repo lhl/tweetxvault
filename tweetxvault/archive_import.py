@@ -1041,6 +1041,8 @@ async def _enrich_pending_rows(
                             client,
                             build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
                             config.sync,
+                            max_retries=config.sync.detail_max_retries,
+                            backoff_base=config.sync.detail_backoff_base,
                             refresh_once=refresh_once,
                             status=(
                                 (

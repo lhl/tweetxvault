@@ -389,9 +389,15 @@ All configuration is optional. Defaults work out of the box with browser cookie 
 | `sync.page_delay` | `2.0` s | `TWEETXVAULT_PAGE_DELAY` |
 | `sync.max_retries` | `3` | `TWEETXVAULT_MAX_RETRIES` |
 | `sync.backoff_base` | `2.0` s | `TWEETXVAULT_BACKOFF_BASE` |
+| `sync.detail_max_retries` | `2` | `TWEETXVAULT_DETAIL_MAX_RETRIES` |
+| `sync.detail_backoff_base` | `30.0` s | `TWEETXVAULT_DETAIL_BACKOFF_BASE` |
 | `sync.cooldown_threshold` | `3` consecutive 429s | `TWEETXVAULT_COOLDOWN_THRESHOLD` |
 | `sync.cooldown_duration` | `300.0` s | `TWEETXVAULT_COOLDOWN_DURATION` |
 | `sync.timeout` | `30.0` s | `TWEETXVAULT_TIMEOUT` |
+
+TweetDetail-heavy jobs such as `tweetxvault import enrich`, `tweetxvault threads expand`,
+and `tweetxvault articles refresh` use the `sync.detail_*` retry settings before falling
+back to the shared cooldown controls.
 
 ## Data storage
 

@@ -92,6 +92,8 @@ async def refresh_articles(
                         client,
                         build_tweet_detail_url(query_ids["TweetDetail"], tweet_id),
                         config.sync,
+                        max_retries=config.sync.detail_max_retries,
+                        backoff_base=config.sync.detail_backoff_base,
                         refresh_once=refresh_once,
                     )
                     payload = response.json()

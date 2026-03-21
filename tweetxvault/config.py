@@ -47,6 +47,8 @@ class SyncConfig(BaseModel):
     page_delay: float = Field(default=2.0, ge=0)
     max_retries: int = Field(default=3, ge=0)
     backoff_base: float = Field(default=2.0, ge=0)
+    detail_max_retries: int = Field(default=2, ge=0)
+    detail_backoff_base: float = Field(default=30.0, ge=0)
     cooldown_threshold: int = Field(default=3, ge=1)
     cooldown_duration: float = Field(default=300.0, ge=0)
     timeout: float = Field(default=30.0, ge=1.0)
@@ -166,6 +168,8 @@ def load_config(env: Mapping[str, str] | None = None) -> tuple[AppConfig, XDGPat
         "page_delay": _env_float(env, "TWEETXVAULT_PAGE_DELAY"),
         "max_retries": _env_int(env, "TWEETXVAULT_MAX_RETRIES"),
         "backoff_base": _env_float(env, "TWEETXVAULT_BACKOFF_BASE"),
+        "detail_max_retries": _env_int(env, "TWEETXVAULT_DETAIL_MAX_RETRIES"),
+        "detail_backoff_base": _env_float(env, "TWEETXVAULT_DETAIL_BACKOFF_BASE"),
         "cooldown_threshold": _env_int(env, "TWEETXVAULT_COOLDOWN_THRESHOLD"),
         "cooldown_duration": _env_float(env, "TWEETXVAULT_COOLDOWN_DURATION"),
         "timeout": _env_float(env, "TWEETXVAULT_TIMEOUT"),
