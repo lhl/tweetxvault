@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import mimetypes
@@ -22,7 +21,7 @@ import httpx
 from rich.console import Console
 
 from tweetxvault.auth import ResolvedAuthBundle, resolve_auth_bundle
-from tweetxvault.client.base import build_async_client
+from tweetxvault.client.base import AdaptiveRequestPacer, build_async_client
 from tweetxvault.client.timelines import (
     TimelineTweet,
     build_tweet_detail_url,
@@ -1017,6 +1016,7 @@ async def _enrich_pending_rows(
         succeeded = 0
         terminal = 0
         transient = 0
+        pacer = AdaptiveRequestPacer(config.sync.detail_delay)
         try:
             with _progress_callback(
                 console,
@@ -1027,8 +1027,7 @@ async def _enrich_pending_rows(
             ) as detail_progress:
                 for index, row in enumerate(rows, start=1):
                     tweet_id = row["tweet_id"]
-                    if index > 1 and config.sync.detail_delay > 0:
-                        await asyncio.sleep(config.sync.detail_delay)
+                    await pacer.wait(attempted=index - 1)
 
                     async def refresh_once(tweet_id: str = tweet_id) -> str:
                         refreshed = await refresh_query_ids(
@@ -1057,6 +1056,7 @@ async def _enrich_pending_rows(
                                 else None
                             ),
                         )
+                        pacer.observe(response, status=status)
                         payload = response.json()
                         tweet = parse_tweet_detail_response(payload, tweet_id)
                         if tweet is None:

@@ -11,7 +11,7 @@ import httpx
 from rich.console import Console
 
 from tweetxvault.auth import ResolvedAuthBundle, resolve_auth_bundle
-from tweetxvault.client.base import build_async_client
+from tweetxvault.client.base import AdaptiveRequestPacer, build_async_client
 from tweetxvault.client.timelines import (
     build_tweet_detail_url,
     fetch_page,
@@ -79,10 +79,10 @@ async def refresh_articles(
         client = build_async_client(auth_bundle, timeout=config.sync.timeout, transport=transport)
         try:
             attempted = 0
+            pacer = AdaptiveRequestPacer(config.sync.detail_delay)
             for tweet_id in tweet_ids:
                 result.processed += 1
-                if attempted > 0 and config.sync.detail_delay > 0:
-                    await sleep(config.sync.detail_delay)
+                await pacer.wait(attempted=attempted, sleep=sleep)
                 attempted += 1
 
                 async def refresh_once(tweet_id: str = tweet_id) -> str:
@@ -103,6 +103,7 @@ async def refresh_articles(
                         backoff_base=config.sync.detail_backoff_base,
                         refresh_once=refresh_once,
                     )
+                    pacer.observe(response)
                     payload = response.json()
                     tweet = parse_tweet_detail_response(payload, tweet_id)
                     if tweet is None:

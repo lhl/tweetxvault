@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import httpx
@@ -249,3 +250,54 @@ async def test_refresh_articles_respects_detail_sleep(paths, auth_bundle) -> Non
     assert result.processed == 2
     assert result.updated == 2
     assert sleep_calls == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_adapts_to_rate_limit_headers(paths, auth_bundle) -> None:
+    _seed_preview_article(paths, "100", "101")
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    sleep_calls: list[float] = []
+    config = AppConfig(
+        auth=AuthConfig(auth_token="token", ct0="ct0", user_id="42"),
+        sync=SyncConfig(detail_delay=1.0),
+    )
+    reset_at = str(int(time.time()) + 12)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        variables = request.url.params["variables"]
+        headers = {
+            "x-rate-limit-limit": "300",
+            "x-rate-limit-remaining": "3",
+            "x-rate-limit-reset": reset_at,
+        }
+        if '"focalTweetId":"100"' in variables:
+            return httpx.Response(
+                200,
+                json=_article_detail_payload("100", plain_text="Body 100"),
+                headers=headers,
+                request=request,
+            )
+        if '"focalTweetId":"101"' in variables:
+            return httpx.Response(
+                200,
+                json=_article_detail_payload("101", plain_text="Body 101"),
+                headers=headers,
+                request=request,
+            )
+        raise AssertionError(f"unexpected request {request.url}")
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+        sleep=fake_sleep,
+    )
+
+    assert result.processed == 2
+    assert result.updated == 2
+    assert len(sleep_calls) == 1
+    assert sleep_calls[0] > 3.0

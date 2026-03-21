@@ -2,6 +2,25 @@
 
 ## 2026-03-21
 
+- Made TweetDetail follow-up jobs adapt to observed rate-limit headers instead
+  of fixed cooldown guesswork:
+  - taught the shared HTTP client to honor `Retry-After` and
+    `x-rate-limit-reset` on `429` responses, so `TweetDetail` waits for the
+    server-advertised reset window when available instead of always falling back
+    to `30s` / `60s` / `300s`
+  - added adaptive per-request pacing for archive enrich, article refresh, and
+    thread expansion so successful responses with `x-rate-limit-remaining` /
+    `x-rate-limit-reset` can stretch the next inter-request sleep above the
+    configured `detail_delay` when the current bucket is tight
+  - kept the existing fixed-delay/backoff path as the fallback when headers are
+    missing, and added regression coverage for both `Retry-After` handling and
+    adaptive pacing
+  - validation:
+    - `uv run ruff check tweetxvault/client/base.py tweetxvault/archive_import.py tweetxvault/articles.py tweetxvault/threads.py tests/test_client.py tests/test_articles.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/client/base.py tweetxvault/archive_import.py tweetxvault/articles.py tweetxvault/threads.py tests/test_client.py tests/test_articles.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_client.py tests/test_articles.py tests/test_threads.py tests/test_archive_import.py -q`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+
 - Published `v0.2.1`:
   - pushed `main` and the annotated `v0.2.1` tag to GitHub
   - first `uv publish` attempt failed because `dist/` still contained older

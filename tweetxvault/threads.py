@@ -10,7 +10,7 @@ import httpx
 from rich.console import Console
 
 from tweetxvault.auth import ResolvedAuthBundle, resolve_auth_bundle
-from tweetxvault.client.base import build_async_client
+from tweetxvault.client.base import AdaptiveRequestPacer, build_async_client
 from tweetxvault.client.timelines import (
     build_tweet_detail_url,
     fetch_page,
@@ -87,6 +87,7 @@ async def _fetch_detail(
     client: httpx.AsyncClient,
     config: AppConfig,
     console: Console,
+    pacer: AdaptiveRequestPacer | None = None,
 ) -> tuple[dict[str, object], list]:
     async def refresh_once() -> str:
         refreshed = await refresh_query_ids(
@@ -106,6 +107,8 @@ async def _fetch_detail(
         refresh_once=refresh_once,
         status=lambda message: _log_thread_status(console, tweet_id, message),
     )
+    if pacer is not None:
+        pacer.observe(response)
     payload = response.json()
     tweets = parse_tweet_detail_tweets(payload)
     focal = parse_tweet_detail_response(payload, tweet_id)
@@ -123,6 +126,7 @@ async def _expand_target(
     client: httpx.AsyncClient,
     config: AppConfig,
     console: Console,
+    pacer: AdaptiveRequestPacer | None = None,
 ) -> list[str]:
     payload, tweets = await _fetch_detail(
         tweet_id=tweet_id,
@@ -131,6 +135,7 @@ async def _expand_target(
         client=client,
         config=config,
         console=console,
+        pacer=pacer,
     )
     store.persist_thread_detail(
         focal_tweet_id=tweet_id,
@@ -153,6 +158,7 @@ async def _try_expand_target(
     known_tweet_ids: set[str],
     result: ThreadExpandResult,
     console: Console,
+    pacer: AdaptiveRequestPacer | None = None,
 ) -> None:
     result.processed += 1
     attempted_targets.add(tweet_id)
@@ -165,6 +171,7 @@ async def _try_expand_target(
             client=client,
             config=config,
             console=console,
+            pacer=pacer,
         )
     except Exception as exc:
         result.failed += 1
@@ -223,6 +230,7 @@ async def expand_threads(
             )
             attempted_targets: set[str] = set()
             known_tweet_ids: set[str] = set()
+            pacer = AdaptiveRequestPacer(config.sync.detail_delay)
 
             if targets:
                 requested, duplicate_count = _dedupe_targets(
@@ -246,8 +254,7 @@ async def expand_threads(
                             result=result,
                         )
                         continue
-                    if result.processed > 0 and config.sync.detail_delay > 0:
-                        await sleep(config.sync.detail_delay)
+                    await pacer.wait(attempted=result.processed, sleep=sleep)
                     await _try_expand_target(
                         tweet_id=tweet_id,
                         store=store,
@@ -260,6 +267,7 @@ async def expand_threads(
                         known_tweet_ids=known_tweet_ids,
                         result=result,
                         console=console,
+                        pacer=pacer,
                     )
                     _log_scan_progress(
                         console,
@@ -290,8 +298,7 @@ async def expand_threads(
                             result=result,
                         )
                         continue
-                    if result.processed > 0 and config.sync.detail_delay > 0:
-                        await sleep(config.sync.detail_delay)
+                    await pacer.wait(attempted=result.processed, sleep=sleep)
                     await _try_expand_target(
                         tweet_id=tweet_id,
                         store=store,
@@ -304,6 +311,7 @@ async def expand_threads(
                         known_tweet_ids=known_tweet_ids,
                         result=result,
                         console=console,
+                        pacer=pacer,
                     )
                     _log_scan_progress(
                         console,
@@ -361,8 +369,7 @@ async def expand_threads(
                                 result=result,
                             )
                             continue
-                        if result.processed > 0 and config.sync.detail_delay > 0:
-                            await sleep(config.sync.detail_delay)
+                        await pacer.wait(attempted=result.processed, sleep=sleep)
                         await _try_expand_target(
                             tweet_id=target_id,
                             store=store,
@@ -375,6 +382,7 @@ async def expand_threads(
                             known_tweet_ids=known_tweet_ids,
                             result=result,
                             console=console,
+                            pacer=pacer,
                         )
                         _log_scan_progress(
                             console,

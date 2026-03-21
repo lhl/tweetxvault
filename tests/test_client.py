@@ -240,3 +240,40 @@ async def test_fetch_page_honors_rate_limit_overrides() -> None:
         "rate limited (HTTP 429), retry 1/2 in 0.1s",
         "rate limited (HTTP 429), retry 2/2 in 0.2s",
     ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_page_honors_retry_after_header() -> None:
+    responses = deque(
+        [
+            httpx.Response(429, headers={"retry-after": "7"}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        response = responses.popleft()
+        response.request = request
+        return response
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    delays: list[float] = []
+    messages: list[str] = []
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    try:
+        response = await fetch_page(
+            client,
+            "https://example.com",
+            SyncConfig(),
+            status=messages.append,
+            sleep=fake_sleep,
+        )
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    assert delays == [7.0]
+    assert messages == ["rate limited (HTTP 429), waiting 7.0s before retry (retry-after 7.0s)"]
