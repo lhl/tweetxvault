@@ -5,9 +5,9 @@ This is the release punch list for cutting a new `tweetxvault` version.
 Scope:
 
 - Use this checklist whenever preparing a new Git tag or publishing to PyPI.
-- Keep `CHANGELOG.md` current as work lands. At release time, move
-  `Unreleased` into the new version section instead of rewriting history from
-  scratch.
+- `CHANGELOG.md` is release-oriented, not an in-progress ledger. Add a new
+  topmost version section when cutting a release; do not keep an `Unreleased`
+  section.
 - Historical tags `v0.1.0`, `v0.1.1`, and `v0.2.0` are already backfilled in
   `CHANGELOG.md`.
 
@@ -34,8 +34,8 @@ Use semver-style version bumps:
 - [ ] Update version metadata in:
       `tweetxvault/__init__.py`
 - [ ] Update `CHANGELOG.md`:
-      move `Unreleased` changes into `## [X.Y.Z] - YYYY-MM-DD`, keep the
-      validation bullets, and start a fresh empty `Unreleased` section
+      add a new topmost `## [X.Y.Z] - YYYY-MM-DD` section, keep the validation
+      bullets, and update the version links at the bottom
 - [ ] Update README/docs/help text if install steps, CLI behavior, or supported
       workflows changed
 - [ ] Update `docs/README.md` if documentation files were added or removed
@@ -77,5 +77,7 @@ Use semver-style version bumps:
 - Do not reuse an older `dist/` blindly; rebuild artifacts for each release.
 - If a historical tag is missing from `CHANGELOG.md`, backfill that entry before
   publishing the next version.
+- Do not add speculative or partial release notes ahead of an actual cut; write
+  the release entry when the version is being prepared.
 - If a release includes breaking behavior or archive upgrade steps, add the
   upgrade note to both `README.md` and `CHANGELOG.md`.

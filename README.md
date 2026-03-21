@@ -32,10 +32,29 @@ Install from PyPI:
 pip install tweetxvault
 ```
 
+Install globally with `uv`:
+
+```bash
+uv tool install tweetxvault
+```
+
+Install globally with `pipx`:
+
+```bash
+pipx install tweetxvault
+```
+
 To enable semantic search (vector embeddings):
 
 ```bash
 pip install "tweetxvault[embed]"
+```
+
+Or install the embedding extra as a global tool:
+
+```bash
+uv tool install "tweetxvault[embed]"
+pipx install "tweetxvault[embed]"
 ```
 
 Install from source:
@@ -46,10 +65,25 @@ cd tweetxvault
 uv sync
 ```
 
+Install your local checkout as a global editable tool while developing on `HEAD`:
+
+```bash
+uv tool install -e .
+```
+
+Re-run that command with `--force` after dependency or metadata changes in
+`pyproject.toml`.
+
 To enable semantic search from source:
 
 ```bash
 uv sync --extra embed
+```
+
+Run once without installing:
+
+```bash
+uvx tweetxvault --help
 ```
 
 This installs `onnxruntime`, `tokenizers`, and `huggingface-hub`. GPU acceleration (CUDA/ROCm) is used automatically when available; CPU works fine too (~150-200 tweets/s).

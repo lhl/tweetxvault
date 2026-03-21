@@ -1,12 +1,12 @@
 # Changelog
 
-This changelog tracks user-visible changes and recorded release validation status.
-Entries for `v0.1.0`, `v0.1.1`, and `v0.2.0` were backfilled from git tags and
-`WORKLOG.md`.
+This changelog tracks user-visible changes and recorded release validation
+status for published versions. Entries for `v0.1.0`, `v0.1.1`, and `v0.2.0`
+were backfilled from git tags and `WORKLOG.md`.
 
 The format is loosely based on Keep a Changelog.
 
-## [Unreleased]
+## [0.2.1] - 2026-03-21
 
 ### Added
 
@@ -21,6 +21,8 @@ The format is loosely based on Keep a Changelog.
 - `tweetxvault stats` now explains backfill/follow-up labels inline and reports
   optimize state as `ok` or `run optimize`.
 - Archive stats and related preload helpers are much faster on large archives.
+- Installation docs now cover global `uv tool` / `pipx` usage and editable
+  `uv tool install -e .` development installs from a local checkout.
 - TweetDetail-heavy jobs now wait `1s` between requests by default, with a
   `--sleep 0` escape hatch for one-off runs.
 - TweetDetail-heavy jobs now retry 429s more conservatively by default before
@@ -36,6 +38,9 @@ The format is loosely based on Keep a Changelog.
 - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
 - `uv run ruff check`
 - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+- `UV_CACHE_DIR=/tmp/uv-cache uv build`
+- `uvx --from twine twine check dist/tweetxvault-0.2.1*`
+- `uv run --isolated --with dist/tweetxvault-0.2.1-py3-none-any.whl tweetxvault --help`
 
 ## [0.2.0] - 2026-03-18
 
@@ -114,7 +119,7 @@ The format is loosely based on Keep a Changelog.
 - Wheel and sdist contents inspected to confirm repo-internal files no longer
   ship in release artifacts.
 
-[Unreleased]: https://github.com/lhl/tweetxvault/compare/v0.2.0...HEAD
+[0.2.1]: https://github.com/lhl/tweetxvault/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lhl/tweetxvault/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/lhl/tweetxvault/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/lhl/tweetxvault/releases/tag/v0.1.0

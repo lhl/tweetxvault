@@ -2,6 +2,25 @@
 
 ## 2026-03-21
 
+- Prepared release metadata for `v0.2.1`:
+  - bumped package version from `0.2.0` to `0.2.1`
+  - added a concise `v0.2.1` feature/fix summary to `CHANGELOG.md` without
+    keeping a rolling `Unreleased` section
+  - tightened the publish checklist so future releases add the next version
+    entry directly instead of pretending we maintain in-progress changelog notes
+  - documented the existing global CLI install paths in `README.md` so users can
+    use `uv tool install tweetxvault`, `pipx install tweetxvault`, or `uvx
+    tweetxvault --help` instead of only `uv run` from a checkout
+  - documented the editable dev workflow too: `uv tool install -e .` for a
+    globally available `tweetxvault` command that follows the current checkout
+  - release validation/build commands for this cut:
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
+    - `uv run ruff check`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv build`
+    - `uvx --from twine twine check dist/tweetxvault-0.2.1*`
+    - `uv run --isolated --with dist/tweetxvault-0.2.1-py3-none-any.whl tweetxvault --help`
+
 - Expanded archive search from tweet-membership rows into surfaced search items:
   - `tweetxvault search` now defaults to searching both posts and articles, instead of only `record_type='tweet'`
   - added comma-delimited `--type` (`post`, `article`) and `--collection` (`bookmark`, `like`, `tweet`) filters
@@ -33,7 +52,7 @@
   - added a regression covering the exact case: duplicate-stopped head pass, resumed backfill, empty page, repeated cursor
 - Added release-process docs and backfilled user-facing release history:
   - added `docs/PUBLISH.md` as the canonical release punch list covering version bumps, changelog updates, validation, tagging, PyPI publication, and post-publish verification
-  - added a root `CHANGELOG.md` with backfilled entries for `v0.1.0`, `v0.1.1`, and `v0.2.0`, plus an `Unreleased` section for current work
+  - added a root `CHANGELOG.md` with backfilled entries for `v0.1.0`, `v0.1.1`, and `v0.2.0`, plus room for top-level per-release summaries going forward
   - updated `AGENTS.md` and `docs/README.md` so future release work points directly at the publish checklist and changelog
 - Slowed 429 retries for TweetDetail-heavy follow-up jobs without penalizing normal timeline sync:
   - added separate `sync.detail_max_retries` / `sync.detail_backoff_base` knobs, defaulting to `2` retries at `30s` / `60s` before the existing `300s` cooldown
