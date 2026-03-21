@@ -14,6 +14,10 @@
   - `tweetxvault search` now accepts `--sort relevance|newest|oldest` and still defaults to relevance
   - chronological search sorting now reorders the fetched relevance/semantic result set by `created_at` before rendering, keeping `--sort newest|oldest` fast while preserving relevance-first candidate selection
   - semantic modes no longer need a forced FTS fallback just to support chronological display ordering
+- Added `tweetxvault stats` for archive introspection:
+  - summarizes overall archive totals for unique posts, articles, membership rows, raw captures, media, and URLs
+  - breaks collections out into bookmark/like/tweet counts with first/last post timestamps, last sync time, and backfill status
+  - reports storage health including DB/media disk usage, LanceDB version count, and a lightweight optimize recommendation
 - Validation:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`

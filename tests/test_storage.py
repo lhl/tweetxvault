@@ -276,6 +276,84 @@ def test_persist_page_creates_single_version(paths) -> None:
     store.close()
 
 
+def test_archive_stats_summarizes_collections_and_bounds(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    store.set_archive_owner_id("42")
+    newer = _complex_tweet("100")
+    older = _tweet_with_created_at(
+        "200",
+        created_at="Tue Oct 09 21:39:26 +0000 2012",
+        sort_index="20",
+    )
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out="cursor-1",
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[newer],
+        last_head_tweet_id="100",
+        backfill_cursor="cursor-1",
+        backfill_incomplete=True,
+    )
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[newer],
+        last_head_tweet_id="100",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.persist_page(
+        operation="UserTweets",
+        collection_type="tweet",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[older],
+        last_head_tweet_id="200",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    stats = store.archive_stats()
+    collections = {row.collection_type: row for row in stats.collections}
+
+    assert stats.owner_user_id == "42"
+    assert stats.unique_post_count == 2
+    assert stats.collection_membership_count == 3
+    assert stats.article_count == 1
+    assert stats.raw_capture_count == 3
+    assert stats.media_count == 3
+    assert stats.url_count == 2
+    assert stats.oldest_created_at == "Tue Oct 09 21:39:26 +0000 2012"
+    assert stats.newest_created_at == "Sat Mar 14 00:00:00 +0000 2026"
+    assert stats.latest_capture_at is not None
+    assert stats.latest_sync_at is not None
+    assert stats.version_count == store.version_count()
+
+    assert collections["bookmark"].post_count == 1
+    assert collections["bookmark"].oldest_created_at == "Sat Mar 14 00:00:00 +0000 2026"
+    assert collections["bookmark"].newest_created_at == "Sat Mar 14 00:00:00 +0000 2026"
+    assert collections["bookmark"].last_synced_at is not None
+    assert collections["bookmark"].backfill_cursor == "cursor-1"
+    assert collections["bookmark"].backfill_incomplete is True
+
+    assert collections["like"].post_count == 1
+    assert collections["tweet"].post_count == 1
+    assert collections["tweet"].oldest_created_at == "Tue Oct 09 21:39:26 +0000 2012"
+    assert collections["tweet"].newest_created_at == "Tue Oct 09 21:39:26 +0000 2012"
+    store.close()
+
+
 def test_export_rows_only_returns_tweet_records(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

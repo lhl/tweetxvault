@@ -104,6 +104,34 @@ class RehydrateResult:
     secondary_records: int = 0
 
 
+@dataclass(slots=True)
+class ArchiveCollectionStats:
+    collection_type: str
+    post_count: int = 0
+    oldest_created_at: str | None = None
+    newest_created_at: str | None = None
+    last_synced_at: str | None = None
+    backfill_cursor: str | None = None
+    backfill_incomplete: bool = False
+
+
+@dataclass(slots=True)
+class ArchiveStats:
+    owner_user_id: str | None = None
+    unique_post_count: int = 0
+    collection_membership_count: int = 0
+    article_count: int = 0
+    raw_capture_count: int = 0
+    media_count: int = 0
+    url_count: int = 0
+    oldest_created_at: str | None = None
+    newest_created_at: str | None = None
+    latest_capture_at: str | None = None
+    latest_sync_at: str | None = None
+    version_count: int = 0
+    collections: list[ArchiveCollectionStats] = field(default_factory=list)
+
+
 ARCHIVE_SCHEMA = pa.schema(
     [
         pa.field("row_key", pa.string(), nullable=False),
@@ -1934,6 +1962,146 @@ class ArchiveStore:
             "import_manifests": self.table.count_rows("record_type = 'import_manifest'"),
             "sync_state": self.table.count_rows("record_type = 'sync_state'"),
         }
+
+    def archive_stats(self) -> ArchiveStats:
+        counts = self.counts()
+        tweet_rows = (
+            self.table.search()
+            .where("record_type = 'tweet'")
+            .select(["tweet_id", "collection_type", "created_at"])
+            .to_list()
+        )
+        capture_rows = (
+            self.table.search()
+            .where("record_type = 'raw_capture'")
+            .select(["captured_at"])
+            .to_list()
+        )
+        sync_rows = (
+            self.table.search()
+            .where("record_type = 'sync_state'")
+            .select(
+                [
+                    "collection_type",
+                    "updated_at",
+                    "backfill_cursor",
+                    "backfill_incomplete",
+                ]
+            )
+            .to_list()
+        )
+
+        oldest_created_dt: datetime | None = None
+        newest_created_dt: datetime | None = None
+        oldest_created_at: str | None = None
+        newest_created_at: str | None = None
+        unique_post_ids: set[str] = set()
+        collection_stats = {
+            collection: ArchiveCollectionStats(collection_type=collection)
+            for collection in SEARCH_COLLECTION_ORDER
+        }
+
+        def update_created_bounds(
+            raw: str | None,
+            *,
+            collection: ArchiveCollectionStats | None = None,
+        ) -> None:
+            nonlocal oldest_created_dt, newest_created_dt, oldest_created_at, newest_created_at
+
+            created_at = _parse_created_at(raw)
+            if created_at is None:
+                return
+            if oldest_created_dt is None or created_at < oldest_created_dt:
+                oldest_created_dt = created_at
+                oldest_created_at = raw
+            if newest_created_dt is None or created_at > newest_created_dt:
+                newest_created_dt = created_at
+                newest_created_at = raw
+            if collection is None:
+                return
+
+            collection_oldest_dt = _parse_created_at(collection.oldest_created_at)
+            if collection_oldest_dt is None or created_at < collection_oldest_dt:
+                collection.oldest_created_at = raw
+            collection_newest_dt = _parse_created_at(collection.newest_created_at)
+            if collection_newest_dt is None or created_at > collection_newest_dt:
+                collection.newest_created_at = raw
+
+        for row in tweet_rows:
+            tweet_id = row.get("tweet_id")
+            if isinstance(tweet_id, str) and tweet_id:
+                unique_post_ids.add(tweet_id)
+            collection_type = row.get("collection_type")
+            collection = None
+            if isinstance(collection_type, str) and collection_type:
+                collection = collection_stats.setdefault(
+                    collection_type,
+                    ArchiveCollectionStats(collection_type=collection_type),
+                )
+                collection.post_count += 1
+            update_created_bounds(row.get("created_at"), collection=collection)
+
+        latest_capture_at = max(
+            (
+                captured_at
+                for row in capture_rows
+                if isinstance((captured_at := row.get("captured_at")), str) and captured_at
+            ),
+            default=None,
+        )
+        latest_sync_at: str | None = None
+        for row in sync_rows:
+            collection_type = row.get("collection_type")
+            if not isinstance(collection_type, str) or not collection_type:
+                continue
+            collection = collection_stats.setdefault(
+                collection_type,
+                ArchiveCollectionStats(collection_type=collection_type),
+            )
+            updated_at = row.get("updated_at")
+            if (
+                isinstance(updated_at, str)
+                and updated_at
+                and (collection.last_synced_at is None or updated_at > collection.last_synced_at)
+            ):
+                collection.last_synced_at = updated_at
+                backfill_cursor = row.get("backfill_cursor")
+                collection.backfill_cursor = (
+                    backfill_cursor
+                    if isinstance(backfill_cursor, str) and backfill_cursor
+                    else None
+                )
+                collection.backfill_incomplete = bool(row.get("backfill_incomplete"))
+            if (
+                isinstance(updated_at, str)
+                and updated_at
+                and (latest_sync_at is None or updated_at > latest_sync_at)
+            ):
+                latest_sync_at = updated_at
+
+        ordered_collections = [
+            collection_stats[name] for name in SEARCH_COLLECTION_ORDER if name in collection_stats
+        ]
+        ordered_collections.extend(
+            collection_stats[name]
+            for name in sorted(collection_stats)
+            if name not in SEARCH_COLLECTION_ORDER
+        )
+        return ArchiveStats(
+            owner_user_id=self.get_archive_owner_id(),
+            unique_post_count=len(unique_post_ids),
+            collection_membership_count=counts["tweets"],
+            article_count=counts["articles"],
+            raw_capture_count=counts["raw_captures"],
+            media_count=counts["media"],
+            url_count=counts["urls"],
+            oldest_created_at=oldest_created_at,
+            newest_created_at=newest_created_at,
+            latest_capture_at=latest_capture_at,
+            latest_sync_at=latest_sync_at,
+            version_count=self.version_count(),
+            collections=ordered_collections,
+        )
 
     def list_archive_import_media_paths(self) -> list[str]:
         rows = (

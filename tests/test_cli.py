@@ -1120,6 +1120,80 @@ def test_optimize_archive_uses_write_lock(paths, monkeypatch) -> None:
     assert "optimized archive: 3 versions -> 1 versions" in buffer.getvalue()
 
 
+def test_stats_archive_renders_summary_tables(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(cli, "_format_stats_timestamp", lambda raw: raw or "-")
+    monkeypatch.setattr(
+        cli,
+        "_path_size_bytes",
+        lambda path: 2_048 if path == paths.database_path else 4_096,
+    )
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def archive_stats(self):
+            return SimpleNamespace(
+                owner_user_id="42",
+                unique_post_count=7,
+                collection_membership_count=9,
+                article_count=2,
+                raw_capture_count=12,
+                media_count=4,
+                url_count=3,
+                oldest_created_at="oldest",
+                newest_created_at="newest",
+                latest_capture_at="capture",
+                latest_sync_at="sync",
+                version_count=6,
+                collections=[
+                    SimpleNamespace(
+                        collection_type="bookmark",
+                        post_count=3,
+                        oldest_created_at="b-old",
+                        newest_created_at="b-new",
+                        last_synced_at="b-sync",
+                        backfill_cursor="cursor-1",
+                        backfill_incomplete=True,
+                    ),
+                    SimpleNamespace(
+                        collection_type="like",
+                        post_count=4,
+                        oldest_created_at=None,
+                        newest_created_at=None,
+                        last_synced_at=None,
+                        backfill_cursor=None,
+                        backfill_incomplete=False,
+                    ),
+                ],
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    store = FakeStore()
+    monkeypatch.setattr(cli, "open_archive_store", lambda _paths, create=False: store)
+
+    cli.stats_archive()
+
+    output = buffer.getvalue()
+    assert "archive:" in output
+    assert "Summary" in output
+    assert "Unique posts" in output
+    assert "Collection memberships" in output
+    assert "Collections" in output
+    assert "bookmark" in output
+    assert "resume saved" in output
+    assert "Storage" in output
+    assert "2.0 KiB" in output
+    assert "4.0 KiB" in output
+    assert "maybe soon" in output
+    assert store.closed is True
+
+
 def test_rehydrate_archive_uses_write_lock(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)

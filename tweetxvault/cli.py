@@ -395,6 +395,62 @@ def _format_created_at(raw: str | None) -> str:
         return raw
 
 
+def _format_stats_timestamp(raw: str | None) -> str:
+    if not raw:
+        return "-"
+    parsed = _parse_created_at(raw)
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except (ValueError, TypeError):
+            return raw
+    local_dt = parsed.astimezone() if parsed.tzinfo is not None else parsed
+    date_part = local_dt.strftime("%b %-d, %Y")
+    time_part = local_dt.strftime("%-I:%M %p").lower()
+    return f"{date_part} {time_part}"
+
+
+def _format_byte_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    size = float(size_bytes)
+    for unit in ("KiB", "MiB", "GiB", "TiB"):
+        size /= 1024.0
+        if size < 1024.0 or unit == "TiB":
+            return f"{size:.1f} {unit}"
+    return f"{size_bytes} B"
+
+
+def _path_size_bytes(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    total = 0
+    for child in path.rglob("*"):
+        if child.is_file():
+            total += child.stat().st_size
+    return total
+
+
+def _format_backfill_status(backfill_cursor: str | None, backfill_incomplete: bool) -> str:
+    if backfill_incomplete and backfill_cursor:
+        return "resume saved"
+    if backfill_incomplete:
+        return "incomplete"
+    if backfill_cursor:
+        return "cursor saved"
+    return "clear"
+
+
+def _format_optimize_status(version_count: int) -> str:
+    if version_count >= 10:
+        return "recommended"
+    if version_count >= 4:
+        return "maybe soon"
+    return "not needed"
+
+
 def _parse_created_at(raw: str | None) -> datetime | None:
     if not raw:
         return None
@@ -1116,6 +1172,67 @@ def optimize_archive() -> None:
     except ProcessLockError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
+
+
+@app.command("stats")
+def stats_archive() -> None:
+    """Show archive totals, collection coverage, sync timestamps, and storage health."""
+    console = _configure_logging()
+    store, paths = _open_store_for_read(console)
+    try:
+        stats = store.archive_stats()
+        db_size = _path_size_bytes(paths.database_path)
+        media_size = _path_size_bytes(paths.media_dir)
+
+        console.print(f"archive: {paths.database_path}", highlight=False)
+
+        summary = Table(title="Summary", box=box.HORIZONTALS)
+        summary.add_column("Metric", style="cyan", no_wrap=True)
+        summary.add_column("Value", overflow="fold")
+        summary.add_row("Owner", stats.owner_user_id or "unknown")
+        summary.add_row("Unique posts", str(stats.unique_post_count))
+        summary.add_row("Articles", str(stats.article_count))
+        summary.add_row("Collection memberships", str(stats.collection_membership_count))
+        summary.add_row("Raw captures", str(stats.raw_capture_count))
+        summary.add_row("Media rows", str(stats.media_count))
+        summary.add_row("URL rows", str(stats.url_count))
+        summary.add_row("First post", _format_stats_timestamp(stats.oldest_created_at))
+        summary.add_row("Latest post", _format_stats_timestamp(stats.newest_created_at))
+        summary.add_row("Latest capture", _format_stats_timestamp(stats.latest_capture_at))
+        summary.add_row("Last sync", _format_stats_timestamp(stats.latest_sync_at))
+        console.print(summary)
+
+        collections = Table(title="Collections", box=box.HORIZONTALS)
+        collections.add_column("Collection", style="green", no_wrap=True)
+        collections.add_column("Posts", justify="right", no_wrap=True)
+        collections.add_column("First", no_wrap=True)
+        collections.add_column("Last", no_wrap=True)
+        collections.add_column("Last sync", no_wrap=True)
+        collections.add_column("Backfill", no_wrap=True)
+        for collection in stats.collections:
+            collections.add_row(
+                collection.collection_type,
+                str(collection.post_count),
+                _format_stats_timestamp(collection.oldest_created_at),
+                _format_stats_timestamp(collection.newest_created_at),
+                _format_stats_timestamp(collection.last_synced_at),
+                _format_backfill_status(
+                    collection.backfill_cursor,
+                    collection.backfill_incomplete,
+                ),
+            )
+        console.print(collections)
+
+        storage = Table(title="Storage", box=box.HORIZONTALS)
+        storage.add_column("Metric", style="cyan", no_wrap=True)
+        storage.add_column("Value", overflow="fold")
+        storage.add_row("DB size", _format_byte_size(db_size))
+        storage.add_row("Media size", _format_byte_size(media_size))
+        storage.add_row("Versions", str(stats.version_count))
+        storage.add_row("Optimize", _format_optimize_status(stats.version_count))
+        console.print(storage)
+    finally:
+        store.close()
 
 
 @app.command("rehydrate")

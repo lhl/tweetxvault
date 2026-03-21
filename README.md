@@ -353,6 +353,9 @@ uv run tweetxvault articles refresh 2026531440414925307
 ### Maintenance
 
 ```bash
+# Show archive totals, per-collection coverage, sync recency, and storage health
+uv run tweetxvault stats
+
 # Compact the LanceDB archive (reduces file count after many syncs)
 uv run tweetxvault optimize
 
@@ -363,6 +366,8 @@ uv run tweetxvault rehydrate
 # Force-refresh query IDs from Twitter's JS bundles
 uv run tweetxvault auth refresh-ids
 ```
+
+`tweetxvault stats` reports overall post/article totals, per-collection counts plus first/last tweet timestamps, latest sync/capture times, and storage health details such as DB/media size and version count with a lightweight optimize recommendation.
 
 ## Unattended sync via cron
 
