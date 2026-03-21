@@ -12,6 +12,83 @@ Current status:
   in-flight milestone unless it is explicitly promoted into `PLAN.md` or
   `IMPLEMENTATION.md`.
 
+## Near-Term Product Surface
+
+These items are less ambitious than the deeper discoverability work below, but
+they are practical quality-of-life areas that may be worth promoting sooner.
+
+### Backup And Portability
+
+Current practical story:
+
+- moving the XDG-managed tweetxvault directories to another machine is the
+  simplest backup/restore path today
+- in practice that means the data dir matters most, with config/cache copied as
+  needed
+
+Future work:
+
+- Document a clean "move this archive to another machine" workflow explicitly
+  instead of relying on users to infer it from the XDG layout.
+- Add a first-class backup/export command for archive snapshots if the
+  copy-the-directory story proves too implicit or too easy to get wrong.
+- Decide whether backup/export should mean:
+  - a raw archive snapshot for lossless restore
+  - a portable content export for interchange
+  - both, as separate commands with different goals
+- Add integrity/restore verification so a backup can be checked before the
+  original machine is discarded.
+
+Outcome we want:
+
+- Users should have an obvious, documented way to move or back up the archive
+  without having to understand LanceDB/XDG internals.
+
+### Richer Filters And Output Formats
+
+We already have a decent archive/search/view baseline, but the query surface is
+still narrow.
+
+Future work:
+
+- Add more filtering options for `view` and `search`:
+  - date ranges
+  - author filters
+  - media/article/link presence
+  - reply/repost/quote distinctions where the stored data supports it
+  - enrichment/follow-up state filters for operational use
+- Add alternate output modes beyond the current table-oriented CLI rendering:
+  - JSON
+  - Markdown
+  - CSV
+  - possibly newline-delimited JSON for scripting
+- Decide whether output formatting belongs as a shared renderer layer across
+  `view`, `search`, and future stats/export commands.
+
+Outcome we want:
+
+- The archive should be usable both interactively and as a composable command
+  line data source.
+
+### TUI
+
+Future work:
+
+- Design a proper TUI for browsing/searching the archive instead of treating the
+  current Rich table output as the final interactive experience.
+- Decide whether the TUI is primarily:
+  - a search-first interface
+  - a collection browser
+  - an operational dashboard for sync/enrichment status
+  - or some combination of the above
+- Reuse the same search/filter primitives as the CLI instead of inventing a
+  separate query model.
+
+Outcome we want:
+
+- A stronger interactive archive experience without forcing users into exports
+  or external notebooks for exploratory use.
+
 ## v0.3: Better Discoverability
 
 Primary goal: make the archive useful as a research/search environment, not just
@@ -77,10 +154,38 @@ Outcome we want:
 - Move beyond single-tweet retrieval into "show me the neighborhood around this
   idea/person/link/topic."
 
+## Lower-Priority Structural Work
+
+### Multi-Account Support
+
+This is valid future work, but not a current priority.
+
+Future work:
+
+- Decide whether multi-account support means:
+  - one archive per account with better switching ergonomics
+  - one shared archive with account-scoped partitions
+  - or both
+- Revisit archive-owner guardrails, config layout, and XDG paths so account
+  separation stays explicit and safe.
+- Define how search/view/export should behave when multiple accounts are present:
+  strict account scoping by default, cross-account search as an explicit opt-in,
+  or some other model.
+
+Outcome we want:
+
+- Support multiple accounts without weakening the current "one archive belongs
+  to one account" safety guarantees by accident.
+
 ## Not Current Work
 
 The following items are intentionally future-only for now:
 
+- first-class backup/restore commands beyond copying the XDG-managed archive
+  directories
+- a dedicated TUI surface
+- broad new filter/output-mode expansion across `view` / `search`
+- multi-account archive support
 - generalized ArchiveBox integration
 - VLM/image pipelines
 - clustering/topic modeling

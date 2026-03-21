@@ -2,6 +2,16 @@
 
 ## 2026-03-21
 
+- Expanded `docs/PLAN-FUTURE.md` with the next likely product-surface areas:
+  - backup/portability, with the current practical story called out explicitly
+    as "copy the XDG-managed archive directories to another machine"
+  - richer `view` / `search` filters plus alternate output formats like JSON,
+    Markdown, and CSV
+  - a future TUI as a separate interactive surface rather than more ad hoc Rich
+    table growth
+  - low-priority multi-account support, explicitly separated from the active
+    single-account archive model
+
 - Published `v0.2.2`:
   - pushed `main` and the annotated `v0.2.2` tag to GitHub
   - published only the release artifacts with
