@@ -135,17 +135,21 @@ def test_search_uses_shared_tweet_list_rendering(monkeypatch) -> None:
         def has_embeddings(self) -> bool:
             return False
 
-        def search_fts(self, query: str, limit: int):
+        def search_fts(self, query: str, *, limit: int, types=None, collections=None):
             assert query == "bookmark"
             assert limit == 5
+            assert types == {"post", "article"}
+            assert collections == {"bookmark"}
             return [
                 {
                     "tweet_id": "1",
+                    "type": "post",
+                    "collections": ["bookmark"],
                     "author_username": "user1",
                     "author_id": "1",
                     "created_at": "Sat Mar 14 00:00:00 +0000 2026",
                     "text": "bookmark tweet",
-                    "_relevance_score": 0.75,
+                    "match_score": 0.75,
                 }
             ]
 
@@ -154,15 +158,49 @@ def test_search_uses_shared_tweet_list_rendering(monkeypatch) -> None:
 
     monkeypatch.setattr(cli, "_open_store_for_read", lambda console: (_FakeStore(), object()))
 
-    cli.search_archive("bookmark", limit=5, mode="fts")
+    cli.search_archive(
+        "bookmark",
+        limit=5,
+        mode="fts",
+        type_filter="post,article",
+        collection_filter="bookmarks",
+    )
 
     output = buffer.getvalue()
     assert "search: bookmark" in output
     assert "showing 1 search results" in output
     assert "LOCAL-TIME" in output
-    assert "https://x.com/user1/status/1" in output
+    assert "/status/1" in output
     assert "0.750" in output
+    assert "post · bookmark" in output
     assert "bookmark tweet" in output
+
+
+def test_search_auto_falls_back_to_fts_when_articles_are_in_scope(monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "_with_auto_optimize", lambda store, paths, console, fn: fn(store))
+
+    class _FakeStore:
+        def has_embeddings(self) -> bool:
+            return True
+
+        def search_fts(self, query: str, *, limit: int, types=None, collections=None):
+            assert query == "archive"
+            assert limit == 3
+            assert types is None
+            assert collections is None
+            return []
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "_open_store_for_read", lambda console: (_FakeStore(), object()))
+
+    cli.search_archive("archive", limit=3, mode="auto")
+
+    output = buffer.getvalue()
+    assert "No results found." in output
 
 
 def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path: Path) -> None:

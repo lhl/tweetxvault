@@ -431,6 +431,59 @@ def test_export_rows_sorts_by_created_at_and_puts_unknown_dates_last(paths) -> N
     store.close()
 
 
+def test_search_fts_projects_posts_and_articles_with_aggregated_collections(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    tweet = _complex_tweet("100")
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[tweet],
+        last_head_tweet_id="100",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[tweet],
+        last_head_tweet_id="100",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    post_results = store.search_fts("root", limit=5)
+    article_results = store.search_fts("article", limit=5)
+    article_only_posts = store.search_fts("article", limit=5, types={"post"})
+    bookmark_articles = store.search_fts("article", limit=5, collections={"bookmark"})
+    tweet_articles = store.search_fts("article", limit=5, collections={"tweet"})
+
+    assert [(row["type"], row["tweet_id"], row["collections"]) for row in post_results] == [
+        ("post", "100", ["bookmark", "like"])
+    ]
+    assert post_results[0]["author_username"] == "user1000"
+    assert post_results[0]["text"] == "root longform text"
+
+    assert [(row["type"], row["tweet_id"], row["collections"]) for row in article_results] == [
+        ("article", "100", ["bookmark", "like"])
+    ]
+    assert str(article_results[0]["text"]).startswith("Article title")
+
+    assert article_only_posts == []
+    assert [(row["type"], row["tweet_id"]) for row in bookmark_articles] == [("article", "100")]
+    assert tweet_articles == []
+    store.close()
+
+
 def test_persist_page_extracts_secondary_objects_once_across_collections(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None
@@ -783,10 +836,17 @@ def test_search_vector_uses_cosine_metric(paths, monkeypatch: pytest.MonkeyPatch
         return query
 
     monkeypatch.setattr(store.table, "search", fake_search)
+    monkeypatch.setattr(
+        store,
+        "_collect_search_context",
+        lambda tweet_ids: ({"1": ["bookmark"]}, {"1": {}}),
+    )
 
     results = store.search_vector([0.1, 0.2, 0.3], limit=7)
 
-    assert results == [{"tweet_id": "1"}]
+    assert len(results) == 1
+    assert results[0]["tweet_id"] == "1"
+    assert results[0]["type"] == "post"
     assert captured == {
         "value": [0.1, 0.2, 0.3],
         "vector_column_name": "embedding",
@@ -811,10 +871,18 @@ def test_search_hybrid_uses_cosine_metric(paths, monkeypatch: pytest.MonkeyPatch
         return query
 
     monkeypatch.setattr(store.table, "search", fake_search)
+    monkeypatch.setattr(store, "ensure_fts_index", lambda: None)
+    monkeypatch.setattr(
+        store,
+        "_collect_search_context",
+        lambda tweet_ids: ({"1": ["bookmark"]}, {"1": {}}),
+    )
 
     results = store.search_hybrid("machine learning", [0.1, 0.2, 0.3], limit=9)
 
-    assert results == [{"tweet_id": "1"}]
+    assert len(results) == 1
+    assert results[0]["tweet_id"] == "1"
+    assert results[0]["type"] == "post"
     assert captured == {
         "query_value": None,
         "vector_column_name": "embedding",

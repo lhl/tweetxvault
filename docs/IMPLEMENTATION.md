@@ -524,3 +524,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `tweetxvault search` printed matching tweets plainly, which made it harder to scan FTS and hybrid results when the literal query text was actually present in a longer tweet body.
   - Landed approach: added case-insensitive reverse-video highlighting for the whitespace-split query terms in the rendered search text column, without changing retrieval semantics or scoring.
   - Validation: `uv run pytest tests/test_cli.py -q`, `uv run ruff check tweetxvault/cli.py tests/test_cli.py`, and `uv run ruff format --check tweetxvault/cli.py tests/test_cli.py`.
+- [x] Review item 23: search surfaced result types instead of raw membership rows only.
+  - Current problem: `tweetxvault search` only queried `record_type='tweet'`, so article titles/bodies were invisible and duplicate bookmark/like memberships leaked storage internals into the result list.
+  - Landed approach: added a search-result projection layer that emits `post` and `article` hits, aggregates collections per `tweet_id`, accepts comma-delimited `--type` / `--collection` filters, and renders the combined `type · collections` label above the numeric match score in the shared table.
+  - Validation: `uv run pytest -q tests/test_cli.py tests/test_storage.py`.

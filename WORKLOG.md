@@ -1,5 +1,21 @@
 # WORKLOG
 
+## 2026-03-21
+
+- Expanded archive search from tweet-membership rows into surfaced search items:
+  - `tweetxvault search` now defaults to searching both posts and articles, instead of only `record_type='tweet'`
+  - added comma-delimited `--type` (`post`, `article`) and `--collection` (`bookmark`, `like`, `tweet`) filters
+  - deduped post hits by `tweet_id` and aggregated bookmark/like/tweet memberships into one SERP label so search output no longer leaks raw storage duplication
+  - kept the user-facing CLI flag as `--type` while documenting in code that it maps to internal search-result kinds rather than storage-level `record_type`
+- Updated the shared search/table rendering:
+  - search results now show a stacked `type · collections` label with the numeric score on the next line in the same cell
+  - article hits render article text/title content while still linking back to the owning tweet URL
+- Validation:
+  - `uv run pytest -q tests/test_cli.py tests/test_storage.py`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
+  - `uv run ruff check`
+  - `uv run pytest -q`
+
 ## 2026-03-18
 
 - Prepared release metadata for `v0.2.0`:

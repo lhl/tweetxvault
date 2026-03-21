@@ -97,6 +97,16 @@ DEBUG_AUTH_OPTION = Annotated[
     bool,
     typer.Option("--debug-auth", help=DEBUG_AUTH_HELP),
 ]
+SEARCH_TYPE_HELP = "Comma-delimited search result types: post, article."
+SEARCH_COLLECTION_HELP = "Comma-delimited collections: bookmark, like, tweet."
+# Keep the user-facing flag as --type, but map it onto internal search-result kinds so
+# search code does not collide with storage-level record_type/type terminology.
+SEARCH_TYPE_ALIASES = {
+    "post": "post",
+    "posts": "post",
+    "article": "article",
+    "articles": "article",
+}
 
 
 def _configure_logging() -> Console:
@@ -200,6 +210,53 @@ def _normalize_collection_or_exit(collection: str, console: Console) -> str:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
+
+
+def _parse_search_types(value: str | None, console: Console) -> set[str] | None:
+    if value is None:
+        return None
+    normalized: set[str] = set()
+    invalid: list[str] = []
+    for raw_part in value.split(","):
+        part = raw_part.strip().lower()
+        if not part:
+            continue
+        search_type = SEARCH_TYPE_ALIASES.get(part)
+        if search_type is None:
+            invalid.append(raw_part.strip())
+            continue
+        normalized.add(search_type)
+    if invalid:
+        allowed = ", ".join(sorted(SEARCH_TYPE_ALIASES))
+        console.print(
+            f"[red]Unsupported search type(s): {', '.join(invalid)}. "
+            f"Expected one of: {allowed}.[/red]"
+        )
+        raise typer.Exit(1)
+    return normalized or None
+
+
+def _parse_search_collections(value: str | None, console: Console) -> set[str] | None:
+    if value is None:
+        return None
+    normalized: set[str] = set()
+    invalid: list[str] = []
+    for raw_part in value.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        try:
+            normalized.add(normalize_collection_name(part))
+        except ValueError:
+            invalid.append(part)
+    if invalid:
+        allowed = ", ".join(sorted({"bookmark", "bookmarks", "like", "likes", "tweet", "tweets"}))
+        console.print(
+            f"[red]Unsupported collection(s): {', '.join(invalid)}. "
+            f"Expected one of: {allowed}.[/red]"
+        )
+        raise typer.Exit(1)
+    return normalized or None
 
 
 def _open_store_for_read(console: Console):
@@ -340,6 +397,7 @@ class _TweetListRow:
     author_username: str | None
     author_id: str | None
     text: Text
+    match: str | None = None
     score: str | None = None
 
 
@@ -364,14 +422,14 @@ def _render_tweet_list(
     rows: list[_TweetListRow],
     count_line: str | None = None,
 ) -> None:
-    include_score = any(row.score is not None for row in rows)
+    include_match = any(row.match is not None for row in rows)
     table = Table(
         title=title,
         box=box.HORIZONTALS,
         show_lines=True,
     )
-    if include_score:
-        table.add_column("Score", style="yellow", no_wrap=True)
+    if include_match:
+        table.add_column("Match", style="yellow", no_wrap=True)
     table.add_column("Created", style="cyan", no_wrap=True)
     table.add_column("Author", style="green", no_wrap=True)
     table.add_column("Text", overflow="fold")
@@ -380,8 +438,8 @@ def _render_tweet_list(
     for row in rows:
         username = row.author_username or row.author_id or "unknown"
         values: list[Any] = []
-        if include_score:
-            values.append(row.score or "")
+        if include_match:
+            values.append(row.match or (row.score or ""))
         values.extend(
             [
                 _format_created_at(row.created_at),
@@ -1110,14 +1168,27 @@ def search_archive(
     query: str,
     limit: int = 20,
     mode: str = "auto",
+    type_filter: Annotated[str | None, typer.Option("--type", help=SEARCH_TYPE_HELP)] = None,
+    collection_filter: Annotated[
+        str | None, typer.Option("--collection", help=SEARCH_COLLECTION_HELP)
+    ] = None,
 ) -> None:
-    """Search archived tweets. Modes: auto, fts, vector, hybrid."""
+    """Search archived posts and articles. Modes: auto, fts, vector, hybrid."""
     console = _configure_logging()
     store, paths = _open_store_for_read(console)
     try:
+        search_types = _parse_search_types(type_filter, console)
+        search_collections = _parse_search_collections(collection_filter, console)
         has_vec = store.has_embeddings()
+        include_articles = search_types is None or "article" in search_types
         if mode == "auto":
-            mode = "hybrid" if has_vec else "fts"
+            mode = "hybrid" if has_vec and search_types == {"post"} else "fts"
+        if mode in ("vector", "hybrid") and include_articles:
+            console.print(
+                "[yellow]Semantic search currently supports posts only. "
+                "Falling back to full-text search so articles stay included.[/yellow]"
+            )
+            mode = "fts"
         if mode in ("vector", "hybrid") and not has_vec:
             console.print("[yellow]No embeddings found. Run 'tweetxvault embed' first.[/yellow]")
             console.print("Falling back to full-text search.")
@@ -1125,21 +1196,37 @@ def search_archive(
 
         if mode == "fts":
             results = _with_auto_optimize(
-                store, paths, console, lambda s: s.search_fts(query, limit=limit)
+                store,
+                paths,
+                console,
+                lambda s: s.search_fts(
+                    query,
+                    limit=limit,
+                    types=search_types,
+                    collections=search_collections,
+                ),
             )
         elif mode == "vector":
             from tweetxvault.embed import EmbeddingEngine
 
             engine = EmbeddingEngine()
             vec = engine.embed_batch([query])[0].tolist()
-            results = store.search_vector(vec, limit=limit)
+            results = store.search_vector(vec, limit=limit, collections=search_collections)
         else:
             from tweetxvault.embed import EmbeddingEngine
 
             engine = EmbeddingEngine()
             vec = engine.embed_batch([query])[0].tolist()
             results = _with_auto_optimize(
-                store, paths, console, lambda s: s.search_hybrid(query, vec, limit=limit)
+                store,
+                paths,
+                console,
+                lambda s: s.search_hybrid(
+                    query,
+                    vec,
+                    limit=limit,
+                    collections=search_collections,
+                ),
             )
 
         if not results:
@@ -1148,9 +1235,16 @@ def search_archive(
 
         display_rows: list[_TweetListRow] = []
         for row in results:
-            score = row.get("_relevance_score") or row.get("_distance") or ""
+            score = row.get("match_score")
             if isinstance(score, float):
                 score = f"{score:.3f}"
+            type_label = row.get("type") or "post"
+            collections = row.get("collections") or []
+            match_label = str(type_label)
+            if collections:
+                match_label = f"{match_label} · {','.join(str(item) for item in collections)}"
+            if score not in (None, ""):
+                match_label = f"{match_label}\n{score}"
             display_rows.append(
                 _TweetListRow(
                     tweet_id=row.get("tweet_id"),
@@ -1158,7 +1252,8 @@ def search_archive(
                     author_username=row.get("author_username"),
                     author_id=row.get("author_id"),
                     text=_format_tweet_text(row.get("text"), highlight_query=query),
-                    score=str(score),
+                    match=match_label,
+                    score=str(score) if score not in (None, "") else None,
                 )
             )
         _render_tweet_list(

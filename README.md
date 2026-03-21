@@ -236,8 +236,12 @@ Terminal views render tweet timestamps in your local timezone. Sort order uses t
 ### Searching
 
 ```bash
-# Search tweets (auto-selects hybrid mode if embeddings exist, otherwise FTS)
+# Search posts and articles together
 uv run tweetxvault search "machine learning"
+
+# Limit search to result types and/or collections
+uv run tweetxvault search "machine learning" --type article
+uv run tweetxvault search "machine learning" --type post --collection bookmark,like
 
 # Force a specific search mode
 uv run tweetxvault search "llama" --mode fts
@@ -252,7 +256,11 @@ Search modes:
 - **fts** — keyword matching via full-text search (always available)
 - **vector** — semantic similarity via embeddings (requires `uv sync --extra embed` + `tweetxvault embed`)
 - **hybrid** — combines FTS and vector results with reranking (best quality)
-- **auto** (default) — uses hybrid if embeddings exist, otherwise falls back to FTS
+- **auto** (default) — uses hybrid for post-only searches when embeddings exist; otherwise falls back to FTS so article results stay included
+
+Filters:
+- `--type` — comma-delimited result types: `post`, `article`
+- `--collection` — comma-delimited archive collections: `bookmark`, `like`, `tweet`
 
 ### Embeddings
 

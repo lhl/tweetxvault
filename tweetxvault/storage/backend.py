@@ -196,6 +196,10 @@ EMBEDDING_DIM = 384
 SECONDARY_RECORD_TYPES = ("tweet_object", "tweet_relation", "media", "url", "url_ref", "article")
 LIVE_SOURCE = "live_graphql"
 ARCHIVE_SOURCE = "x_archive"
+SEARCH_KIND_POST = "post"
+SEARCH_KIND_ARTICLE = "article"
+SEARCH_COLLECTION_ORDER = ("bookmark", "like", "tweet")
+SEARCH_TEXT_FIELD = "text"
 
 
 class ArchiveStore:
@@ -2095,49 +2099,360 @@ class ArchiveStore:
         self.table = self.db.create_table(self.TABLE_NAME, new_table, mode="overwrite")
 
     def ensure_fts_index(self) -> None:
-        """Create FTS index on text column if it doesn't exist."""
+        """Create the tweet-text FTS index if it doesn't exist."""
         indices = self.table.list_indices()
         fts_exists = any(
-            getattr(idx, "index_type", None) == "FTS" or getattr(idx, "columns", None) == ["text"]
+            getattr(idx, "index_type", None) == "FTS"
+            or getattr(idx, "columns", None) == [SEARCH_TEXT_FIELD]
             for idx in indices
         )
         if not fts_exists:
-            self.table.create_fts_index("text", replace=True)
+            self.table.create_fts_index(SEARCH_TEXT_FIELD, replace=True)
 
-    def search_fts(self, query: str, *, limit: int = 20) -> list[dict[str, Any]]:
-        """Full-text search over tweet text."""
-        self.ensure_fts_index()
-        return (
-            self.table.search(query, query_type="fts")
-            .where("record_type = 'tweet'")
-            .limit(limit)
-            .to_list()
+    def _search_score(self, row: dict[str, Any]) -> float | None:
+        score = row.get("match_score")
+        if score is None:
+            score = row.get("_relevance_score")
+        if score is None:
+            score = row.get("_distance")
+        if score is None:
+            score = row.get("_score")
+        if score is None:
+            return None
+        try:
+            return float(score)
+        except (TypeError, ValueError):
+            return None
+
+    def _ordered_search_collections(self, collections: set[str]) -> list[str]:
+        return sorted(
+            collections,
+            key=lambda value: (
+                SEARCH_COLLECTION_ORDER.index(value)
+                if value in SEARCH_COLLECTION_ORDER
+                else len(SEARCH_COLLECTION_ORDER),
+                value,
+            ),
         )
 
-    def search_vector(self, vector: list[float], *, limit: int = 20) -> list[dict[str, Any]]:
-        """Vector similarity search over tweet embeddings."""
+    def _search_collection_expr(self, collections: set[str] | None) -> str:
+        return _expr_in("collection_type", collections) if collections else ""
+
+    def _dedupe_search_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen_tweet_ids: set[str] = set()
+        for row in rows:
+            tweet_id = row.get("tweet_id")
+            if not isinstance(tweet_id, str) or not tweet_id or tweet_id in seen_tweet_ids:
+                continue
+            seen_tweet_ids.add(tweet_id)
+            deduped.append(row)
+        return deduped
+
+    def _collect_search_context(
+        self, tweet_ids: list[str]
+    ) -> tuple[dict[str, list[str]], dict[str, dict[str, Any]]]:
+        tweet_rows = self._rows_for_values("tweet", "tweet_id", tweet_ids)
+        tweet_object_rows = self._rows_for_values("tweet_object", "tweet_id", tweet_ids)
+        collections_by_tweet_id: dict[str, set[str]] = {}
+        metadata_by_tweet_id: dict[str, dict[str, Any]] = {}
+
+        def merge_metadata(row: dict[str, Any]) -> None:
+            tweet_id = row.get("tweet_id")
+            if not isinstance(tweet_id, str) or not tweet_id:
+                return
+            metadata = metadata_by_tweet_id.setdefault(tweet_id, {})
+            for metadata_field in (
+                "author_id",
+                "author_username",
+                "author_display_name",
+                "created_at",
+                "text",
+                "note_tweet_text",
+            ):
+                if metadata.get(metadata_field) not in (None, ""):
+                    continue
+                value = row.get(metadata_field)
+                if value not in (None, ""):
+                    metadata[metadata_field] = value
+
+        for row in tweet_object_rows:
+            merge_metadata(row)
+        for row in tweet_rows:
+            tweet_id = row.get("tweet_id")
+            collection_type = row.get("collection_type")
+            if isinstance(tweet_id, str) and tweet_id and isinstance(collection_type, str):
+                collections_by_tweet_id.setdefault(tweet_id, set()).add(collection_type)
+            merge_metadata(row)
+
+        ordered_collections = {
+            tweet_id: self._ordered_search_collections(values)
+            for tweet_id, values in collections_by_tweet_id.items()
+        }
+        return ordered_collections, metadata_by_tweet_id
+
+    def _search_post_rows_fts(
+        self, query: str, *, limit: int, collections: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        where_expr = _and_expr("record_type = 'tweet'", self._search_collection_expr(collections))
+        return self.table.search(query, query_type="fts").where(where_expr).limit(limit).to_list()
+
+    def _search_article_rows_fts(self, query: str, *, limit: int) -> list[dict[str, Any]]:
+        tokens = [token.casefold() for token in query.split() if token]
+        if not tokens:
+            return []
+        rows = self.table.search().where("record_type = 'article'").to_list()
+        matches: list[dict[str, Any]] = []
+        for row in rows:
+            haystack = " ".join(
+                part
+                for part in (
+                    row.get("title"),
+                    row.get("summary_text"),
+                    row.get("content_text"),
+                )
+                if isinstance(part, str) and part
+            )
+            folded = haystack.casefold()
+            if not all(token in folded for token in tokens):
+                continue
+            matched = dict(row)
+            matched["match_score"] = float(sum(folded.count(token) for token in tokens))
+            matches.append(matched)
+        matches.sort(
+            key=lambda row: (
+                row.get("match_score") if row.get("match_score") is not None else float("-inf"),
+                len(row.get("content_text") or row.get("summary_text") or row.get("title") or ""),
+            ),
+            reverse=True,
+        )
+        return matches[:limit]
+
+    def _search_post_rows_vector(
+        self, vector: list[float], *, limit: int, collections: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        where_expr = _and_expr(
+            "record_type = 'tweet' AND embedding IS NOT NULL",
+            self._search_collection_expr(collections),
+        )
         return (
             self.table.search(vector, vector_column_name="embedding", query_type="vector")
             .metric("cosine")
-            .where("record_type = 'tweet' AND embedding IS NOT NULL")
+            .where(where_expr)
             .limit(limit)
             .to_list()
         )
 
-    def search_hybrid(
-        self, query: str, vector: list[float], *, limit: int = 20
+    def _search_post_rows_hybrid(
+        self,
+        query: str,
+        vector: list[float],
+        *,
+        limit: int,
+        collections: set[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Hybrid FTS + vector search with reranking."""
-        self.ensure_fts_index()
+        where_expr = _and_expr("record_type = 'tweet'", self._search_collection_expr(collections))
         return (
             self.table.search(vector_column_name="embedding", query_type="hybrid")
             .vector(vector)
             .text(query)
             .metric("cosine")
-            .where("record_type = 'tweet'")
+            .where(where_expr)
             .limit(limit)
             .to_list()
         )
+
+    def _project_post_search_results(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        tweet_ids = [
+            tweet_id
+            for row in rows
+            if isinstance((tweet_id := row.get("tweet_id")), str) and tweet_id
+        ]
+        collections_by_tweet_id, metadata_by_tweet_id = self._collect_search_context(tweet_ids)
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            tweet_id = row.get("tweet_id")
+            if not isinstance(tweet_id, str) or not tweet_id:
+                continue
+            metadata = metadata_by_tweet_id.get(tweet_id, {})
+            collections = collections_by_tweet_id.get(tweet_id)
+            if not collections:
+                fallback = row.get("collection_type")
+                collections = [fallback] if isinstance(fallback, str) and fallback else []
+            results.append(
+                {
+                    "tweet_id": tweet_id,
+                    "type": SEARCH_KIND_POST,
+                    "collections": collections,
+                    "author_id": row.get("author_id") or metadata.get("author_id"),
+                    "author_username": row.get("author_username")
+                    or metadata.get("author_username"),
+                    "created_at": row.get("created_at") or metadata.get("created_at"),
+                    "text": self._coalesce_value(
+                        row.get("note_tweet_text"),
+                        row.get("text"),
+                        metadata.get("note_tweet_text"),
+                        metadata.get("text"),
+                    ),
+                    "match_score": self._search_score(row),
+                }
+            )
+        return results
+
+    def _compose_article_search_text(
+        self,
+        row: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> str | None:
+        summary_or_body = self._coalesce_value(row.get("summary_text"), row.get("content_text"))
+        title = row.get("title")
+        if title and summary_or_body:
+            return f"{title}\n\n{summary_or_body}"
+        return self._coalesce_value(
+            title,
+            summary_or_body,
+            metadata.get("note_tweet_text"),
+            metadata.get("text"),
+        )
+
+    def _project_article_search_results(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        collections: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        tweet_ids = [
+            tweet_id
+            for row in rows
+            if isinstance((tweet_id := row.get("tweet_id")), str) and tweet_id
+        ]
+        collections_by_tweet_id, metadata_by_tweet_id = self._collect_search_context(tweet_ids)
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            tweet_id = row.get("tweet_id")
+            if not isinstance(tweet_id, str) or not tweet_id:
+                continue
+            result_collections = collections_by_tweet_id.get(tweet_id, [])
+            if collections is not None and not set(result_collections).intersection(collections):
+                continue
+            metadata = metadata_by_tweet_id.get(tweet_id, {})
+            results.append(
+                {
+                    "tweet_id": tweet_id,
+                    "type": SEARCH_KIND_ARTICLE,
+                    "collections": result_collections,
+                    "author_id": metadata.get("author_id"),
+                    "author_username": metadata.get("author_username"),
+                    "created_at": metadata.get("created_at"),
+                    "text": self._compose_article_search_text(row, metadata),
+                    "match_score": self._search_score(row),
+                }
+            )
+        return results
+
+    def search_fts(
+        self,
+        query: str,
+        *,
+        limit: int = 20,
+        types: set[str] | None = None,
+        collections: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Full-text search over exposed search result types."""
+        self.ensure_fts_index()
+        fetch_limit = max(limit, 1)
+        max_fetch_limit = max(limit * 8, 50)
+        results: list[dict[str, Any]] = []
+        while True:
+            post_raw_rows: list[dict[str, Any]] = []
+            article_raw_rows: list[dict[str, Any]] = []
+            post_rows: list[dict[str, Any]] = []
+            article_rows: list[dict[str, Any]] = []
+            if types is None or SEARCH_KIND_POST in types:
+                post_raw_rows = self._search_post_rows_fts(
+                    query,
+                    limit=fetch_limit,
+                    collections=collections,
+                )
+                post_rows = self._dedupe_search_rows(post_raw_rows)
+            if types is None or SEARCH_KIND_ARTICLE in types:
+                article_raw_rows = self._search_article_rows_fts(query, limit=fetch_limit)
+                article_rows = self._dedupe_search_rows(article_raw_rows)
+            results = self._project_post_search_results(post_rows)
+            results.extend(
+                self._project_article_search_results(article_rows, collections=collections)
+            )
+            results.sort(
+                key=lambda row: (
+                    row["match_score"] if row.get("match_score") is not None else float("-inf")
+                ),
+                reverse=True,
+            )
+            exhausted = True
+            if types is None or SEARCH_KIND_POST in types:
+                exhausted = exhausted and len(post_raw_rows) < fetch_limit
+            if types is None or SEARCH_KIND_ARTICLE in types:
+                exhausted = exhausted and len(article_raw_rows) < fetch_limit
+            if len(results) >= limit or fetch_limit >= max_fetch_limit or exhausted:
+                return results[:limit]
+            fetch_limit = min(fetch_limit * 2, max_fetch_limit)
+
+    def search_vector(
+        self,
+        vector: list[float],
+        *,
+        limit: int = 20,
+        collections: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Vector similarity search over post embeddings."""
+        fetch_limit = max(limit, 1)
+        max_fetch_limit = max(limit * 8, 50)
+        results: list[dict[str, Any]] = []
+        while True:
+            raw_rows = self._search_post_rows_vector(
+                vector,
+                limit=fetch_limit,
+                collections=collections,
+            )
+            rows = self._dedupe_search_rows(raw_rows)
+            results = self._project_post_search_results(rows)
+            if (
+                len(results) >= limit
+                or fetch_limit >= max_fetch_limit
+                or len(raw_rows) < fetch_limit
+            ):
+                return results[:limit]
+            fetch_limit = min(fetch_limit * 2, max_fetch_limit)
+
+    def search_hybrid(
+        self,
+        query: str,
+        vector: list[float],
+        *,
+        limit: int = 20,
+        collections: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Hybrid FTS + vector search over posts."""
+        self.ensure_fts_index()
+        fetch_limit = max(limit, 1)
+        max_fetch_limit = max(limit * 8, 50)
+        results: list[dict[str, Any]] = []
+        while True:
+            raw_rows = self._search_post_rows_hybrid(
+                query,
+                vector,
+                limit=fetch_limit,
+                collections=collections,
+            )
+            rows = self._dedupe_search_rows(raw_rows)
+            results = self._project_post_search_results(rows)
+            if (
+                len(results) >= limit
+                or fetch_limit >= max_fetch_limit
+                or len(raw_rows) < fetch_limit
+            ):
+                return results[:limit]
+            fetch_limit = min(fetch_limit * 2, max_fetch_limit)
 
     def has_embeddings(self) -> bool:
         return self.table.count_rows("record_type = 'tweet' AND embedding IS NOT NULL") > 0
