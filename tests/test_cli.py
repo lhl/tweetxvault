@@ -1169,6 +1169,15 @@ def test_stats_archive_renders_summary_tables(paths, monkeypatch) -> None:
                         backfill_incomplete=False,
                     ),
                 ],
+                pending_enrichment_count=2,
+                transient_enrichment_failure_count=1,
+                terminal_enrichment_count=3,
+                done_enrichment_count=4,
+                preview_article_count=5,
+                missing_tweet_object_count=6,
+                expanded_thread_target_count=7,
+                pending_thread_membership_count=8,
+                pending_thread_linked_status_count=9,
             )
 
         def close(self) -> None:
@@ -1191,6 +1200,15 @@ def test_stats_archive_renders_summary_tables(paths, monkeypatch) -> None:
     assert "2.0 KiB" in output
     assert "4.0 KiB" in output
     assert "maybe soon" in output
+    assert "Follow-Up" in output
+    assert "Archive enrich" in output
+    assert "2 pending, 1 retryable failures, 3 terminal, 4 done" in output
+    assert "Rehydrate gaps" in output
+    assert "6 tweets missing normalized tweet_object rows" in output
+    assert "Threads expand" in output
+    assert "7 expanded" in output
+    assert "8 membership targets pending" in output
+    assert "linked-status" in output
     assert store.closed is True
 
 

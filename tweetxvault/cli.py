@@ -1231,6 +1231,36 @@ def stats_archive() -> None:
         storage.add_row("Versions", str(stats.version_count))
         storage.add_row("Optimize", _format_optimize_status(stats.version_count))
         console.print(storage)
+
+        followup = Table(title="Follow-Up", box=box.HORIZONTALS)
+        followup.add_column("Task", style="cyan", no_wrap=True)
+        followup.add_column("Status", overflow="fold")
+        followup.add_row(
+            "Archive enrich",
+            (
+                f"{stats.pending_enrichment_count} pending, "
+                f"{stats.transient_enrichment_failure_count} retryable failures, "
+                f"{stats.terminal_enrichment_count} terminal, "
+                f"{stats.done_enrichment_count} done"
+            ),
+        )
+        followup.add_row(
+            "Articles refresh",
+            f"{stats.preview_article_count} preview-only article rows",
+        )
+        followup.add_row(
+            "Rehydrate gaps",
+            f"{stats.missing_tweet_object_count} tweets missing normalized tweet_object rows",
+        )
+        followup.add_row(
+            "Threads expand",
+            (
+                f"{stats.expanded_thread_target_count} expanded, "
+                f"{stats.pending_thread_membership_count} membership targets pending, "
+                f"{stats.pending_thread_linked_status_count} linked-status targets pending"
+            ),
+        )
+        console.print(followup)
     finally:
         store.close()
 

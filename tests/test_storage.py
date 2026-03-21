@@ -354,6 +354,80 @@ def test_archive_stats_summarizes_collections_and_bounds(paths) -> None:
     store.close()
 
 
+def test_archive_stats_reports_followup_work(paths) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    primary = _complex_tweet("100")
+    linked_raw = make_tweet_result(
+        "400",
+        "linked status source",
+        urls=[
+            make_url_entity(
+                "https://t.co/status",
+                "https://x.com/other/status/999",
+                display_url="x.com/other/status/999",
+            )
+        ],
+    )
+    linked = TimelineTweet(
+        tweet_id="400",
+        text="linked status source",
+        author_id="100",
+        author_username="user100",
+        author_display_name="User 100",
+        created_at="Sat Mar 14 00:00:00 +0000 2026",
+        sort_index="20",
+        raw_json=linked_raw,
+    )
+    extra = _tweet("300")
+
+    store.persist_page(
+        operation="Bookmarks",
+        collection_type="bookmark",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[primary, linked, extra],
+        last_head_tweet_id="300",
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.persist_thread_detail(
+        focal_tweet_id="100",
+        tweets=[primary],
+        raw_json={"ok": True},
+    )
+    store.update_tweet_object_enrichment(
+        "100",
+        enrichment_state="transient_failure",
+        enrichment_checked_at="2026-03-21T00:00:00+00:00",
+        enrichment_http_status=503,
+        enrichment_reason="rate_limit",
+    )
+    store.update_tweet_object_enrichment(
+        "400",
+        enrichment_state="pending",
+        enrichment_checked_at=None,
+        enrichment_http_status=None,
+        enrichment_reason=None,
+    )
+    store.table.delete("row_key = 'tweet_object:300'")
+
+    stats = store.archive_stats()
+
+    assert stats.pending_enrichment_count == 1
+    assert stats.transient_enrichment_failure_count == 1
+    assert stats.terminal_enrichment_count == 0
+    assert stats.done_enrichment_count == 1
+    assert stats.missing_tweet_object_count == 1
+    assert stats.expanded_thread_target_count == 1
+    assert stats.pending_thread_membership_count == 2
+    assert stats.pending_thread_linked_status_count == 1
+    store.close()
+
+
 def test_export_rows_only_returns_tweet_records(paths) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

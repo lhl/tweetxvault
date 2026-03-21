@@ -18,6 +18,7 @@
   - summarizes overall archive totals for unique posts, articles, membership rows, raw captures, media, and URLs
   - breaks collections out into bookmark/like/tweet counts with first/last post timestamps, last sync time, and backfill status
   - reports storage health including DB/media disk usage, LanceDB version count, and a lightweight optimize recommendation
+  - now also surfaces follow-up queues for archive enrichment state, rehydrate gaps (missing normalized tweet objects), and pending thread expansion targets from both membership tweets and linked status URLs
 - Validation:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`

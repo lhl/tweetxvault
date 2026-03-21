@@ -534,5 +534,5 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Validation: `uv run pytest -q tests/test_cli.py tests/test_storage.py`.
 - [x] Review item 25: add an archive stats command.
   - Current problem: there was no single command to inspect archive size/health, collection coverage, sync recency, or the high-level shape of stored content.
-  - Landed approach: added `tweetxvault stats`, backed by a storage summary that reports overall post/article totals, per-collection counts with first/last/sync/backfill metadata, and storage health including DB/media disk usage plus version-count-based optimize guidance.
+  - Landed approach: added `tweetxvault stats`, backed by a storage summary that reports overall post/article totals, per-collection counts with first/last/sync/backfill metadata, storage health including DB/media disk usage plus version-count-based optimize guidance, and follow-up queues for pending archive enrichment, missing normalized tweet objects, and thread expansion work.
   - Validation: `uv run pytest -q tests/test_storage.py::test_archive_stats_summarizes_collections_and_bounds tests/test_cli.py::test_stats_archive_renders_summary_tables`.

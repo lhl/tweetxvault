@@ -28,6 +28,7 @@ from tweetxvault.extractor import (
     extract_canonical_text,
     extract_note_tweet_text,
     extract_secondary_objects,
+    extract_status_id_from_url,
     extract_thread_objects,
 )
 from tweetxvault.utils import utc_now
@@ -130,6 +131,15 @@ class ArchiveStats:
     latest_sync_at: str | None = None
     version_count: int = 0
     collections: list[ArchiveCollectionStats] = field(default_factory=list)
+    pending_enrichment_count: int = 0
+    transient_enrichment_failure_count: int = 0
+    terminal_enrichment_count: int = 0
+    done_enrichment_count: int = 0
+    preview_article_count: int = 0
+    missing_tweet_object_count: int = 0
+    expanded_thread_target_count: int = 0
+    pending_thread_membership_count: int = 0
+    pending_thread_linked_status_count: int = 0
 
 
 ARCHIVE_SCHEMA = pa.schema(
@@ -1990,12 +2000,22 @@ class ArchiveStore:
             )
             .to_list()
         )
+        tweet_object_rows = (
+            self.table.search()
+            .where("record_type = 'tweet_object'")
+            .select(["tweet_id", "enrichment_state"])
+            .to_list()
+        )
+        article_rows = (
+            self.table.search().where("record_type = 'article'").select(["status"]).to_list()
+        )
 
         oldest_created_dt: datetime | None = None
         newest_created_dt: datetime | None = None
         oldest_created_at: str | None = None
         newest_created_at: str | None = None
         unique_post_ids: set[str] = set()
+        tweet_object_ids: set[str] = set()
         collection_stats = {
             collection: ArchiveCollectionStats(collection_type=collection)
             for collection in SEARCH_COLLECTION_ORDER
@@ -2040,6 +2060,31 @@ class ArchiveStore:
                 )
                 collection.post_count += 1
             update_created_bounds(row.get("created_at"), collection=collection)
+
+        pending_enrichment_count = 0
+        transient_enrichment_failure_count = 0
+        terminal_enrichment_count = 0
+        done_enrichment_count = 0
+        for row in tweet_object_rows:
+            tweet_id = row.get("tweet_id")
+            if isinstance(tweet_id, str) and tweet_id:
+                tweet_object_ids.add(tweet_id)
+            enrichment_state = row.get("enrichment_state")
+            if enrichment_state == "pending":
+                pending_enrichment_count += 1
+            elif enrichment_state == "transient_failure":
+                transient_enrichment_failure_count += 1
+            elif enrichment_state == "terminal_unavailable":
+                terminal_enrichment_count += 1
+            elif enrichment_state == "done":
+                done_enrichment_count += 1
+
+        preview_article_count = sum(
+            1
+            for row in article_rows
+            if not isinstance(row.get("status"), str) or row.get("status") != "body_present"
+        )
+        missing_tweet_object_count = len(unique_post_ids - tweet_object_ids)
 
         latest_capture_at = max(
             (
@@ -2087,6 +2132,29 @@ class ArchiveStore:
             for name in sorted(collection_stats)
             if name not in SEARCH_COLLECTION_ORDER
         )
+        expanded_thread_targets = set(self.list_raw_capture_target_ids("ThreadExpandDetail"))
+        pending_thread_membership_count = len(
+            set(self.list_membership_tweet_ids()) - expanded_thread_targets
+        )
+        known_tweet_ids = self.list_known_tweet_ids()
+        pending_linked_status_targets: set[str] = set()
+        for row in self.list_url_ref_rows():
+            target_id = None
+            for field_name in ("canonical_url", "expanded_url", "url"):
+                candidate = row.get(field_name)
+                if isinstance(candidate, str):
+                    target_id = extract_status_id_from_url(candidate)
+                    if target_id:
+                        break
+            source_tweet_id = row.get("tweet_id")
+            if (
+                not target_id
+                or target_id == source_tweet_id
+                or target_id in expanded_thread_targets
+                or target_id in known_tweet_ids
+            ):
+                continue
+            pending_linked_status_targets.add(target_id)
         return ArchiveStats(
             owner_user_id=self.get_archive_owner_id(),
             unique_post_count=len(unique_post_ids),
@@ -2101,6 +2169,15 @@ class ArchiveStore:
             latest_sync_at=latest_sync_at,
             version_count=self.version_count(),
             collections=ordered_collections,
+            pending_enrichment_count=pending_enrichment_count,
+            transient_enrichment_failure_count=transient_enrichment_failure_count,
+            terminal_enrichment_count=terminal_enrichment_count,
+            done_enrichment_count=done_enrichment_count,
+            preview_article_count=preview_article_count,
+            missing_tweet_object_count=missing_tweet_object_count,
+            expanded_thread_target_count=len(expanded_thread_targets),
+            pending_thread_membership_count=pending_thread_membership_count,
+            pending_thread_linked_status_count=len(pending_linked_status_targets),
         )
 
     def list_archive_import_media_paths(self) -> list[str]:
