@@ -27,6 +27,10 @@
   - changed backfill labels from storage-ish wording (`resume saved`, `clear`) to more explicit user-facing states (`resume older`, `none saved`)
   - simplified the storage optimize hint to `ok` vs `run optimize`
   - added a legend directly under the stats tables so end users can distinguish archive TweetDetail follow-up, local rehydrate rebuild gaps, and the two thread-expansion target sources without knowing the internal storage model
+- Fixed stale `resume older` sync-state flags after end-of-history backfill pages:
+  - some X timeline backfill responses can return `page_tweets 0` while still echoing the same bottom cursor back, which left `backfill_incomplete=True` even though the resumed pass had effectively finished
+  - changed the sync-state transition so an empty resumed backfill page clears the saved cursor instead of preserving it
+  - added a regression covering the exact case: duplicate-stopped head pass, resumed backfill, empty page, repeated cursor
 - Validation:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`

@@ -254,6 +254,8 @@ def _store_state_for_page(
     is_head_pass: bool,
 ) -> tuple[str | None, bool]:
     if not is_head_pass:
+        if stop_reason in {"empty", "backfill-complete"}:
+            return None, False
         return next_cursor, bool(next_cursor)
     if prior_backfill_incomplete:
         return prior_backfill_cursor, True

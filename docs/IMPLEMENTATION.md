@@ -180,6 +180,7 @@ Optional but useful early.
 - [x] **Collection-scoped duplicate test**: a tweet that already exists in `tweets` but not yet in the current collection must not stop sync early.
 - [x] **Preflight behavior test**: `auth check` and `sync all` share the same probe path; failed likes preflight must abort `sync all` before bookmark writes.
 - [x] **Incremental-vs-backfill test**: after an interrupted first run with stored `backfill_cursor`, the next sync must still fetch new head items before resuming older pages.
+  - Follow-up cleanup: if a resumed backfill page comes back empty, the sync state now clears the saved backfill cursor even when X echoes the same bottom cursor back, so stale `resume older` status does not stick around indefinitely.
 - [x] **Single-writer lock test**: a second sync process/instance must fail cleanly without mutating DB or cache state.
 - [x] **Atomic checkpoint test**: simulated write failure must not leave `sync_state` advanced past durable tweet/membership writes.
 - [x] **`--full` resume test**: interrupted `--full` sync leaves resumable backfill state and does not require deleting prior data.
