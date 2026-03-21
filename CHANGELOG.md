@@ -6,6 +6,34 @@ were backfilled from git tags and `WORKLOG.md`.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.2.2] - 2026-03-21
+
+### Changed
+
+- TweetDetail-heavy follow-up jobs now pace themselves from X's live
+  `x-rate-limit-*` headers when available instead of relying on a fixed
+  per-request delay.
+- The shared GraphQL client now honors `Retry-After` and `x-rate-limit-reset`
+  on `429` responses before falling back to the existing retry/cooldown path.
+- Removed the manual `--sleep` overrides for archive enrich/import follow-up,
+  thread expansion, and article refresh; the default TweetDetail delay floor is
+  now `0s`.
+
+### Fixed
+
+- Archive enrich no longer burns through the TweetDetail bucket at a fixed
+  `1s/request` pace before failing after a guessed cooldown on accounts where X
+  exposes the actual rate-limit window.
+
+### Validation
+
+- `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
+- `uv run ruff check`
+- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+- `UV_CACHE_DIR=/tmp/uv-cache uv build`
+- `uvx --from twine twine check dist/tweetxvault-0.2.2*`
+- `uv run --isolated --with dist/tweetxvault-0.2.2-py3-none-any.whl tweetxvault --help`
+
 ## [0.2.1] - 2026-03-21
 
 ### Added
@@ -119,6 +147,7 @@ The format is loosely based on Keep a Changelog.
 - Wheel and sdist contents inspected to confirm repo-internal files no longer
   ship in release artifacts.
 
+[0.2.2]: https://github.com/lhl/tweetxvault/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/lhl/tweetxvault/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lhl/tweetxvault/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/lhl/tweetxvault/compare/v0.1.0...v0.1.1
