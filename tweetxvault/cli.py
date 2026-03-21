@@ -435,20 +435,18 @@ def _path_size_bytes(path: Path) -> int:
 
 def _format_backfill_status(backfill_cursor: str | None, backfill_incomplete: bool) -> str:
     if backfill_incomplete and backfill_cursor:
-        return "resume saved"
+        return "resume older"
     if backfill_incomplete:
         return "incomplete"
     if backfill_cursor:
-        return "cursor saved"
-    return "clear"
+        return "saved only"
+    return "none saved"
 
 
 def _format_optimize_status(version_count: int) -> str:
-    if version_count >= 10:
-        return "recommended"
     if version_count >= 4:
-        return "maybe soon"
-    return "not needed"
+        return "run optimize"
+    return "ok"
 
 
 def _parse_created_at(raw: str | None) -> datetime | None:
@@ -1236,7 +1234,7 @@ def stats_archive() -> None:
         followup.add_column("Task", style="cyan", no_wrap=True)
         followup.add_column("Status", overflow="fold")
         followup.add_row(
-            "Archive enrich",
+            "Archive enrich (TweetDetail)",
             (
                 f"{stats.pending_enrichment_count} pending, "
                 f"{stats.transient_enrichment_failure_count} retryable failures, "
@@ -1249,11 +1247,11 @@ def stats_archive() -> None:
             f"{stats.preview_article_count} preview-only article rows",
         )
         followup.add_row(
-            "Rehydrate gaps",
+            "Rehydrate gaps (local rebuild)",
             f"{stats.missing_tweet_object_count} tweets missing normalized tweet_object rows",
         )
         followup.add_row(
-            "Threads expand",
+            "Threads expand (TweetDetail)",
             (
                 f"{stats.expanded_thread_target_count} expanded, "
                 f"{stats.pending_thread_membership_count} membership targets pending, "
@@ -1261,6 +1259,50 @@ def stats_archive() -> None:
             ),
         )
         console.print(followup)
+
+        legend = Table(title="Legend", box=box.HORIZONTALS)
+        legend.add_column("Label", style="cyan", no_wrap=True)
+        legend.add_column("Meaning", overflow="fold")
+        legend.add_row(
+            "Backfill",
+            (
+                "'resume older' means the next sync will do its normal head pass, then "
+                "resume older history from a saved cursor. 'none saved' means no older-"
+                "history cursor is saved. 'saved only' and 'incomplete' are unusual "
+                "transition states."
+            ),
+        )
+        legend.add_row(
+            "Archive enrich",
+            (
+                "Sparse archive-imported tweets still waiting for network TweetDetail "
+                "lookups from X. Retryable failures can succeed later; terminal ones are "
+                "known unavailable."
+            ),
+        )
+        legend.add_row(
+            "Articles refresh",
+            (
+                "Article rows that only have preview metadata. "
+                "'tweetxvault articles refresh' can fetch the full body later."
+            ),
+        )
+        legend.add_row(
+            "Rehydrate gaps",
+            (
+                "Stored raw tweet JSON exists locally, but the normalized tweet_object row "
+                "is missing. 'tweetxvault rehydrate' can rebuild these without a network call."
+            ),
+        )
+        legend.add_row(
+            "Threads expand",
+            (
+                "'membership targets' are archived bookmark/like/tweet post ids that have "
+                "not been expanded through TweetDetail yet. 'linked-status targets' are "
+                "extra post ids discovered inside saved x.com status URLs."
+            ),
+        )
+        console.print(legend)
     finally:
         store.close()
 

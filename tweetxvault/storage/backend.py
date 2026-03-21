@@ -1710,15 +1710,24 @@ class ArchiveStore:
         self._merge_records(list(buffer.records.values()))
 
     def list_membership_tweet_ids(self, *, limit: int | None = None) -> list[str]:
-        rows = self.table.search().where("record_type = 'tweet'").to_list()
+        rows = (
+            self.table.search()
+            .where("record_type = 'tweet'")
+            .select(["tweet_id", "added_at"])
+            .to_list()
+        )
         rows.sort(key=lambda row: (row.get("added_at") or "", row.get("tweet_id") or ""))
         tweet_ids = [row["tweet_id"] for row in rows if row.get("tweet_id")]
         unique = list(dict.fromkeys(tweet_ids))
         return unique[:limit] if limit is not None else unique
 
     def list_known_tweet_ids(self) -> set[str]:
-        tweet_rows = self.table.search().where("record_type = 'tweet'").to_list()
-        tweet_object_rows = self.table.search().where("record_type = 'tweet_object'").to_list()
+        tweet_rows = (
+            self.table.search().where("record_type = 'tweet'").select(["tweet_id"]).to_list()
+        )
+        tweet_object_rows = (
+            self.table.search().where("record_type = 'tweet_object'").select(["tweet_id"]).to_list()
+        )
         tweet_ids = {
             row["tweet_id"]
             for row in tweet_rows + tweet_object_rows
@@ -1737,14 +1746,19 @@ class ArchiveStore:
             f"AND operation = {_expr_quote(operation)} "
             "AND cursor_in IS NOT NULL"
         )
-        rows = self.table.search().where(expr).to_list()
+        rows = self.table.search().where(expr).select(["captured_at", "cursor_in"]).to_list()
         rows.sort(key=lambda row: (row.get("captured_at") or "", row.get("cursor_in") or ""))
         targets = [row["cursor_in"] for row in rows if isinstance(row.get("cursor_in"), str)]
         unique = list(dict.fromkeys(targets))
         return unique[:limit] if limit is not None else unique
 
     def list_url_ref_rows(self) -> list[dict[str, Any]]:
-        rows = self.table.search().where("record_type = 'url_ref'").to_list()
+        rows = (
+            self.table.search()
+            .where("record_type = 'url_ref'")
+            .select(["tweet_id", "position", "canonical_url", "expanded_url", "url"])
+            .to_list()
+        )
         rows.sort(
             key=lambda row: (
                 row.get("tweet_id") or "",
@@ -1984,7 +1998,7 @@ class ArchiveStore:
         capture_rows = (
             self.table.search()
             .where("record_type = 'raw_capture'")
-            .select(["captured_at"])
+            .select(["captured_at", "operation", "cursor_in"])
             .to_list()
         )
         sync_rows = (
@@ -2009,6 +2023,12 @@ class ArchiveStore:
         article_rows = (
             self.table.search().where("record_type = 'article'").select(["status"]).to_list()
         )
+        url_ref_rows = (
+            self.table.search()
+            .where("record_type = 'url_ref'")
+            .select(["tweet_id", "canonical_url", "expanded_url", "url"])
+            .to_list()
+        )
 
         oldest_created_dt: datetime | None = None
         newest_created_dt: datetime | None = None
@@ -2016,6 +2036,7 @@ class ArchiveStore:
         newest_created_at: str | None = None
         unique_post_ids: set[str] = set()
         tweet_object_ids: set[str] = set()
+        expanded_thread_targets: set[str] = set()
         collection_stats = {
             collection: ArchiveCollectionStats(collection_type=collection)
             for collection in SEARCH_COLLECTION_ORDER
@@ -2086,14 +2107,22 @@ class ArchiveStore:
         )
         missing_tweet_object_count = len(unique_post_ids - tweet_object_ids)
 
-        latest_capture_at = max(
-            (
-                captured_at
-                for row in capture_rows
-                if isinstance((captured_at := row.get("captured_at")), str) and captured_at
-            ),
-            default=None,
-        )
+        latest_capture_at: str | None = None
+        for row in capture_rows:
+            captured_at = row.get("captured_at")
+            if (
+                isinstance(captured_at, str)
+                and captured_at
+                and (latest_capture_at is None or captured_at > latest_capture_at)
+            ):
+                latest_capture_at = captured_at
+            if (
+                row.get("operation") == "ThreadExpandDetail"
+                and isinstance(row.get("cursor_in"), str)
+                and row["cursor_in"]
+            ):
+                expanded_thread_targets.add(row["cursor_in"])
+
         latest_sync_at: str | None = None
         for row in sync_rows:
             collection_type = row.get("collection_type")
@@ -2132,13 +2161,10 @@ class ArchiveStore:
             for name in sorted(collection_stats)
             if name not in SEARCH_COLLECTION_ORDER
         )
-        expanded_thread_targets = set(self.list_raw_capture_target_ids("ThreadExpandDetail"))
-        pending_thread_membership_count = len(
-            set(self.list_membership_tweet_ids()) - expanded_thread_targets
-        )
-        known_tweet_ids = self.list_known_tweet_ids()
+        pending_thread_membership_count = len(unique_post_ids - expanded_thread_targets)
+        known_tweet_ids = unique_post_ids | tweet_object_ids
         pending_linked_status_targets: set[str] = set()
-        for row in self.list_url_ref_rows():
+        for row in url_ref_rows:
             target_id = None
             for field_name in ("canonical_url", "expanded_url", "url"):
                 candidate = row.get(field_name)

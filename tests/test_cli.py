@@ -1189,26 +1189,30 @@ def test_stats_archive_renders_summary_tables(paths, monkeypatch) -> None:
     cli.stats_archive()
 
     output = buffer.getvalue()
-    assert "archive:" in output
-    assert "Summary" in output
-    assert "Unique posts" in output
-    assert "Collection memberships" in output
-    assert "Collections" in output
-    assert "bookmark" in output
-    assert "resume saved" in output
-    assert "Storage" in output
-    assert "2.0 KiB" in output
-    assert "4.0 KiB" in output
-    assert "maybe soon" in output
-    assert "Follow-Up" in output
-    assert "Archive enrich" in output
-    assert "2 pending, 1 retryable failures, 3 terminal, 4 done" in output
-    assert "Rehydrate gaps" in output
-    assert "6 tweets missing normalized tweet_object rows" in output
-    assert "Threads expand" in output
-    assert "7 expanded" in output
-    assert "8 membership targets pending" in output
-    assert "linked-status" in output
+    normalized = " ".join(output.split())
+    assert "archive:" in normalized
+    assert "Summary" in normalized
+    assert "Unique posts" in normalized
+    assert "Collection memberships" in normalized
+    assert "Collections" in normalized
+    assert "bookmark" in normalized
+    assert "resume older" in normalized
+    assert "Storage" in normalized
+    assert "2.0 KiB" in normalized
+    assert "4.0 KiB" in normalized
+    assert "run optimize" in normalized
+    assert "Follow-Up" in normalized
+    assert "Archive enrich (TweetDetail)" in normalized
+    assert "2 pending, 1 retryable failures, 3 terminal, 4 done" in normalized
+    assert "Rehydrate gaps (local rebuild)" in normalized
+    assert "6 tweets missing normalized tweet_object rows" in normalized
+    assert "Threads expand (TweetDetail)" in normalized
+    assert "7 expanded, 8 membership targets pending, 9 linked-status targets pending" in normalized
+    assert "Legend" in normalized
+    assert "'resume older' means the next sync" in normalized
+    assert "Sparse archive-imported tweets still waiting" in normalized
+    assert "tweetxvault rehydrate" in normalized
+    assert "saved x.com status URLs" in normalized
     assert store.closed is True
 
 

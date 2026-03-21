@@ -19,6 +19,14 @@
   - breaks collections out into bookmark/like/tweet counts with first/last post timestamps, last sync time, and backfill status
   - reports storage health including DB/media disk usage, LanceDB version count, and a lightweight optimize recommendation
   - now also surfaces follow-up queues for archive enrichment state, rehydrate gaps (missing normalized tweet objects), and pending thread expansion targets from both membership tweets and linked status URLs
+- Optimized `tweetxvault stats` after the first live run proved too slow:
+  - removed follow-up-section rescans over full Lance rows and switched the thread/enrichment summary path to narrow-column scans plus in-memory set reuse inside `ArchiveStore.archive_stats()`
+  - tightened the shared `list_membership_tweet_ids(...)`, `list_known_tweet_ids(...)`, `list_raw_capture_target_ids(...)`, and `list_url_ref_rows()` helpers to select only the columns they actually need, which also reduces `threads expand` startup overhead
+  - measured on the live archive after the optimization: `uv run tweetxvault stats` completed in about `2.96s` on an archive with `116024` unique posts and `116115` membership rows
+- Clarified `tweetxvault stats` output after the first user pass:
+  - changed backfill labels from storage-ish wording (`resume saved`, `clear`) to more explicit user-facing states (`resume older`, `none saved`)
+  - simplified the storage optimize hint to `ok` vs `run optimize`
+  - added a legend directly under the stats tables so end users can distinguish archive TweetDetail follow-up, local rehydrate rebuild gaps, and the two thread-expansion target sources without knowing the internal storage model
 - Validation:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`

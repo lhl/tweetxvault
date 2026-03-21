@@ -367,7 +367,7 @@ uv run tweetxvault rehydrate
 uv run tweetxvault auth refresh-ids
 ```
 
-`tweetxvault stats` reports overall post/article totals, per-collection counts plus first/last tweet timestamps, latest sync/capture times, storage health details such as DB/media size and version count with a lightweight optimize recommendation, and follow-up queues for archive enrichment, rehydrate gaps, and pending thread expansion.
+`tweetxvault stats` reports overall post/article totals, per-collection counts plus first/last tweet timestamps, latest sync/capture times, storage health details such as DB/media size and version count with an actionable optimize hint, and follow-up queues for archive enrichment, rehydrate gaps, and pending thread expansion. The command now ends with a short legend that explains the backfill states plus the difference between archive enrich, local rehydrate gaps, membership thread targets, and linked-status thread targets.
 
 ## Unattended sync via cron
 
