@@ -2,6 +2,15 @@
 
 ## 2026-03-21
 
+- Published `v0.2.1`:
+  - pushed `main` and the annotated `v0.2.1` tag to GitHub
+  - first `uv publish` attempt failed because `dist/` still contained older
+    release artifacts and `uv publish` defaulted to `dist/*`
+  - reran the upload against only the release artifacts:
+    `uv publish dist/tweetxvault-0.2.1-py3-none-any.whl dist/tweetxvault-0.2.1.tar.gz`
+  - verified the published package from PyPI with
+    `uvx --from "tweetxvault==0.2.1" tweetxvault --help`
+
 - Prepared release metadata for `v0.2.1`:
   - bumped package version from `0.2.0` to `0.2.1`
   - added a concise `v0.2.1` feature/fix summary to `CHANGELOG.md` without

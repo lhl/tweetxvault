@@ -62,9 +62,9 @@ Use semver-style version bumps:
 - [ ] Push the release commit and tag:
       `git push origin main`, `git push origin vX.Y.Z`
 - [ ] Publish to PyPI with the configured credentials:
-      `uv publish`
+      `uv publish dist/tweetxvault-X.Y.Z-py3-none-any.whl dist/tweetxvault-X.Y.Z.tar.gz`
 - [ ] If `uv publish` is not configured, use the fallback upload path:
-      `uvx --from twine twine upload dist/*`
+      `uvx --from twine twine upload dist/tweetxvault-X.Y.Z-py3-none-any.whl dist/tweetxvault-X.Y.Z.tar.gz`
 - [ ] Verify the published install path from PyPI:
       `uvx --from "tweetxvault==X.Y.Z" tweetxvault --help`
 - [ ] Verify the GitHub tag/release page and PyPI project page both show the new
@@ -75,6 +75,8 @@ Use semver-style version bumps:
 
 - Do not publish from a dirty tree.
 - Do not reuse an older `dist/` blindly; rebuild artifacts for each release.
+- `uv publish` defaults to `dist/*`; either clear old artifacts first or pass the
+  exact wheel + sdist paths for the version you are cutting.
 - If a historical tag is missing from `CHANGELOG.md`, backfill that entry before
   publishing the next version.
 - Do not add speculative or partial release notes ahead of an actual cut; write
