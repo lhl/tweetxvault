@@ -66,7 +66,7 @@ Use semver-style version bumps:
 - [ ] If `uv publish` is not configured, use the fallback upload path:
       `uvx --from twine twine upload dist/tweetxvault-X.Y.Z-py3-none-any.whl dist/tweetxvault-X.Y.Z.tar.gz`
 - [ ] Verify the published install path from PyPI:
-      `uvx --from "tweetxvault==X.Y.Z" tweetxvault --help`
+      `uvx --refresh --from "tweetxvault==X.Y.Z" tweetxvault --help`
 - [ ] Verify the GitHub tag/release page and PyPI project page both show the new
       version correctly
 - [ ] Confirm the tree is clean again with `git status -sb`
@@ -77,6 +77,9 @@ Use semver-style version bumps:
 - Do not reuse an older `dist/` blindly; rebuild artifacts for each release.
 - `uv publish` defaults to `dist/*`; either clear old artifacts first or pass the
   exact wheel + sdist paths for the version you are cutting.
+- Immediate post-publish install checks may need `uvx --refresh` (or a short
+  retry window) because resolver/index caches can lag behind the successful
+  upload for a minute or two.
 - If a historical tag is missing from `CHANGELOG.md`, backfill that entry before
   publishing the next version.
 - Do not add speculative or partial release notes ahead of an actual cut; write

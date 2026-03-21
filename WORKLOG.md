@@ -2,6 +2,15 @@
 
 ## 2026-03-21
 
+- Published `v0.2.2`:
+  - pushed `main` and the annotated `v0.2.2` tag to GitHub
+  - published only the release artifacts with
+    `uv publish dist/tweetxvault-0.2.2-py3-none-any.whl dist/tweetxvault-0.2.2.tar.gz`
+  - verified live PyPI metadata via `https://pypi.org/pypi/tweetxvault/json`
+    after the first immediate resolver check lagged behind the upload
+  - verified the published install path with
+    `uvx --refresh --from "tweetxvault==0.2.2" tweetxvault --help`
+
 - Prepared release metadata for `v0.2.2`:
   - bumped package version from `0.2.1` to `0.2.2`
   - summarized the TweetDetail rate-limit pacing fix plus `--sleep` removal in
