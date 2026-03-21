@@ -761,16 +761,20 @@ def test_refresh_archived_articles_reports_runner_result(paths, monkeypatch) -> 
         lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="token", ct0="ct0")),
     )
 
+    captured = {}
+
     async def fake_refresh_articles(**kwargs):
         assert kwargs["targets"] == ["https://x.com/example/status/2026531440414925307"]
         assert kwargs["preview_only"] is True
+        captured["detail_delay"] = kwargs["config"].sync.detail_delay
         return SimpleNamespace(processed=1, updated=1, failed=0)
 
     monkeypatch.setattr(cli, "refresh_articles", fake_refresh_articles)
 
-    cli.refresh_archived_articles(["https://x.com/example/status/2026531440414925307"])
+    cli.refresh_archived_articles(["https://x.com/example/status/2026531440414925307"], sleep=0)
 
     output = buffer.getvalue()
+    assert captured == {"detail_delay": 0}
     assert "articles: 1 processed, 1 refreshed, 0 failed" in output
 
 
@@ -814,11 +818,12 @@ def test_expand_archive_threads_forwards_refresh_flag(paths, monkeypatch) -> Non
     async def fake_expand_threads(**kwargs):
         assert kwargs["targets"] == ["100"]
         assert kwargs["refresh"] is True
+        assert kwargs["config"].sync.detail_delay == 0
         return SimpleNamespace(processed=1, expanded=1, skipped=0, failed=0)
 
     monkeypatch.setattr(cli, "expand_threads", fake_expand_threads)
 
-    cli.expand_archive_threads(["100"], refresh=True)
+    cli.expand_archive_threads(["100"], refresh=True, sleep=0)
 
     assert "threads: 1 processed, 1 expanded, 0 skipped, 0 failed" in buffer.getvalue()
 
@@ -878,6 +883,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
                 "detail_lookups": detail_lookups,
                 "limit": limit,
                 "debug": debug,
+                "detail_delay": config.sync.detail_delay if config is not None else None,
                 "auth_bundle": auth_bundle,
             }
         )
@@ -902,7 +908,14 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
     archive_path = tmp_path / "archive.zip"
     archive_path.write_bytes(b"placeholder")
 
-    cli.import_x_archive_command(archive_path, regen=True, detail_lookups=25, limit=100, debug=True)
+    cli.import_x_archive_command(
+        archive_path,
+        regen=True,
+        detail_lookups=25,
+        limit=100,
+        debug=True,
+        sleep=0,
+    )
 
     assert captured == {
         "archive": archive_path,
@@ -911,6 +924,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         "detail_lookups": 25,
         "limit": 100,
         "debug": True,
+        "detail_delay": 0,
         "auth_bundle": None,
     }
     output = buffer.getvalue()
@@ -1016,6 +1030,7 @@ def test_import_enrich_runs_followup_for_existing_imports(paths, monkeypatch) ->
             {
                 "limit": limit,
                 "auth_bundle": auth_bundle,
+                "detail_delay": config.sync.detail_delay if config is not None else None,
             }
         )
         return SimpleNamespace(
@@ -1029,9 +1044,9 @@ def test_import_enrich_runs_followup_for_existing_imports(paths, monkeypatch) ->
 
     monkeypatch.setattr(cli, "enrich_imported_archive", fake_enrich_imported_archive)
 
-    cli.import_archive_enrich(limit=50)
+    cli.import_archive_enrich(limit=50, sleep=0)
 
-    assert captured == {"limit": 50, "auth_bundle": None}
+    assert captured == {"limit": 50, "auth_bundle": None, "detail_delay": 0}
     output = buffer.getvalue()
     assert "archive enrich: existing imported archive data" in output
     assert "live reconciliation: tweets, likes" in output

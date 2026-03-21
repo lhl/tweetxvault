@@ -9,6 +9,7 @@ import pytest
 from tests.conftest import make_article_result, make_tweet_detail_response, make_tweet_result
 from tweetxvault.articles import normalize_article_target, refresh_articles
 from tweetxvault.client.timelines import TimelineTweet
+from tweetxvault.config import AppConfig, AuthConfig, SyncConfig
 from tweetxvault.query_ids import QueryIdStore
 from tweetxvault.storage import open_archive_store
 
@@ -206,3 +207,45 @@ async def test_refresh_articles_respects_limit(paths, config, auth_bundle) -> No
         }
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_respects_detail_sleep(paths, auth_bundle) -> None:
+    _seed_preview_article(paths, "100", "101")
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    sleep_calls: list[float] = []
+    config = AppConfig(
+        auth=AuthConfig(auth_token="token", ct0="ct0", user_id="42"),
+        sync=SyncConfig(detail_delay=1.0),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        variables = request.url.params["variables"]
+        if '"focalTweetId":"100"' in variables:
+            return httpx.Response(
+                200,
+                json=_article_detail_payload("100", plain_text="Body 100"),
+                request=request,
+            )
+        if '"focalTweetId":"101"' in variables:
+            return httpx.Response(
+                200,
+                json=_article_detail_payload("101", plain_text="Body 101"),
+                request=request,
+            )
+        raise AssertionError(f"unexpected request {request.url}")
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+        sleep=fake_sleep,
+    )
+
+    assert result.processed == 2
+    assert result.updated == 2
+    assert sleep_calls == [1.0]

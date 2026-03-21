@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import httpx
@@ -51,6 +53,7 @@ async def refresh_articles(
     auth_bundle: ResolvedAuthBundle | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> ArticleRefreshResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     auth_bundle = auth_bundle or resolve_auth_bundle(config)
@@ -75,8 +78,12 @@ async def refresh_articles(
         )
         client = build_async_client(auth_bundle, timeout=config.sync.timeout, transport=transport)
         try:
+            attempted = 0
             for tweet_id in tweet_ids:
                 result.processed += 1
+                if attempted > 0 and config.sync.detail_delay > 0:
+                    await sleep(config.sync.detail_delay)
+                attempted += 1
 
                 async def refresh_once(tweet_id: str = tweet_id) -> str:
                     refreshed = await refresh_query_ids(

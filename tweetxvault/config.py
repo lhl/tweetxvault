@@ -45,6 +45,7 @@ class SyncConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     page_delay: float = Field(default=2.0, ge=0)
+    detail_delay: float = Field(default=1.0, ge=0)
     max_retries: int = Field(default=3, ge=0)
     backoff_base: float = Field(default=2.0, ge=0)
     detail_max_retries: int = Field(default=2, ge=0)
@@ -166,6 +167,7 @@ def load_config(env: Mapping[str, str] | None = None) -> tuple[AppConfig, XDGPat
     auth_updates = {key: value for key, value in auth_updates.items() if value is not None}
     sync_updates = {
         "page_delay": _env_float(env, "TWEETXVAULT_PAGE_DELAY"),
+        "detail_delay": _env_float(env, "TWEETXVAULT_DETAIL_DELAY"),
         "max_retries": _env_int(env, "TWEETXVAULT_MAX_RETRIES"),
         "backoff_base": _env_float(env, "TWEETXVAULT_BACKOFF_BASE"),
         "detail_max_retries": _env_int(env, "TWEETXVAULT_DETAIL_MAX_RETRIES"),

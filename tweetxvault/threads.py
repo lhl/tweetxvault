@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import httpx
@@ -186,6 +187,7 @@ async def expand_threads(
     auth_status: Callable[[str], None] | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> ThreadExpandResult:
     config, paths = resolve_job_context(config=config, paths=paths)
     console = console or Console(stderr=True)
@@ -244,6 +246,8 @@ async def expand_threads(
                             result=result,
                         )
                         continue
+                    if result.processed > 0 and config.sync.detail_delay > 0:
+                        await sleep(config.sync.detail_delay)
                     await _try_expand_target(
                         tweet_id=tweet_id,
                         store=store,
@@ -286,6 +290,8 @@ async def expand_threads(
                             result=result,
                         )
                         continue
+                    if result.processed > 0 and config.sync.detail_delay > 0:
+                        await sleep(config.sync.detail_delay)
                     await _try_expand_target(
                         tweet_id=tweet_id,
                         store=store,
@@ -355,6 +361,8 @@ async def expand_threads(
                                 result=result,
                             )
                             continue
+                        if result.processed > 0 and config.sync.detail_delay > 0:
+                            await sleep(config.sync.detail_delay)
                         await _try_expand_target(
                             tweet_id=target_id,
                             store=store,

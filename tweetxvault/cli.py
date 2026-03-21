@@ -97,6 +97,17 @@ DEBUG_AUTH_OPTION = Annotated[
     bool,
     typer.Option("--debug-auth", help=DEBUG_AUTH_HELP),
 ]
+DETAIL_SLEEP_OPTION = Annotated[
+    float | None,
+    typer.Option(
+        "--sleep",
+        min=0.0,
+        help=(
+            "Seconds to wait between TweetDetail requests in detail-heavy follow-up jobs. "
+            "Defaults to config value (1.0s). Use 0 to disable pacing."
+        ),
+    ),
+]
 SEARCH_TYPE_HELP = "Comma-delimited search result types: post, article."
 SEARCH_COLLECTION_HELP = "Comma-delimited collections: bookmark, like, tweet."
 SEARCH_SORT_HELP = "Search result sort: relevance, newest, oldest."
@@ -449,6 +460,14 @@ def _format_optimize_status(version_count: int) -> str:
     return "ok"
 
 
+def _apply_detail_sleep_override(config: Any, sleep_seconds: float | None):
+    if sleep_seconds is None:
+        return config
+    return config.model_copy(
+        update={"sync": config.sync.model_copy(update={"detail_delay": sleep_seconds})}
+    )
+
+
 def _parse_created_at(raw: str | None) -> datetime | None:
     if not raw:
         return None
@@ -747,6 +766,7 @@ def refresh_archived_articles(
         Path | None,
         typer.Option("--profile-path", help="Explicit browser profile directory path."),
     ] = None,
+    sleep: DETAIL_SLEEP_OPTION = None,
 ) -> None:
     console = _configure_logging()
     try:
@@ -760,6 +780,7 @@ def refresh_archived_articles(
             profile=profile,
             profile_path=profile_path,
         )
+        config = _apply_detail_sleep_override(config, sleep)
         result = asyncio.run(
             refresh_articles(
                 targets=targets,
@@ -808,6 +829,7 @@ def expand_archive_threads(
             help="Re-fetch explicit thread targets even if they were already expanded.",
         ),
     ] = False,
+    sleep: DETAIL_SLEEP_OPTION = None,
     debug_auth: DEBUG_AUTH_OPTION = False,
 ) -> None:
     console = _configure_logging()
@@ -821,6 +843,7 @@ def expand_archive_threads(
             profile_path=profile_path,
             debug_auth=debug_auth,
         )
+        config = _apply_detail_sleep_override(config, sleep)
         result = asyncio.run(
             expand_threads(
                 targets=targets,
@@ -983,6 +1006,7 @@ def import_x_archive_command(
     browser: SYNC_BROWSER_OPTION = None,
     profile: SYNC_PROFILE_OPTION = None,
     profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    sleep: DETAIL_SLEEP_OPTION = None,
     debug_auth: DEBUG_AUTH_OPTION = False,
 ) -> None:
     console = _configure_logging()
@@ -996,6 +1020,7 @@ def import_x_archive_command(
             profile_path=profile_path,
             debug_auth=debug_auth,
         )
+        config = _apply_detail_sleep_override(config, sleep)
         result = asyncio.run(
             import_x_archive(
                 archive,
@@ -1053,6 +1078,7 @@ def import_archive_enrich(
     browser: SYNC_BROWSER_OPTION = None,
     profile: SYNC_PROFILE_OPTION = None,
     profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    sleep: DETAIL_SLEEP_OPTION = None,
     debug_auth: DEBUG_AUTH_OPTION = False,
 ) -> None:
     console = _configure_logging()
@@ -1066,6 +1092,7 @@ def import_archive_enrich(
             profile_path=profile_path,
             debug_auth=debug_auth,
         )
+        config = _apply_detail_sleep_override(config, sleep)
         result = asyncio.run(
             enrich_imported_archive(
                 limit=limit,

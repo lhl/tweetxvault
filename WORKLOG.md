@@ -39,6 +39,10 @@
   - added separate `sync.detail_max_retries` / `sync.detail_backoff_base` knobs, defaulting to `2` retries at `30s` / `60s` before the existing `300s` cooldown
   - wired those slower retry settings into archive enrich, thread expansion, and article refresh while leaving the timeline sync path on the faster `2s`-based retry schedule
   - added coverage for per-request retry overrides in the HTTP client and for detail-specific retry config in thread expansion tests
+- Added explicit pacing for TweetDetail-heavy follow-up jobs:
+  - added `sync.detail_delay` with a default of `1.0s` between detail requests so long enrich/thread/article runs are less bursty against X's per-tweet detail endpoint
+  - added `--sleep` overrides on `tweetxvault import x-archive`, `tweetxvault import enrich`, `tweetxvault threads expand`, and `tweetxvault articles refresh`, with `--sleep 0` disabling the pacing for one run
+  - added focused coverage for the pacing behavior in article refresh plus CLI forwarding for the new per-run override
 - Validation:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`

@@ -21,6 +21,8 @@ The format is loosely based on Keep a Changelog.
 - `tweetxvault stats` now explains backfill/follow-up labels inline and reports
   optimize state as `ok` or `run optimize`.
 - Archive stats and related preload helpers are much faster on large archives.
+- TweetDetail-heavy jobs now wait `1s` between requests by default, with a
+  `--sleep 0` escape hatch for one-off runs.
 - TweetDetail-heavy jobs now retry 429s more conservatively by default before
   entering the shared cooldown window.
 

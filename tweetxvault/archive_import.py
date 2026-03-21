@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import mimetypes
@@ -1026,6 +1027,8 @@ async def _enrich_pending_rows(
             ) as detail_progress:
                 for index, row in enumerate(rows, start=1):
                     tweet_id = row["tweet_id"]
+                    if index > 1 and config.sync.detail_delay > 0:
+                        await asyncio.sleep(config.sync.detail_delay)
 
                     async def refresh_once(tweet_id: str = tweet_id) -> str:
                         refreshed = await refresh_query_ids(

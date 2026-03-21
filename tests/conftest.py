@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from tweetxvault.auth import ResolvedAuthBundle
-from tweetxvault.config import AppConfig, AuthConfig, XDGPaths, ensure_paths
+from tweetxvault.config import AppConfig, AuthConfig, SyncConfig, XDGPaths, ensure_paths
 
 
 @pytest.fixture
@@ -22,7 +22,10 @@ def paths(tmp_path: Path) -> XDGPaths:
 
 @pytest.fixture
 def config() -> AppConfig:
-    return AppConfig(auth=AuthConfig(auth_token="token", ct0="ct0", user_id="42"))
+    return AppConfig(
+        auth=AuthConfig(auth_token="token", ct0="ct0", user_id="42"),
+        sync=SyncConfig(detail_delay=0.0),
+    )
 
 
 @pytest.fixture
