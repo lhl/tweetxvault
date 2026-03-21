@@ -528,3 +528,7 @@ Follow-up maintenance work after the content-expansion milestone. Land these as 
   - Current problem: `tweetxvault search` only queried `record_type='tweet'`, so article titles/bodies were invisible and duplicate bookmark/like memberships leaked storage internals into the result list.
   - Landed approach: added a search-result projection layer that emits `post` and `article` hits, aggregates collections per `tweet_id`, accepts comma-delimited `--type` / `--collection` filters, and renders the combined `type · collections` label above the numeric match score in the shared table.
   - Validation: `uv run pytest -q tests/test_cli.py tests/test_storage.py`.
+- [x] Review item 24: add chronological sorting to search results.
+  - Current problem: `tweetxvault search` only surfaced relevance ordering, so there was no way to inspect the oldest/newest matches after narrowing by query/type/collection.
+  - Landed approach: added `--sort relevance|newest|oldest`, kept `relevance` as the default, and reorder the fetched relevance/semantic result set by `created_at` before rendering so chronological modes stay cheap while preserving relevance-first candidate selection.
+  - Validation: `uv run pytest -q tests/test_cli.py tests/test_storage.py`.

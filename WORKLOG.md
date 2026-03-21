@@ -10,11 +10,14 @@
 - Updated the shared search/table rendering:
   - search results now show a stacked `type · collections` label with the numeric score on the next line in the same cell
   - article hits render article text/title content while still linking back to the owning tweet URL
+- Added chronological sorting to search:
+  - `tweetxvault search` now accepts `--sort relevance|newest|oldest` and still defaults to relevance
+  - chronological search sorting now reorders the fetched relevance/semantic result set by `created_at` before rendering, keeping `--sort newest|oldest` fast while preserving relevance-first candidate selection
+  - semantic modes no longer need a forced FTS fallback just to support chronological display ordering
 - Validation:
-  - `uv run pytest -q tests/test_cli.py tests/test_storage.py`
   - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
   - `uv run ruff check`
-  - `uv run pytest -q`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q` (outside the sandbox because LanceDB store creation stalled under sandboxing)
 
 ## 2026-03-18
 

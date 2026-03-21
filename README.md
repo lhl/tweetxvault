@@ -243,6 +243,10 @@ uv run tweetxvault search "machine learning"
 uv run tweetxvault search "machine learning" --type article
 uv run tweetxvault search "machine learning" --type post --collection bookmark,like
 
+# Sort search results chronologically instead of by relevance
+uv run tweetxvault search "machine learning" --sort newest
+uv run tweetxvault search "machine learning" --sort oldest
+
 # Force a specific search mode
 uv run tweetxvault search "llama" --mode fts
 uv run tweetxvault search "llama" --mode vector
@@ -258,9 +262,12 @@ Search modes:
 - **hybrid** — combines FTS and vector results with reranking (best quality)
 - **auto** (default) — uses hybrid for post-only searches when embeddings exist; otherwise falls back to FTS so article results stay included
 
+Chronological search sorting reorders the returned match set by `created_at` after retrieval, so it preserves the selected search mode and still defaults to relevance-first candidate selection.
+
 Filters:
 - `--type` — comma-delimited result types: `post`, `article`
 - `--collection` — comma-delimited archive collections: `bookmark`, `like`, `tweet`
+- `--sort` — `relevance` (default), `newest`, or `oldest`
 
 ### Embeddings
 

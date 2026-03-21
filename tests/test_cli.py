@@ -203,6 +203,75 @@ def test_search_auto_falls_back_to_fts_when_articles_are_in_scope(monkeypatch) -
     assert "No results found." in output
 
 
+def test_sort_search_results_reorders_newest_then_oldest() -> None:
+    rows = [
+        {
+            "tweet_id": "1",
+            "created_at": "Tue Oct 09 21:39:26 +0000 2012",
+            "match_score": 0.95,
+        },
+        {
+            "tweet_id": "2",
+            "created_at": "Thu Apr 11 03:55:13 +0000 2024",
+            "match_score": 0.90,
+        },
+        {
+            "tweet_id": "3",
+            "created_at": None,
+            "match_score": 1.0,
+        },
+    ]
+
+    newest = cli._sort_search_results(rows, sort="newest")
+    oldest = cli._sort_search_results(rows, sort="oldest")
+
+    assert [row["tweet_id"] for row in newest] == ["2", "1", "3"]
+    assert [row["tweet_id"] for row in oldest] == ["1", "2", "3"]
+
+
+def test_search_chronological_sort_keeps_vector_mode(monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+
+    class _FakeStore:
+        def has_embeddings(self) -> bool:
+            return True
+
+        def search_vector(self, vector, *, limit: int, collections=None):
+            assert limit == 2
+            assert collections is None
+            return []
+
+        def search_fts(self, query: str, *, limit: int, types=None, collections=None):
+            raise AssertionError("search_fts should not be called for vector newest sort")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "_open_store_for_read", lambda console: (_FakeStore(), object()))
+
+    class _FakeVector(list):
+        def tolist(self):
+            return list(self)
+
+    class _FakeEmbeddingEngine:
+        def embed_batch(self, texts):
+            assert texts == ["bookmark"]
+            return [_FakeVector([0.1, 0.2])]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "tweetxvault.embed",
+        SimpleNamespace(EmbeddingEngine=_FakeEmbeddingEngine),
+    )
+
+    cli.search_archive("bookmark", limit=2, mode="vector", sort="newest", type_filter="post")
+
+    output = buffer.getvalue()
+    assert "Falling back to full-text search" not in output
+    assert "No results found." in output
+
+
 def test_export_json_accepts_plural_collection_name(paths, monkeypatch, tmp_path: Path) -> None:
     _seed_archive(paths)
     buffer = StringIO()

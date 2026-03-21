@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import typer
 from loguru import logger
@@ -99,6 +99,7 @@ DEBUG_AUTH_OPTION = Annotated[
 ]
 SEARCH_TYPE_HELP = "Comma-delimited search result types: post, article."
 SEARCH_COLLECTION_HELP = "Comma-delimited collections: bookmark, like, tweet."
+SEARCH_SORT_HELP = "Search result sort: relevance, newest, oldest."
 # Keep the user-facing flag as --type, but map it onto internal search-result kinds so
 # search code does not collide with storage-level record_type/type terminology.
 SEARCH_TYPE_ALIASES = {
@@ -107,6 +108,10 @@ SEARCH_TYPE_ALIASES = {
     "article": "article",
     "articles": "article",
 }
+SEARCH_SORT_OPTION = Annotated[
+    Literal["relevance", "newest", "oldest"],
+    typer.Option("--sort", help=SEARCH_SORT_HELP),
+]
 
 
 def _configure_logging() -> Console:
@@ -388,6 +393,41 @@ def _format_created_at(raw: str | None) -> str:
         return f"{date_part}\n{time_part}"
     except (ValueError, TypeError):
         return raw
+
+
+def _parse_created_at(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
+    except (ValueError, TypeError):
+        return None
+
+
+def _search_result_score(row: dict[str, Any]) -> float:
+    score = row.get("match_score")
+    try:
+        return float(score)
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def _sort_search_results(rows: list[dict[str, Any]], *, sort: str) -> list[dict[str, Any]]:
+    if sort == "relevance":
+        return rows
+
+    def sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        created_at = _parse_created_at(row.get("created_at"))
+        score_key = -_search_result_score(row)
+        tweet_id = str(row.get("tweet_id") or "")
+        if created_at is None:
+            return (1, 0.0, score_key, tweet_id)
+        timestamp = created_at.timestamp()
+        if sort == "oldest":
+            return (0, timestamp, score_key, tweet_id)
+        return (0, -timestamp, score_key, tweet_id)
+
+    return sorted(rows, key=sort_key)
 
 
 @dataclass(slots=True)
@@ -1168,6 +1208,7 @@ def search_archive(
     query: str,
     limit: int = 20,
     mode: str = "auto",
+    sort: SEARCH_SORT_OPTION = "relevance",
     type_filter: Annotated[str | None, typer.Option("--type", help=SEARCH_TYPE_HELP)] = None,
     collection_filter: Annotated[
         str | None, typer.Option("--collection", help=SEARCH_COLLECTION_HELP)
@@ -1229,6 +1270,7 @@ def search_archive(
                 ),
             )
 
+        results = _sort_search_results(results, sort=sort)
         if not results:
             console.print("[yellow]No results found.[/yellow]")
             return

@@ -2124,6 +2124,9 @@ class ArchiveStore:
         except (TypeError, ValueError):
             return None
 
+    def _query_tokens(self, query: str) -> list[str]:
+        return [token.casefold() for token in query.split() if token]
+
     def _ordered_search_collections(self, collections: set[str]) -> list[str]:
         return sorted(
             collections,
@@ -2198,7 +2201,7 @@ class ArchiveStore:
         return self.table.search(query, query_type="fts").where(where_expr).limit(limit).to_list()
 
     def _search_article_rows_fts(self, query: str, *, limit: int) -> list[dict[str, Any]]:
-        tokens = [token.casefold() for token in query.split() if token]
+        tokens = self._query_tokens(query)
         if not tokens:
             return []
         rows = self.table.search().where("record_type = 'article'").to_list()
