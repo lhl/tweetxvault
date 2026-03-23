@@ -6,6 +6,36 @@ were backfilled from git tags and `WORKLOG.md`.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.2.3] - 2026-03-23
+
+### Added
+
+- Shipped Grailbird archive conversion via `tweetxvault import grailbird`, so
+  pre-2018 CSV-based Twitter exports can be converted from an installed package
+  instead of requiring a repo checkout.
+
+### Changed
+
+- Release artifacts now include the packaged Grailbird converter module plus the
+  Grailbird conversion guide in the source distribution.
+- Grailbird validation now runs through the normal `pytest` suite instead of a
+  standalone repo-root unittest.
+
+### Fixed
+
+- Grailbird archives without `data/js/user_details.js` no longer persist a fake
+  archive owner id of `"unknown"`, so later authenticated sync/import follow-up
+  can still establish the real archive owner metadata.
+
+### Validation
+
+- `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
+- `uv run ruff check`
+- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+- `UV_CACHE_DIR=/tmp/uv-cache uv build`
+- `uvx --from twine twine check dist/tweetxvault-0.2.3*`
+- `uv run --isolated --with dist/tweetxvault-0.2.3-py3-none-any.whl tweetxvault --help`
+
 ## [0.2.2] - 2026-03-21
 
 ### Changed
@@ -147,6 +177,7 @@ The format is loosely based on Keep a Changelog.
 - Wheel and sdist contents inspected to confirm repo-internal files no longer
   ship in release artifacts.
 
+[0.2.3]: https://github.com/lhl/tweetxvault/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/lhl/tweetxvault/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/lhl/tweetxvault/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lhl/tweetxvault/compare/v0.1.1...v0.2.0
