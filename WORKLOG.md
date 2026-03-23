@@ -2,6 +2,11 @@
 
 ## 2026-03-23
 
+- Added a deferred `docs/PLAN-FUTURE.md` note for deleted-tweet handling edge cases:
+  - thread-expansion tombstones currently disappear silently
+  - archive-deleted/live-restored tweets may need an enrichment-state consistency check if that workflow is revisited
+  - deletion reasons are still coarse (`deleted` vs `not_found`) and could be revisited if richer tombstone metadata appears later
+
 - Restored the docs index entry for `docs/GRAILBIRD.md` in `docs/README.md` so the documentation index matches the shipped guide set after the Grailbird feature landed.
 
 - Finished Grailbird archive integration as a shipped feature instead of a checkout-only helper:

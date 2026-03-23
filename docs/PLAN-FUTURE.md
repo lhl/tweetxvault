@@ -154,6 +154,29 @@ Outcome we want:
 - Move beyond single-tweet retrieval into "show me the neighborhood around this
   idea/person/link/topic."
 
+### Deleted Tweet Handling Improvements
+
+Current state is solid — archived deleted tweets are preserved with `deleted_at`
+and marked `terminal_unavailable` so they're never lost or wastefully re-fetched.
+A few edge cases to revisit when the related workflows mature:
+
+- **Thread expansion tombstone visibility** — `unwrap_tweet_result()` silently
+  filters `TweetTombstone` / `TweetUnavailable` results. Deleted tweets in a
+  conversation are never added to the DB and there's no log or counter. Consider
+  adding a metric or log line so users know when threads are sparse due to
+  deletions, and optionally storing a placeholder row so parent-reply chains
+  aren't silently broken.
+- **Archive→live enrichment state collision** — If an archive-imported tweet is
+  marked `deleted_at` + `terminal_unavailable` but a later live TweetDetail
+  response returns data for that tweet (restored after deletion), the live
+  refresh clears `deleted_at` but `enrichment_state` may not be updated
+  consistently. Very rare, but worth a defensive check if enrichment logic is
+  reworked.
+- **Deletion type granularity** — HTTP 410 gets reason `"not_found"` while
+  archive-sourced deletions get `"deleted"`. The API doesn't distinguish
+  "deleted by author" from "removed by moderation", but if Twitter ever exposes
+  richer tombstone metadata, the enrichment_reason field could capture it.
+
 ## Lower-Priority Structural Work
 
 ### Multi-Account Support
