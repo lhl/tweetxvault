@@ -2,6 +2,8 @@
 
 ## 2026-03-23
 
+- Restored the docs index entry for `docs/GRAILBIRD.md` in `docs/README.md` so the documentation index matches the shipped guide set after the Grailbird feature landed.
+
 - Finished Grailbird archive integration as a shipped feature instead of a checkout-only helper:
   - moved the converter into `tweetxvault/grailbird.py`
   - added `tweetxvault import grailbird <input_dir> <output_dir> [--force]`

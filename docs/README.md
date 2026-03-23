@@ -21,6 +21,10 @@
 - `ANALYSIS-db.py` — Reproducible Task 0 benchmark harness for SQLite, SeekDB, and LanceDB startup/footprint probes
 - `ANALYSIS-agents.md` — Survey of AGENTS.md patterns across repos; informs this project's conventions
 
+## Guides
+
+- `GRAILBIRD.md` — Converting old "Grailbird" (pre-2018) Twitter archives to modern format for import
+
 ## Work Tracking
 
 - `IMPLEMENTATION.md` — Active checklist (created when implementation begins)
