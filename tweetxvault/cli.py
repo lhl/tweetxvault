@@ -36,6 +36,7 @@ from tweetxvault.export.common import (
     display_collection_name,
     normalize_collection_name,
 )
+from tweetxvault.grailbird import convert_archive as convert_grailbird_archive
 from tweetxvault.media import download_media
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import open_archive_store
@@ -920,6 +921,51 @@ def export_html(
     finally:
         store.close()
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
+
+
+@import_app.command("grailbird")
+def import_grailbird_command(
+    input_dir: Annotated[Path, typer.Argument(help="Path to the old Grailbird archive directory.")],
+    output_dir: Annotated[
+        Path, typer.Argument(help="Path to the converted modern archive directory.")
+    ],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite the output directory if it already exists.",
+        ),
+    ] = False,
+) -> None:
+    console = _configure_logging()
+    try:
+        result = convert_grailbird_archive(input_dir, output_dir, force=force)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    except TweetXVaultError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    if result.screen_name:
+        console.print(
+            f"grailbird convert: {result.tweet_count} tweets for "
+            f"@{result.screen_name} -> {result.output_path}",
+            highlight=False,
+        )
+    else:
+        console.print(
+            f"grailbird convert: {result.tweet_count} tweets -> {result.output_path}",
+            highlight=False,
+        )
+        console.print(
+            "account metadata unavailable; the first authenticated sync/import follow-up can "
+            "establish the archive owner later",
+            highlight=False,
+        )
+    for warning in result.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
+    console.print(f'tweetxvault import x-archive "{result.output_path}"', highlight=False)
 
 
 @import_app.command("x-archive")

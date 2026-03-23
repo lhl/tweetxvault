@@ -1,5 +1,28 @@
 # WORKLOG
 
+## 2026-03-23
+
+- Finished Grailbird archive integration as a shipped feature instead of a checkout-only helper:
+  - moved the converter into `tweetxvault/grailbird.py`
+  - added `tweetxvault import grailbird <input_dir> <output_dir> [--force]`
+  - kept `convert_grailbird.py` as a thin compatibility wrapper for checkout users
+  - updated `README.md`, `docs/GRAILBIRD.md`, `docs/PLAN.md`, and `docs/IMPLEMENTATION.md` to reflect the shipped CLI surface and current semantics
+
+- Fixed the Grailbird owner-metadata mismatch path:
+  - Grailbird conversions now mark synthetic archives with `archiveInfo.sourceFormat = "grailbird"`
+  - when `data/js/user_details.js` is missing or unparseable, the converter leaves account id/username unset instead of writing `"unknown"`
+  - the importer now accepts that sparse Grailbird identity without persisting a fake archive owner id, so a later authenticated sync can still establish the real owner metadata
+
+- Moved Grailbird validation into the normal pytest tree:
+  - replaced the repo-root `test_convert_grailbird.py` unittest with `tests/test_grailbird.py`
+  - added Grailbird conversion/import round-trip coverage plus a CLI summary test in `tests/test_cli.py`
+  - validation passed with:
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check tweetxvault/grailbird.py tweetxvault/archive_import.py tweetxvault/cli.py tests/test_grailbird.py tests/test_cli.py`
+    - `uv run ruff format --check tweetxvault/grailbird.py tweetxvault/archive_import.py tweetxvault/cli.py tests/test_grailbird.py tests/test_cli.py convert_grailbird.py`
+    - `uv run pytest tests/test_grailbird.py tests/test_archive_import.py tests/test_cli.py -q`
+    - `uv run pytest -q`
+  - the earlier aggregate-suite stall was a restricted-sandbox artifact; rerunning with full-access sandbox permissions completed normally
+
 ## 2026-03-21
 
 - Expanded `docs/PLAN-FUTURE.md` with the next likely product-surface areas:

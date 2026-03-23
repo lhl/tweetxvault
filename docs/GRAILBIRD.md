@@ -33,21 +33,23 @@ twitter-archive/
 
 ## Converting Grailbird Archives
 
-Use the `convert_grailbird.py` script to convert old archives to the modern format:
+Use the shipped `tweetxvault import grailbird` command to convert old archives to the modern format:
 
 ```bash
-python convert_grailbird.py <input_dir> <output_dir>
+tweetxvault import grailbird <input_dir> <output_dir>
 ```
 
 ### Example
 
 ```bash
 # Convert the archive
-python convert_grailbird.py TwitterArchive-2015 TwitterArchive-2015-converted
+tweetxvault import grailbird TwitterArchive-2015 TwitterArchive-2015-converted
 
 # Import into tweetxvault
 tweetxvault import x-archive TwitterArchive-2015-converted
 ```
+
+If you are running from a git checkout instead of an installed package, `python convert_grailbird.py ...` remains available as a thin wrapper around the same packaged converter.
 
 ## What Gets Converted
 
@@ -66,7 +68,7 @@ The converter reads `tweets.csv` and `data/js/user_details.js` (if present) to c
 - **Media files**: Not converted (Grailbird archives do not include media in the CSV)
 - **User mentions**: Basic entity structure created but @mentions not parsed from tweet text
 - **Hashtags**: Basic entity structure created but #hashtags not parsed from tweet text
-- **No user_details.js**: If the archive lacks user_details.js, account metadata defaults to "unknown"
+- **No user_details.js**: The converted archive still imports, but owner metadata stays unset so a later authenticated sync can establish the real archive owner; converted tweets remain sparse until that later enrichment fills author details
 
 ## Why This Matters
 
@@ -81,14 +83,15 @@ The converter:
 4. Preserves URLs correctly even when they contain commas (using regex lookahead split)
 5. Generates required files: `manifest.js`, `tweets.js`, `account.js`
 6. Creates proper `window.__THAR_CONFIG` and `window.YTD.tweets.part0` structure
+7. Marks converted archives as Grailbird-derived in `manifest.js` so the importer can safely allow missing owner metadata when `user_details.js` was unavailable
 
 The resulting archive can be imported using tweetxvault's standard `import x-archive` command.
 
 ### Testing
 
-Run the included unit tests:
+Run the Grailbird tests through the normal pytest suite:
 ```bash
-python3 -m unittest test_convert_grailbird.py
+uv run pytest tests/test_grailbird.py tests/test_archive_import.py -q
 ```
 
-Tests cover various `user_details.js` formatting variants and URL patterns.
+Tests cover `user_details.js` parsing variants, Grailbird conversion, and a Grailbird-to-`import x-archive` round trip.

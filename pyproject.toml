@@ -68,6 +68,8 @@ include = [
   "/README.md",
   "/LICENSE",
   "/pyproject.toml",
+  "/convert_grailbird.py",
+  "/docs/GRAILBIRD.md",
 ]
 exclude = [
   "/.gitignore",

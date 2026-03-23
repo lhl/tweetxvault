@@ -54,8 +54,8 @@ _T = TypeVar("_T")
 
 @dataclass(slots=True)
 class _ArchiveIdentity:
-    account_id: str
-    username: str
+    account_id: str | None
+    username: str | None
     display_name: str
 
 
@@ -368,19 +368,25 @@ def _archive_identity(manifest: dict[str, Any], account_items: list[Any]) -> _Ar
     account_entry = account_items[0] if account_items and isinstance(account_items[0], dict) else {}
     account_block = account_entry.get("account") or {}
     user_info = manifest.get("userInfo") or {}
-    account_id = str(user_info.get("accountId") or account_block.get("accountId") or "")
-    if not account_id:
-        raise ConfigError("Archive account.js/manifest.js does not include an account id.")
+    archive_info = manifest.get("archiveInfo") or {}
+    source_format = str(archive_info.get("sourceFormat") or "").strip().lower()
+    account_id = str(user_info.get("accountId") or account_block.get("accountId") or "").strip()
+    if account_id.lower() == "unknown":
+        account_id = ""
     username = str(user_info.get("userName") or account_block.get("username") or "").strip()
-    if not username:
+    if source_format == "grailbird" and username.lower() == "unknown":
+        username = ""
+    if not account_id and source_format != "grailbird":
+        raise ConfigError("Archive account.js/manifest.js does not include an account id.")
+    if not username and source_format != "grailbird":
         raise ConfigError("Archive account.js/manifest.js does not include a username.")
     display_name = str(
         user_info.get("displayName") or account_block.get("accountDisplayName") or username
     ).strip()
     return _ArchiveIdentity(
-        account_id=account_id,
-        username=username,
-        display_name=display_name or username,
+        account_id=account_id or None,
+        username=username or None,
+        display_name=display_name or username or "Unknown User",
     )
 
 
@@ -414,22 +420,21 @@ def _adapt_archive_tweet_payload(
         for position, item in enumerate(media_items):
             if isinstance(item, dict) and not item.get("media_key"):
                 item["media_key"] = _media_key_for_archive_item(item, position=position)
+    user_result: dict[str, Any] = {"__typename": "User"}
+    if identity.account_id:
+        user_result["rest_id"] = identity.account_id
+    user_legacy: dict[str, Any] = {}
+    if identity.username:
+        user_legacy["screen_name"] = identity.username
+    if identity.display_name:
+        user_legacy["name"] = identity.display_name
+    if user_legacy:
+        user_result["legacy"] = user_legacy
     return {
         "__typename": "Tweet",
         "rest_id": tweet_id,
         "legacy": legacy,
-        "core": {
-            "user_results": {
-                "result": {
-                    "__typename": "User",
-                    "rest_id": identity.account_id,
-                    "legacy": {
-                        "screen_name": identity.username,
-                        "name": identity.display_name,
-                    },
-                }
-            }
-        },
+        "core": {"user_results": {"result": user_result}},
     }
 
 

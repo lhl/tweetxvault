@@ -432,6 +432,10 @@ Fresh fixture status (2026-03-16):
   - narrow archive media copy lookups so `_copy_exported_media(...)` only scans rows relevant to the imported archive's tweet ids / provenance instead of materializing the full `media` table
   - revisit `clear_archive_import_data()` / `--regen` manifest semantics so archive-only cleanup can preserve multi-digest manifest history when desired
   - evaluate whether `ArchiveStore.prefetch_rows(...)` should gain a lighter-weight projection mode if another real-world ingest perf pass is needed
+- [x] Grailbird integration cleanup:
+  - landed approach: moved the converter into packaged code as `tweetxvault.grailbird`, added the shipped `tweetxvault import grailbird` CLI surface, and kept `convert_grailbird.py` as a checkout-friendly wrapper around the same implementation
+  - owner-metadata fix: Grailbird conversions without `user_details.js` now mark the synthetic archive as `sourceFormat = "grailbird"` and leave account id/username unset, while the importer accepts that sparse identity without persisting a fake `"unknown"` owner id
+  - coverage: moved Grailbird tests under `tests/`, added round-trip conversion/import coverage, and added CLI output coverage so Grailbird validation is part of normal pytest discovery
 
 ## Review Cleanup
 

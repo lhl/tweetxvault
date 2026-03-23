@@ -249,6 +249,20 @@ Import follow-up options:
 - `--debug` adds per-phase timing diagnostics on top of that interactive progress output.
 - `--limit N` requires `--debug` and is a sampled diagnostic import: tweetxvault still hashes and parses the full archive files, but only imports the first `N` authored tweets, deleted tweets, likes, and media files after load. Sampled runs are stored as `sampled`, not `completed`, and skip the automatic live follow-up unless you explicitly ask for `--enrich` / `--detail-lookups`.
 
+### Importing old "Grailbird" archives (pre-2018)
+
+Twitter archives exported before ~2018 use an older format called "Grailbird" (CSV-based, with `tweets.csv` in the root and monthly JS files under `data/js/tweets/`). These cannot be imported directly — convert them first with the shipped `tweetxvault import grailbird` command:
+
+```bash
+# Convert the old archive to modern format
+tweetxvault import grailbird ~/TwitterArchive-2015 ~/TwitterArchive-2015-converted
+
+# Then import normally
+tweetxvault import x-archive ~/TwitterArchive-2015-converted
+```
+
+The converter reads `tweets.csv` and `data/js/user_details.js` (if present) and produces a modern archive directory with `data/tweets.js`, `data/account.js`, and `data/manifest.js`. If `user_details.js` is missing, tweetxvault still imports the converted archive, but it leaves the local archive owner unset so the first later authenticated sync can establish the real owner metadata instead of locking the archive to a fake placeholder id. For checkout-based use, the repo also keeps a compatibility wrapper at `python convert_grailbird.py ...`. See [`docs/GRAILBIRD.md`](docs/GRAILBIRD.md) for details on what gets converted and known limitations.
+
 ### Viewing your archive
 
 ```bash

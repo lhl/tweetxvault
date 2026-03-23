@@ -112,6 +112,30 @@ def test_view_tweets_prints_rows(paths, monkeypatch) -> None:
     assert "bookmark tweet" not in output
 
 
+def test_import_grailbird_command_prints_summary(monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+
+    monkeypatch.setattr(
+        cli,
+        "convert_grailbird_archive",
+        lambda input_dir, output_dir, force=False: SimpleNamespace(
+            tweet_count=12,
+            screen_name=None,
+            output_path=Path("/tmp/converted"),
+            warnings=["missing user_details.js"],
+        ),
+    )
+
+    cli.import_grailbird_command(Path("/tmp/input"), Path("/tmp/converted"))
+
+    output = buffer.getvalue()
+    assert "grailbird convert: 12 tweets -> /tmp/converted" in output
+    assert "account metadata unavailable" in output
+    assert "missing user_details.js" in output
+    assert 'tweetxvault import x-archive "/tmp/converted"' in output
+
+
 def test_highlight_search_matches_marks_query_terms() -> None:
     rendered = cli._highlight_search_matches(
         "Machine learning beats keyword search for search-heavy tasks.",
