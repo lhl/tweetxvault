@@ -1,5 +1,24 @@
 # WORKLOG
 
+## 2026-03-26
+
+- Reduced LanceDB version churn for long-running archive detail enrichment:
+  - root cause: `tweetxvault import enrich` committed one Lance `merge_insert`
+    per TweetDetail success/failure row update, so interrupting a 30k+ item run
+    could leave tens of thousands of table versions behind until a later manual
+    `tweetxvault optimize`
+  - changed archive detail persistence/update paths to accept a shared
+    `_PageBuffer`, and batched archive follow-up writes in chunks of 100 tweets
+    before the existing end-of-job optimize step
+  - this keeps completed runs on the same final-compact path, but makes
+    interrupted/rate-limited enrich jobs much less pathological while also
+    cutting the number of versions the final optimize has to compact
+  - validation:
+    - `uv run ruff check tweetxvault/archive_import.py tweetxvault/storage/backend.py tests/test_archive_import.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/archive_import.py tweetxvault/storage/backend.py tests/test_archive_import.py`
+    - `uv run pytest -q tests/test_archive_import.py::test_enrich_pending_rows_batches_detail_writes tests/test_archive_import.py::test_import_x_archive_detail_api_errors_become_transient_failures tests/test_archive_import.py::test_import_x_archive_detail_stale_query_id_leaves_rows_retryable`
+    - `uv run pytest -q tests/test_jobs.py tests/test_threads.py tests/test_storage.py::test_persist_page_creates_single_version tests/test_storage.py::test_archive_stats_reports_followup_work`
+
 ## 2026-03-23
 
 - Prepared release metadata for `v0.2.3`:

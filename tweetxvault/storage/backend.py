@@ -1595,8 +1595,9 @@ class ArchiveStore:
         enrichment_checked_at: str | None,
         enrichment_http_status: int | None,
         enrichment_reason: str | None,
+        cursor: _PageBuffer | None = None,
     ) -> None:
-        row = self._get_row(self._row_key_for_tweet_object(tweet_id))
+        row = self._lookup_row(self._row_key_for_tweet_object(tweet_id), cursor=cursor)
         if row is None:
             raise KeyError(f"Tweet object row not found: {tweet_id}")
         updated = dict(row)
@@ -1609,7 +1610,7 @@ class ArchiveStore:
                 "updated_at": utc_now(),
             }
         )
-        self.merge_rows([updated])
+        self._queue_record(updated, cursor=cursor)
 
     def _refresh_tweet_records_for_detail(
         self,
@@ -1664,8 +1665,10 @@ class ArchiveStore:
         tweet: TimelineTweet,
         raw_json: dict[str, Any],
         http_status: int = 200,
+        cursor: _PageBuffer | None = None,
     ) -> None:
-        buffer = _PageBuffer()
+        owns_buffer = cursor is None
+        buffer = cursor or _PageBuffer()
         self.append_raw_capture(
             "TweetDetail",
             tweet.tweet_id,
@@ -1681,7 +1684,8 @@ class ArchiveStore:
             source=LIVE_SOURCE,
             cursor=buffer,
         )
-        self._merge_records(list(buffer.records.values()))
+        if owns_buffer:
+            self._merge_records(list(buffer.records.values()))
 
     def persist_thread_detail(
         self,
@@ -1690,8 +1694,10 @@ class ArchiveStore:
         tweets: list[TimelineTweet],
         raw_json: dict[str, Any],
         http_status: int = 200,
+        cursor: _PageBuffer | None = None,
     ) -> None:
-        buffer = _PageBuffer()
+        owns_buffer = cursor is None
+        buffer = cursor or _PageBuffer()
         self.append_raw_capture(
             "ThreadExpandDetail",
             focal_tweet_id,
@@ -1707,7 +1713,8 @@ class ArchiveStore:
             source=LIVE_SOURCE,
             cursor=buffer,
         )
-        self._merge_records(list(buffer.records.values()))
+        if owns_buffer:
+            self._merge_records(list(buffer.records.values()))
 
     def list_membership_tweet_ids(self, *, limit: int | None = None) -> list[str]:
         rows = (

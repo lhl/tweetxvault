@@ -3,14 +3,17 @@ from __future__ import annotations
 import asyncio
 import json
 import zipfile
+from contextlib import asynccontextmanager
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from rich.console import Console
 
 import tweetxvault.archive_import as archive_import
+from tests.conftest import make_tweet_detail_response, make_tweet_result, request_details
 from tweetxvault.archive_import import enrich_imported_archive, import_x_archive
 from tweetxvault.auth import ResolvedAuthBundle
 from tweetxvault.client.timelines import TimelineTweet
@@ -638,6 +641,96 @@ def test_enrich_imported_archive_reuses_existing_import_state(
     assert result.detail_terminal_unavailable == 1
     assert result.detail_transient_failures == 2
     assert result.pending_enrichment == 3
+
+
+def test_enrich_pending_rows_batches_detail_writes(paths, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    buffer = archive_import._PageBuffer()
+    for index in range(12):
+        tweet_id = str(1000 + index)
+        store._queue_record(
+            store._tweet_object_record(
+                archive_import._PlaceholderTweetObject(
+                    tweet_id=tweet_id,
+                    text=f"placeholder {tweet_id}",
+                ),
+                source=archive_import.ARCHIVE_SOURCE,
+                enrichment_state="pending",
+                cursor=buffer,
+            ),
+            cursor=buffer,
+        )
+    archive_import._flush_buffer(store, buffer)
+    before = store.version_count()
+    store.close()
+
+    @asynccontextmanager
+    async def fake_locked_archive_job(*, config=None, paths=None):
+        store = open_archive_store(paths, create=False)
+        assert store is not None
+
+        class _Job:
+            def __init__(self, store):
+                self.store = store
+
+            def mark_dirty(self) -> None:
+                return None
+
+        try:
+            yield _Job(store)
+        finally:
+            store.close()
+
+    async def fake_resolve_query_ids(*_args, **_kwargs):
+        return {"TweetDetail": "detail-query-id"}
+
+    async def fake_fetch_page(*args, **_kwargs):
+        detail_url = args[1]
+        _operation, variables = request_details(detail_url)
+        tweet_id = variables["focalTweetId"]
+        payload = make_tweet_detail_response(
+            [make_tweet_result(tweet_id, f"enriched {tweet_id}", user_id="777")]
+        )
+        return httpx.Response(
+            200,
+            json=payload,
+            request=httpx.Request("GET", detail_url),
+        )
+
+    class DummyClient:
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(archive_import, "_DETAIL_ENRICH_WRITE_BATCH", 5)
+    monkeypatch.setattr(archive_import, "locked_archive_job", fake_locked_archive_job)
+    monkeypatch.setattr(archive_import, "resolve_query_ids", fake_resolve_query_ids)
+    monkeypatch.setattr(
+        archive_import, "build_async_client", lambda *_args, **_kwargs: DummyClient()
+    )
+    monkeypatch.setattr(archive_import, "fetch_page", fake_fetch_page)
+
+    refreshed, terminal, transient, pending = asyncio.run(
+        archive_import._enrich_pending_rows(
+            limit=None,
+            config=AppConfig(),
+            paths=paths,
+            auth_bundle=_auth_bundle(),
+            transport=None,
+            console=_console(),
+        )
+    )
+
+    assert (refreshed, terminal, transient, pending) == (12, 0, 0, 0)
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    after = store.version_count()
+    tweet_object_rows = store.list_tweet_objects_for_enrichment()
+    store.close()
+
+    assert after - before == 3
+    assert tweet_object_rows == []
 
 
 def test_archive_live_reconciliation_skips_resuming_saved_backfills(

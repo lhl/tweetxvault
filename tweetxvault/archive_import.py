@@ -49,6 +49,7 @@ _YTD_ASSIGNMENT_RE = re.compile(r"^\s*window\.YTD\.[A-Za-z0-9_.]+\s*=\s*", re.DO
 _MANIFEST_ASSIGNMENT_RE = re.compile(r"^\s*window\.__THAR_CONFIG\s*=\s*", re.DOTALL)
 _AUTHORED_IMPORT_PREFETCH_CHUNK = 50
 _LIKE_IMPORT_PREFETCH_CHUNK = 200
+_DETAIL_ENRICH_WRITE_BATCH = 100
 _T = TypeVar("_T")
 
 
@@ -1022,6 +1023,16 @@ async def _enrich_pending_rows(
         terminal = 0
         transient = 0
         pacer = AdaptiveRequestPacer(config.sync.detail_delay)
+        write_buffer = _PageBuffer()
+        buffered_writes = 0
+
+        def flush_detail_writes() -> None:
+            nonlocal buffered_writes
+            if buffered_writes <= 0:
+                return
+            _flush_buffer(store, write_buffer)
+            buffered_writes = 0
+
         try:
             with _progress_callback(
                 console,
@@ -1032,6 +1043,7 @@ async def _enrich_pending_rows(
             ) as detail_progress:
                 for index, row in enumerate(rows, start=1):
                     tweet_id = row["tweet_id"]
+                    wrote_row = False
                     await pacer.wait(attempted=index - 1)
 
                     async def refresh_once(tweet_id: str = tweet_id) -> str:
@@ -1070,9 +1082,11 @@ async def _enrich_pending_rows(
                             tweet=tweet,
                             raw_json=payload,
                             http_status=response.status_code,
+                            cursor=write_buffer,
                         )
                         succeeded += 1
                         job.mark_dirty()
+                        wrote_row = True
                     except APIResponseError as exc:
                         if isinstance(
                             exc,
@@ -1089,21 +1103,23 @@ async def _enrich_pending_rows(
                                 enrichment_checked_at=utc_now(),
                                 enrichment_http_status=exc.status_code,
                                 enrichment_reason="not_found",
+                                cursor=write_buffer,
                             )
                             terminal += 1
                             job.mark_dirty()
-                            if detail_progress:
-                                detail_progress(index, len(rows))
-                            continue
-                        store.update_tweet_object_enrichment(
-                            tweet_id,
-                            enrichment_state="transient_failure",
-                            enrichment_checked_at=utc_now(),
-                            enrichment_http_status=exc.status_code,
-                            enrichment_reason=exc.__class__.__name__,
-                        )
-                        transient += 1
-                        job.mark_dirty()
+                            wrote_row = True
+                        else:
+                            store.update_tweet_object_enrichment(
+                                tweet_id,
+                                enrichment_state="transient_failure",
+                                enrichment_checked_at=utc_now(),
+                                enrichment_http_status=exc.status_code,
+                                enrichment_reason=exc.__class__.__name__,
+                                cursor=write_buffer,
+                            )
+                            transient += 1
+                            job.mark_dirty()
+                            wrote_row = True
                     except Exception as exc:
                         store.update_tweet_object_enrichment(
                             tweet_id,
@@ -1111,13 +1127,20 @@ async def _enrich_pending_rows(
                             enrichment_checked_at=utc_now(),
                             enrichment_http_status=None,
                             enrichment_reason=exc.__class__.__name__,
+                            cursor=write_buffer,
                         )
                         transient += 1
                         job.mark_dirty()
+                        wrote_row = True
+                    if wrote_row:
+                        buffered_writes += 1
+                        if buffered_writes >= _DETAIL_ENRICH_WRITE_BATCH:
+                            flush_detail_writes()
                     if detail_progress:
                         detail_progress(index, len(rows))
         finally:
             await client.aclose()
+            flush_detail_writes()
         remaining = len(store.list_tweet_objects_for_enrichment())
     return succeeded, terminal, transient, remaining
 

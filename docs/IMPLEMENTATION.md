@@ -401,6 +401,10 @@ Fresh fixture status (2026-03-16):
   - added `tweetxvault import enrich [--limit N]` so pending archive-placeholder enrichment can be resumed later without the original ZIP/directory path
   - routed both `import x-archive --enrich` and `import enrich` through the same reconciliation + pending-row follow-up runner
   - restricted standalone enrich discovery to completed archive imports so stale failed manifests do not masquerade as resumable archive state
+- [x] Reduced LanceDB version churn during archive detail enrichment:
+  - changed `import enrich` / archive follow-up detail writes to batch TweetDetail success/failure row updates into chunked Lance merges instead of committing one version per tweet
+  - preserved the existing end-of-job optimize path, but made interrupted large enrich runs far less likely to strand tens of thousands of table versions in the middle of a long rate-limited crawl
+  - added regression coverage proving buffered detail writes collapse 12 refreshed tweets into 3 Lance versions when the batch size is forced to 5 for the test
 - [x] Landed the third post-review hardening pass for Task 16:
   - keep archive-imported video/animated-GIF media rows `pending` until both the main asset and poster file are present, so `tweetxvault media download` can still fill gaps after poster-only archive imports
   - stopped archive `deleted_at` imports from flipping source precedence away from richer live rows; archive deletion metadata now merges in without overwriting live text/author fields
