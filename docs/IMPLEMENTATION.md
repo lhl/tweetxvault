@@ -169,6 +169,8 @@ Historical note: this was the shipped MVP backend after the SeekDB spike failed 
 - [x] Documented sync flags and backfill markers in the README:
   - added one-line explanations for when to use `--full`, `--backfill`, `--head-only`, `--article-backfill`, `--limit`, and browser/profile overrides
   - documented the `resume older`, `none saved`, `saved only`, and `incomplete` status markers plus the exact `--head-only` command used to clear `resume older`
+- [x] Updated `AGENTS.md` to keep CLI help/docs/tests in sync going forward:
+  - new user-facing flags and status markers now require explicit CLI help text, README updates when behavior is user-facing, and representative help-output test coverage
 - [x] First-run UX: all commands auto-create XDG dirs. `sync` commands validate auth before API calls, probe the target collection(s) before writing data, and print actionable errors (not stack traces) on failure.
 - [x] Exit codes: 0 success, 1 auth/config error, 2 API/network/runtime sync error. `sync all` uses 2 for partial runtime failure after reporting per-collection results.
 

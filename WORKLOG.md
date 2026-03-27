@@ -2,6 +2,13 @@
 
 ## 2026-03-27
 
+- Tightened the repo workflow around CLI flags/help/docs:
+  - updated `AGENTS.md` so future user-facing flags, command groups, and status
+    markers must keep explicit CLI help text, `README.md`, and representative
+    help-output tests in sync
+  - this turns the recent sync/help/backfill cleanup into an explicit standing
+    repo rule instead of tribal knowledge
+
 - Expanded CLI help/documentation coverage beyond `sync`:
   - audited the remaining command surfaces and added explicit help text for the
     nested command groups plus representative bare flags such as `view --limit`

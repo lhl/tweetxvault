@@ -77,6 +77,10 @@ Do not use destructive commands unless explicitly instructed:
 - Keep changes incremental and testable
 - Log decisions and progress in `WORKLOG.md`
 - Test before committing
+- When adding or changing user-facing CLI flags, command groups, or status markers:
+  - Give every new flag/argument explicit CLI help text; do not rely on bare Typer defaults
+  - Update `README.md` when the behavior is user-facing, especially for operational flags, state markers, reset/clear commands, or anything users are expected to interpret from `stats`/CLI output
+  - Add or update CLI help tests so representative `--help` output proves the new flags/markers are actually exposed
 
 ### After Changes
 
