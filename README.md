@@ -74,6 +74,10 @@ uv tool install -e .
 Re-run that command with `--force` after dependency or metadata changes in
 `pyproject.toml`.
 
+Use `tweetxvault --version` to confirm which local build you are running. In a
+git checkout, the CLI includes the short commit hash and appends `dirty` when
+tracked files differ from `HEAD`.
+
 To enable semantic search from source:
 
 ```bash

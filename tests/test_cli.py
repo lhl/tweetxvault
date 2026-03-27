@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 import typer
 from rich.console import Console
+from typer.testing import CliRunner
 
 import tweetxvault.cli as cli
 from tweetxvault.auth import BrowserCandidate
@@ -16,6 +17,8 @@ from tweetxvault.client.timelines import TimelineTweet
 from tweetxvault.config import AppConfig, AuthConfig
 from tweetxvault.exceptions import ProcessLockError
 from tweetxvault.storage import open_archive_store
+
+runner = CliRunner()
 
 
 def _tweet(tweet_id: str, *, text: str) -> TimelineTweet:
@@ -79,6 +82,49 @@ def _capture_console(monkeypatch, buffer: StringIO) -> None:
         "_configure_logging",
         lambda: Console(file=buffer, force_terminal=False, color_system=None),
     )
+
+
+def test_version_option_prints_version_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_version_text",
+        lambda: f"tweetxvault {cli.__version__} (abc1234, dirty)",
+    )
+    monkeypatch.setattr(
+        cli,
+        "_raise_nofile_limit",
+        lambda: (_ for _ in ()).throw(AssertionError("should not run for --version")),
+    )
+
+    result = runner.invoke(cli.app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"tweetxvault {cli.__version__} (abc1234, dirty)"
+
+
+def test_version_text_falls_back_to_semver_without_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_find_git_repo_root", lambda: None)
+
+    assert cli._version_text() == f"tweetxvault {cli.__version__}"
+
+
+def test_version_text_includes_git_revision_and_dirty_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path("/repo")
+    monkeypatch.setattr(cli, "_find_git_repo_root", lambda: repo_root)
+
+    def fake_git_command_output(root: Path, *args: str) -> str | None:
+        assert root == repo_root
+        if args == ("rev-parse", "--short", "HEAD"):
+            return "abc1234"
+        if args == ("status", "--short", "--untracked-files=no"):
+            return " M tweetxvault/cli.py"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cli, "_git_command_output", fake_git_command_output)
+
+    assert cli._version_text() == f"tweetxvault {cli.__version__} (abc1234, dirty)"
 
 
 def test_view_bookmarks_prints_rows(paths, monkeypatch) -> None:

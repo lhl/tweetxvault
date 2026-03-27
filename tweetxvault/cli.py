@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import resource
+import subprocess
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
+from tweetxvault import __version__
 from tweetxvault.archive_import import enrich_imported_archive, import_x_archive
 from tweetxvault.articles import refresh_articles
 from tweetxvault.auth import (
@@ -119,6 +121,56 @@ def _configure_logging() -> Console:
     logger.remove()
     logger.add(sys.stderr, level="INFO")
     return Console(stderr=True)
+
+
+def _find_git_repo_root() -> Path | None:
+    current = Path(__file__).resolve().parent
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _git_command_output(repo_root: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    output = result.stdout.strip()
+    return output or None
+
+
+def _version_text() -> str:
+    version = f"tweetxvault {__version__}"
+    repo_root = _find_git_repo_root()
+    if repo_root is None:
+        return version
+    revision = _git_command_output(repo_root, "rev-parse", "--short", "HEAD")
+    if revision is None:
+        return version
+    status = _git_command_output(repo_root, "status", "--short", "--untracked-files=no")
+    suffix = f" ({revision}"
+    if status:
+        suffix += ", dirty"
+    suffix += ")"
+    return version + suffix
+
+
+def _version_callback(
+    ctx: typer.Context,
+    _param: typer.CallbackParam,
+    value: bool,
+) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    typer.echo(_version_text())
+    raise typer.Exit()
 
 
 def _browser_cookie_only_env() -> dict[str, str]:
@@ -1556,6 +1608,17 @@ def _raise_nofile_limit() -> None:
 
 
 @app.callback()
-def main() -> None:
+def main(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show version and exit.",
+            callback=_version_callback,
+            is_eager=True,
+        ),
+    ] = False,
+) -> None:
     """tweetxvault CLI."""
+    del version
     _raise_nofile_limit()

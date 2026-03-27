@@ -1,5 +1,18 @@
 # WORKLOG
 
+## 2026-03-27
+
+- Added `tweetxvault --version` for local-build verification:
+  - the CLI now prints `tweetxvault <semver>` and, when invoked from a git
+    checkout, includes the short commit hash plus a `dirty` marker when tracked
+    files differ from `HEAD`
+  - this is primarily for editable `uv tool install -e .` workflows where the
+    package version alone is not enough to distinguish local commits before push
+  - validation:
+    - `uv run ruff check tweetxvault/cli.py tests/test_cli.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/cli.py tests/test_cli.py`
+    - `uv run pytest -q tests/test_cli.py -k version`
+
 ## 2026-03-26
 
 - Reduced LanceDB version churn for long-running archive detail enrichment:
