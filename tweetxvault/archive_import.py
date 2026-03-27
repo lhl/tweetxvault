@@ -38,7 +38,13 @@ from tweetxvault.exceptions import (
     StaleQueryIdError,
 )
 from tweetxvault.extractor import ExtractedTweetGraph, extract_secondary_objects
-from tweetxvault.jobs import locked_archive_job, resolve_job_context
+from tweetxvault.jobs import (
+    ArchiveWriteTracker,
+    best_effort_interrupt_optimize,
+    is_interrupt_exception,
+    locked_archive_job,
+    resolve_job_context,
+)
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore, open_archive_store
 from tweetxvault.storage.backend import ARCHIVE_SOURCE, LIVE_SOURCE, _PageBuffer
@@ -513,13 +519,15 @@ def _queue_secondary_graph(
         )
 
 
-def _flush_buffer(store: ArchiveStore, buffer: _PageBuffer) -> None:
+def _flush_buffer(store: ArchiveStore, buffer: _PageBuffer) -> int:
     if not buffer.records:
-        return
+        return 0
+    pending = len(buffer.records)
     store.merge_rows(list(buffer.records.values()))
     buffer.records.clear()
     buffer.pending_tweets.clear()
     buffer.existing_rows.clear()
+    return pending
 
 
 def _deleted_headers_map(items: list[Any]) -> dict[str, str]:
@@ -571,6 +579,7 @@ def _import_authored_tweets(
     deleted_headers: dict[str, str],
     counts: dict[str, int],
     progress: Callable[[int, int], None] | None = None,
+    write_tracker: ArchiveWriteTracker | None = None,
 ) -> None:
     buffer = _PageBuffer()
     valid_items = [
@@ -629,7 +638,9 @@ def _import_authored_tweets(
             processed += 1
             if progress:
                 progress(processed, total)
-        _flush_buffer(store, buffer)
+        flushed = _flush_buffer(store, buffer)
+        if write_tracker is not None and flushed > 0:
+            write_tracker.mark_dirty(rows=flushed, batches=1)
 
 
 def _should_seed_like_placeholder(store: ArchiveStore, buffer: _PageBuffer, tweet_id: str) -> bool:
@@ -650,6 +661,7 @@ def _import_likes(
     *,
     counts: dict[str, int],
     progress: Callable[[int, int], None] | None = None,
+    write_tracker: ArchiveWriteTracker | None = None,
 ) -> None:
     buffer = _PageBuffer()
     prepared: list[_PreparedLikeImport] = []
@@ -710,7 +722,9 @@ def _import_likes(
             processed += 1
             if progress:
                 progress(processed, total)
-        _flush_buffer(store, buffer)
+        flushed = _flush_buffer(store, buffer)
+        if write_tracker is not None and flushed > 0:
+            write_tracker.mark_dirty(rows=flushed, batches=1)
 
 
 def _url_basename(value: Any) -> str | None:
@@ -773,6 +787,7 @@ def _copy_exported_media(
     warnings: list[str],
     progress: Callable[[int, int], None] | None = None,
     limit: int | None = None,
+    write_tracker: ArchiveWriteTracker | None = None,
 ) -> None:
     if not media_directory:
         return
@@ -874,12 +889,18 @@ def _copy_exported_media(
                     download_error=None,
                 )
         if len(pending_updates) >= 100:
-            store.merge_rows(list(pending_updates.values()))
+            updates = list(pending_updates.values())
+            store.merge_rows(updates)
+            if write_tracker is not None:
+                write_tracker.mark_dirty(rows=len(updates), batches=1)
             pending_updates.clear()
         if progress:
             progress(index, total)
     if pending_updates:
-        store.merge_rows(list(pending_updates.values()))
+        updates = list(pending_updates.values())
+        store.merge_rows(updates)
+        if write_tracker is not None:
+            write_tracker.mark_dirty(rows=len(updates), batches=1)
     if unmatched:
         warnings.append(f"{unmatched} archive media files did not match normalized media rows.")
 
@@ -1000,10 +1021,10 @@ async def _enrich_pending_rows(
     status: Callable[[str], None] | None = None,
 ) -> tuple[int, int, int, int]:
     if limit is not None and limit <= 0:
-        async with locked_archive_job(config=config, paths=paths) as job:
+        async with locked_archive_job(config=config, paths=paths, console=console) as job:
             return 0, 0, 0, len(job.store.list_tweet_objects_for_enrichment())
 
-    async with locked_archive_job(config=config, paths=paths) as job:
+    async with locked_archive_job(config=config, paths=paths, console=console) as job:
         store = job.store
         rows = store.list_tweet_objects_for_enrichment(limit=limit)
         if not rows:
@@ -1031,6 +1052,7 @@ async def _enrich_pending_rows(
             if buffered_writes <= 0:
                 return
             _flush_buffer(store, write_buffer)
+            job.mark_dirty(rows=buffered_writes, batches=1)
             buffered_writes = 0
 
         try:
@@ -1085,7 +1107,6 @@ async def _enrich_pending_rows(
                             cursor=write_buffer,
                         )
                         succeeded += 1
-                        job.mark_dirty()
                         wrote_row = True
                     except APIResponseError as exc:
                         if isinstance(
@@ -1106,7 +1127,6 @@ async def _enrich_pending_rows(
                                 cursor=write_buffer,
                             )
                             terminal += 1
-                            job.mark_dirty()
                             wrote_row = True
                         else:
                             store.update_tweet_object_enrichment(
@@ -1118,7 +1138,6 @@ async def _enrich_pending_rows(
                                 cursor=write_buffer,
                             )
                             transient += 1
-                            job.mark_dirty()
                             wrote_row = True
                     except Exception as exc:
                         store.update_tweet_object_enrichment(
@@ -1130,7 +1149,6 @@ async def _enrich_pending_rows(
                             cursor=write_buffer,
                         )
                         transient += 1
-                        job.mark_dirty()
                         wrote_row = True
                     if wrote_row:
                         buffered_writes += 1
@@ -1152,7 +1170,13 @@ def _manifest_generation_date(manifest: dict[str, Any]) -> str | None:
 
 
 def _record_archive_capture(
-    store: ArchiveStore, operation: str, filename: str, payload: Any, *, archive_digest: str
+    store: ArchiveStore,
+    operation: str,
+    filename: str,
+    payload: Any,
+    *,
+    archive_digest: str,
+    write_tracker: ArchiveWriteTracker | None = None,
 ) -> None:
     capture_key = hashlib.sha256(f"{archive_digest}\0{operation}\0{filename}".encode()).hexdigest()
     store.append_raw_capture(
@@ -1164,6 +1188,8 @@ def _record_archive_capture(
         source=ARCHIVE_SOURCE,
         capture_key=capture_key,
     )
+    if write_tracker is not None:
+        write_tracker.mark_dirty()
 
 
 def _slice_for_sample(items: list[Any], *, limit: int | None) -> list[Any]:
@@ -1379,6 +1405,7 @@ async def import_x_archive(
         identity = _archive_identity(source.manifest, account_items)
         existing_manifest: dict[str, Any] | None = None
         store: ArchiveStore | None = None
+        write_tracker: ArchiveWriteTracker | None = None
         import_started_at = utc_now()
         followup_requested = enrich or detail_lookups > 0
         followup_performed = False
@@ -1390,12 +1417,14 @@ async def import_x_archive(
         try:
             store = open_archive_store(paths, create=True)
             assert store is not None
+            write_tracker = ArchiveWriteTracker(store)
             store.ensure_archive_owner_id(identity.account_id)
             if regen:
                 _emit_status(status, "clearing previously imported archive-owned rows...")
                 regen_started = perf_counter()
                 archive_media_paths = store.list_archive_import_media_paths()
                 cleared_rows = store.clear_archive_import_data()
+                write_tracker.mark_dirty(rows=sum(cleared_rows.values()), batches=1)
                 cleared_files = _remove_archive_owned_files(paths.data_dir, archive_media_paths)
                 existing_manifest = None
                 _emit_status(
@@ -1437,12 +1466,14 @@ async def import_x_archive(
                     warnings=warnings,
                     counts=counts,
                 )
+                write_tracker.mark_dirty()
                 _record_archive_capture(
                     store,
                     "XArchiveManifest",
                     "data/manifest.js",
                     source.manifest,
                     archive_digest=digest,
+                    write_tracker=write_tracker,
                 )
                 for filename, payload in account_parts:
                     _record_archive_capture(
@@ -1451,6 +1482,7 @@ async def import_x_archive(
                         filename,
                         payload,
                         archive_digest=digest,
+                        write_tracker=write_tracker,
                     )
 
                 tweets_info = ((source.manifest.get("dataTypes") or {}).get("tweets")) or {}
@@ -1517,6 +1549,7 @@ async def import_x_archive(
                         filename,
                         payload,
                         archive_digest=digest,
+                        write_tracker=write_tracker,
                     )
                 for filename, payload in deleted_header_parts:
                     _record_archive_capture(
@@ -1525,6 +1558,7 @@ async def import_x_archive(
                         filename,
                         payload,
                         archive_digest=digest,
+                        write_tracker=write_tracker,
                     )
                 for filename, payload in tweet_parts:
                     _record_archive_capture(
@@ -1533,6 +1567,7 @@ async def import_x_archive(
                         filename,
                         payload,
                         archive_digest=digest,
+                        write_tracker=write_tracker,
                     )
                 for filename, payload in deleted_tweet_parts:
                     _record_archive_capture(
@@ -1541,6 +1576,7 @@ async def import_x_archive(
                         filename,
                         payload,
                         archive_digest=digest,
+                        write_tracker=write_tracker,
                     )
                 for filename, payload in like_parts:
                     _record_archive_capture(
@@ -1549,6 +1585,7 @@ async def import_x_archive(
                         filename,
                         payload,
                         archive_digest=digest,
+                        write_tracker=write_tracker,
                     )
                 if debug:
                     _record_debug_timing(
@@ -1584,6 +1621,7 @@ async def import_x_archive(
                         deleted_headers=deleted_headers,
                         counts=counts,
                         progress=authored_progress,
+                        write_tracker=write_tracker,
                     )
                 if debug:
                     _record_debug_timing(
@@ -1610,6 +1648,7 @@ async def import_x_archive(
                         deleted_headers=deleted_headers,
                         counts=counts,
                         progress=deleted_progress,
+                        write_tracker=write_tracker,
                     )
                 if debug:
                     _record_debug_timing(
@@ -1634,6 +1673,7 @@ async def import_x_archive(
                         likes,
                         counts=counts,
                         progress=likes_progress,
+                        write_tracker=write_tracker,
                     )
                 if debug:
                     _record_debug_timing(
@@ -1670,6 +1710,7 @@ async def import_x_archive(
                         warnings=warnings,
                         progress=media_progress,
                         limit=limit,
+                        write_tracker=write_tracker,
                     )
                 if debug:
                     _record_debug_timing(
@@ -1690,6 +1731,7 @@ async def import_x_archive(
                     warnings=warnings,
                     counts=counts,
                 )
+                write_tracker.mark_dirty()
                 _emit_status(status, "optimizing archive storage...")
                 optimize_started = perf_counter()
                 store.optimize()
@@ -1701,7 +1743,7 @@ async def import_x_archive(
                         optimize_started,
                     )
             store.close()
-        except BaseException:
+        except BaseException as exc:
             try:
                 if store is not None and import_performed:
                     store.set_import_manifest(
@@ -1713,6 +1755,10 @@ async def import_x_archive(
                         warnings=warnings,
                         counts=counts,
                     )
+                    if write_tracker is not None:
+                        write_tracker.mark_dirty()
+                if store is not None and write_tracker is not None and is_interrupt_exception(exc):
+                    best_effort_interrupt_optimize(store, write_tracker, console=runner_console)
             finally:
                 if store is not None:
                     store.close()

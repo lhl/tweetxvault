@@ -12,6 +12,7 @@ import httpx
 import pytest
 from rich.console import Console
 
+import tweetxvault.sync as sync_module
 from tests.conftest import (
     make_article_result,
     make_bookmarks_response,
@@ -192,6 +193,83 @@ async def test_sync_collection_end_to_end_and_resume(paths, config: AppConfig, a
         assert state.last_head_tweet_id == "new"
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_sync_collection_interrupt_best_effort_optimizes_after_committed_pages(
+    paths,
+    config: AppConfig,
+    auth_bundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _save_query_ids(paths)
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=False, color_system=None)
+    optimize_calls = {"count": 0}
+    sleep_calls = {"count": 0}
+
+    def fake_optimize(self) -> None:
+        optimize_calls["count"] += 1
+
+    async def interrupt_after_four_pages(_delay: float) -> None:
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] >= 4:
+            raise KeyboardInterrupt()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        _operation, variables = _op_and_variables(request)
+        cursor = variables.get("cursor")
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(
+                200,
+                json=make_bookmarks_response(["probe"], cursor="probe-cursor"),
+                request=request,
+            )
+        if cursor is None:
+            return httpx.Response(
+                200,
+                json=make_bookmarks_response(["1"], cursor="c1"),
+                request=request,
+            )
+        if cursor == "c1":
+            return httpx.Response(
+                200,
+                json=make_bookmarks_response(["2"], cursor="c2"),
+                request=request,
+            )
+        if cursor == "c2":
+            return httpx.Response(
+                200,
+                json=make_bookmarks_response(["3"], cursor="c3"),
+                request=request,
+            )
+        if cursor == "c3":
+            return httpx.Response(
+                200,
+                json=make_bookmarks_response(["4"], cursor="c4"),
+                request=request,
+            )
+        raise AssertionError(f"unexpected request cursor {cursor}")
+
+    monkeypatch.setattr(sync_module.ArchiveStore, "optimize", fake_optimize)
+
+    with pytest.raises(KeyboardInterrupt):
+        await sync_collection(
+            "bookmarks",
+            full=False,
+            limit=None,
+            config=config,
+            paths=paths,
+            auth_bundle=auth_bundle,
+            query_ids={"Bookmarks": "qid-bookmarks"},
+            transport=httpx.MockTransport(handler),
+            console=console,
+            sleep=interrupt_after_four_pages,
+        )
+
+    assert optimize_calls["count"] == 1
+    assert "interrupt received, compacting archive before exit" in buffer.getvalue()
 
 
 @pytest.mark.asyncio

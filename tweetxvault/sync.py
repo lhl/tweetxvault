@@ -31,6 +31,11 @@ from tweetxvault.exceptions import (
     ProcessLockError,
     TweetXVaultError,
 )
+from tweetxvault.jobs import (
+    ArchiveWriteTracker,
+    best_effort_interrupt_optimize,
+    is_interrupt_exception,
+)
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore, SyncState, open_archive_store
 from tweetxvault.utils import resolve_query_ids
@@ -288,6 +293,7 @@ async def _run_pass(
     console: Console,
     sleep: Callable[[float], Awaitable[None]],
     client: httpx.AsyncClient,
+    write_tracker: ArchiveWriteTracker,
 ) -> tuple[int, int, str, str | None, str | None]:
     pages_fetched = 0
     tweets_seen = 0
@@ -351,6 +357,7 @@ async def _run_pass(
             backfill_cursor=backfill_cursor,
             backfill_incomplete=backfill_incomplete,
         )
+        write_tracker.mark_dirty()
         for tweet in tweets:
             seen_ids.add(tweet.tweet_id)
 
@@ -483,6 +490,7 @@ async def _sync_collection_ready(
         except ArchiveOwnerMismatchError:
             store.close()
             raise
+        write_tracker = ArchiveWriteTracker(store)
 
         if head_only and (full or backfill or article_backfill):
             raise ConfigError(
@@ -491,6 +499,7 @@ async def _sync_collection_ready(
 
         if full:
             store.reset_sync_state(COLLECTION_TO_STORAGE[collection])
+            write_tracker.mark_dirty()
 
         previous_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
         if head_only and previous_state.backfill_incomplete:
@@ -500,6 +509,7 @@ async def _sync_collection_ready(
                 backfill_cursor=None,
                 backfill_incomplete=False,
             )
+            write_tracker.mark_dirty()
             previous_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
         prior_backfill_cursor = (
             previous_state.backfill_cursor if previous_state.backfill_incomplete else None
@@ -515,72 +525,88 @@ async def _sync_collection_ready(
         client = build_async_client(
             preflight.auth, timeout=config.sync.timeout, transport=transport
         )
+        completed = False
         try:
-            console.print(f"{collection}: starting head pass", highlight=False)
-            head_pages, head_tweets, head_reason, _latest_head_id, _ = await _run_pass(
-                collection=collection,
-                start_cursor=None,
-                config=config,
-                auth=preflight.auth,
-                query_store=QueryIdStore(paths),
-                query_ids=dict(preflight.query_ids),
-                store=store,
-                count_limit=limit,
-                stop_on_duplicate=stop_on_dup,
-                previous_state=previous_state,
-                prior_backfill_cursor=prior_backfill_cursor,
-                prior_backfill_incomplete=prior_backfill_incomplete,
-                initial_seen_ids=seen_ids,
-                existing_tweet_ids=existing_tweet_ids,
-                is_head_pass=True,
-                console=console,
-                sleep=sleep,
-                client=client,
-            )
-            pages_total = head_pages
-            tweets_total = head_tweets
-            stop_reason = head_reason
-            remaining = None if limit is None else max(limit - head_pages, 0)
-
-            if head_only:
-                refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
-                store.set_sync_state(
-                    COLLECTION_TO_STORAGE[collection],
-                    last_head_tweet_id=refreshed_state.last_head_tweet_id
-                    or previous_state.last_head_tweet_id,
-                    backfill_cursor=None,
-                    backfill_incomplete=False,
-                )
-
-            if resume_backfill and not head_only and prior_backfill_incomplete and remaining != 0:
-                console.print(f"{collection}: resuming saved backfill pass", highlight=False)
-                refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
-                backfill_pages, backfill_tweets, backfill_reason, _, _ = await _run_pass(
+            try:
+                console.print(f"{collection}: starting head pass", highlight=False)
+                head_pages, head_tweets, head_reason, _latest_head_id, _ = await _run_pass(
                     collection=collection,
-                    start_cursor=prior_backfill_cursor,
+                    start_cursor=None,
                     config=config,
                     auth=preflight.auth,
                     query_store=QueryIdStore(paths),
                     query_ids=dict(preflight.query_ids),
                     store=store,
-                    count_limit=remaining,
-                    stop_on_duplicate=False,
-                    previous_state=refreshed_state,
+                    count_limit=limit,
+                    stop_on_duplicate=stop_on_dup,
+                    previous_state=previous_state,
                     prior_backfill_cursor=prior_backfill_cursor,
                     prior_backfill_incomplete=prior_backfill_incomplete,
                     initial_seen_ids=seen_ids,
-                    existing_tweet_ids=set(),
-                    is_head_pass=False,
+                    existing_tweet_ids=existing_tweet_ids,
+                    is_head_pass=True,
                     console=console,
                     sleep=sleep,
                     client=client,
+                    write_tracker=write_tracker,
                 )
-                pages_total += backfill_pages
-                tweets_total += backfill_tweets
-                stop_reason = backfill_reason
+                pages_total = head_pages
+                tweets_total = head_tweets
+                stop_reason = head_reason
+                remaining = None if limit is None else max(limit - head_pages, 0)
+
+                if head_only:
+                    refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
+                    store.set_sync_state(
+                        COLLECTION_TO_STORAGE[collection],
+                        last_head_tweet_id=refreshed_state.last_head_tweet_id
+                        or previous_state.last_head_tweet_id,
+                        backfill_cursor=None,
+                        backfill_incomplete=False,
+                    )
+                    write_tracker.mark_dirty()
+
+                if (
+                    resume_backfill
+                    and not head_only
+                    and prior_backfill_incomplete
+                    and remaining != 0
+                ):
+                    console.print(f"{collection}: resuming saved backfill pass", highlight=False)
+                    refreshed_state = store.get_sync_state(COLLECTION_TO_STORAGE[collection])
+                    backfill_pages, backfill_tweets, backfill_reason, _, _ = await _run_pass(
+                        collection=collection,
+                        start_cursor=prior_backfill_cursor,
+                        config=config,
+                        auth=preflight.auth,
+                        query_store=QueryIdStore(paths),
+                        query_ids=dict(preflight.query_ids),
+                        store=store,
+                        count_limit=remaining,
+                        stop_on_duplicate=False,
+                        previous_state=refreshed_state,
+                        prior_backfill_cursor=prior_backfill_cursor,
+                        prior_backfill_incomplete=prior_backfill_incomplete,
+                        initial_seen_ids=seen_ids,
+                        existing_tweet_ids=set(),
+                        is_head_pass=False,
+                        console=console,
+                        sleep=sleep,
+                        client=client,
+                        write_tracker=write_tracker,
+                    )
+                    pages_total += backfill_pages
+                    tweets_total += backfill_tweets
+                    stop_reason = backfill_reason
+            except BaseException as exc:
+                if is_interrupt_exception(exc):
+                    best_effort_interrupt_optimize(store, write_tracker, console=console)
+                raise
+            else:
+                completed = True
         finally:
             await client.aclose()
-            if pages_total > 0:
+            if completed and write_tracker.has_writes:
                 try:
                     _embed_new_tweets(store, console)
                 except Exception as exc:

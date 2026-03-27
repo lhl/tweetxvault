@@ -666,7 +666,7 @@ def test_enrich_pending_rows_batches_detail_writes(paths, monkeypatch: pytest.Mo
     store.close()
 
     @asynccontextmanager
-    async def fake_locked_archive_job(*, config=None, paths=None):
+    async def fake_locked_archive_job(*, config=None, paths=None, console=None):
         store = open_archive_store(paths, create=False)
         assert store is not None
 
@@ -674,7 +674,7 @@ def test_enrich_pending_rows_batches_detail_writes(paths, monkeypatch: pytest.Mo
             def __init__(self, store):
                 self.store = store
 
-            def mark_dirty(self) -> None:
+            def mark_dirty(self, rows: int = 1, batches: int = 1) -> None:
                 return None
 
         try:
@@ -1258,11 +1258,16 @@ def test_interrupted_import_marks_manifest_failed_and_rerun_reuses_archive_captu
     archive_dir = _write_archive_dir(tmp_path)
     _disable_live_reconciliation(monkeypatch)
     original_import_authored_tweets = archive_import._import_authored_tweets
+    optimize_calls = {"count": 0}
 
     def abort_import(*_args, **_kwargs) -> None:
         raise KeyboardInterrupt()
 
+    def fake_optimize(self) -> None:
+        optimize_calls["count"] += 1
+
     monkeypatch.setattr(archive_import, "_import_authored_tweets", abort_import)
+    monkeypatch.setattr(archive_import.ArchiveStore, "optimize", fake_optimize)
 
     with pytest.raises(KeyboardInterrupt):
         asyncio.run(
@@ -1282,6 +1287,8 @@ def test_interrupted_import_marks_manifest_failed_and_rerun_reuses_archive_captu
     assert manifest_row["status"] == "failed"
     raw_capture_count = store.counts()["raw_captures"]
     store.close()
+
+    assert optimize_calls["count"] == 1
 
     monkeypatch.setattr(archive_import, "_import_authored_tweets", original_import_authored_tweets)
 

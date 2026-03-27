@@ -68,7 +68,7 @@ async def unfurl_urls(
     console: Console | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> UrlUnfurlResult:
-    async with locked_archive_job(config=config, paths=paths) as job:
+    async with locked_archive_job(config=config, paths=paths, console=console) as job:
         config = job.config
         store = job.store
         states = {"pending"}
@@ -93,7 +93,9 @@ async def unfurl_urls(
             def flush_updates() -> None:
                 if not pending_updates:
                     return
-                store.merge_rows(pending_updates.copy())
+                updates = pending_updates.copy()
+                store.merge_rows(updates)
+                job.mark_dirty(rows=len(updates), batches=1)
                 pending_updates.clear()
 
             for row in rows:
@@ -195,7 +197,4 @@ async def unfurl_urls(
                     flush_updates()
 
             flush_updates()
-
-        if result.processed > 0:
-            job.mark_dirty()
         return result

@@ -2,6 +2,23 @@
 
 ## 2026-03-27
 
+- Added best-effort interrupt compaction for long-running archive writers:
+  - introduced shared write tracking in `tweetxvault/jobs.py` using both
+    committed batch/row counts and Lance version deltas so `Ctrl-C` cleanup is
+    driven by real writes instead of guessing from command success paths
+  - `sync`, archive import/enrich, `threads expand`, `articles refresh`,
+    `media download`, and `unfurl` now mark writes at commit/flush points rather
+    than only at the end of the runner, which lets interrupted runs compact when
+    they have already done substantial work
+  - first interrupt now prints a compacting message and runs a best-effort
+    optimize; a second interrupt during optimize skips it and warns to run
+    `tweetxvault optimize` later
+  - validation:
+    - `uv run ruff check tweetxvault/jobs.py tweetxvault/sync.py tweetxvault/archive_import.py tweetxvault/articles.py tweetxvault/threads.py tweetxvault/media.py tweetxvault/unfurl.py tests/test_jobs.py tests/test_sync.py tests/test_archive_import.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/jobs.py tweetxvault/sync.py tweetxvault/archive_import.py tweetxvault/articles.py tweetxvault/threads.py tweetxvault/media.py tweetxvault/unfurl.py tests/test_jobs.py tests/test_sync.py tests/test_archive_import.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q tests/test_jobs.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q tests/test_sync.py::test_sync_collection_interrupt_best_effort_optimizes_after_committed_pages tests/test_archive_import.py::test_enrich_pending_rows_batches_detail_writes tests/test_archive_import.py::test_interrupted_import_marks_manifest_failed_and_rerun_reuses_archive_captures tests/test_articles.py tests/test_threads.py tests/test_media.py tests/test_unfurl.py` (outside the sandbox because LanceDB-backed tests stalled under sandboxing)
+
 - Tightened the repo workflow around CLI flags/help/docs:
   - updated `AGENTS.md` so future user-facing flags, command groups, and status
     markers must keep explicit CLI help text, `README.md`, and representative

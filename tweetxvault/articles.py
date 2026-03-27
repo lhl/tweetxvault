@@ -59,7 +59,7 @@ async def refresh_articles(
     auth_bundle = auth_bundle or resolve_auth_bundle(config)
     console = console or Console(stderr=True)
 
-    async with locked_archive_job(config=config, paths=paths) as job:
+    async with locked_archive_job(config=config, paths=paths, console=console) as job:
         store = job.store
         if targets:
             tweet_ids = [normalize_article_target(target) for target in targets]
@@ -113,6 +113,7 @@ async def refresh_articles(
                         raw_json=payload,
                         http_status=response.status_code,
                     )
+                    job.mark_dirty()
                     result.updated += 1
                 except Exception as exc:
                     result.failed += 1
@@ -120,7 +121,4 @@ async def refresh_articles(
                         console.print(f"article {tweet_id}: failed ({exc})", highlight=False)
         finally:
             await client.aclose()
-
-        if result.updated > 0:
-            job.mark_dirty()
         return result

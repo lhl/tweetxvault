@@ -127,6 +127,7 @@ async def _expand_target(
     config: AppConfig,
     console: Console,
     pacer: AdaptiveRequestPacer | None = None,
+    mark_dirty: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     payload, tweets = await _fetch_detail(
         tweet_id=tweet_id,
@@ -142,6 +143,8 @@ async def _expand_target(
         tweets=tweets,
         raw_json=payload,
     )
+    if mark_dirty is not None:
+        mark_dirty(1, 1)
     return [tweet.tweet_id for tweet in tweets]
 
 
@@ -159,6 +162,7 @@ async def _try_expand_target(
     result: ThreadExpandResult,
     console: Console,
     pacer: AdaptiveRequestPacer | None = None,
+    mark_dirty: Callable[[int, int], None] | None = None,
 ) -> None:
     result.processed += 1
     attempted_targets.add(tweet_id)
@@ -172,6 +176,7 @@ async def _try_expand_target(
             config=config,
             console=console,
             pacer=pacer,
+            mark_dirty=mark_dirty,
         )
     except Exception as exc:
         result.failed += 1
@@ -205,7 +210,7 @@ async def expand_threads(
         _log_threads(console, "resolving auth bundle")
         auth_bundle = resolve_auth_bundle(config, status=auth_status)
 
-    async with locked_archive_job(config=config, paths=paths) as job:
+    async with locked_archive_job(config=config, paths=paths, console=console) as job:
         store = job.store
         _log_threads(console, "resolving TweetDetail query ID")
         query_store = QueryIdStore(paths)
@@ -268,6 +273,7 @@ async def expand_threads(
                         result=result,
                         console=console,
                         pacer=pacer,
+                        mark_dirty=job.mark_dirty,
                     )
                     _log_scan_progress(
                         console,
@@ -312,6 +318,7 @@ async def expand_threads(
                         result=result,
                         console=console,
                         pacer=pacer,
+                        mark_dirty=job.mark_dirty,
                     )
                     _log_scan_progress(
                         console,
@@ -383,6 +390,7 @@ async def expand_threads(
                             result=result,
                             console=console,
                             pacer=pacer,
+                            mark_dirty=job.mark_dirty,
                         )
                         _log_scan_progress(
                             console,
@@ -394,6 +402,4 @@ async def expand_threads(
         finally:
             await client.aclose()
 
-        if result.expanded > 0:
-            job.mark_dirty()
         return result
