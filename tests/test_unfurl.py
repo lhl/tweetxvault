@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import sys
+from io import StringIO
+from types import SimpleNamespace
+
 import httpx
 import pytest
+from rich.console import Console
 
 from tests.conftest import (
     make_article_result,
@@ -277,3 +282,63 @@ async def test_unfurl_urls_accepts_non_html_responses(paths, config) -> None:
         assert row["description"] is None
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_unfurl_urls_interactive_reports_status(paths, config, monkeypatch) -> None:
+    _seed_archive(paths)
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system=None)
+    progress_kwargs: list[dict[str, object]] = []
+    updates: list[int] = []
+
+    class FakeTqdm:
+        def __init__(self, *args, **kwargs) -> None:
+            progress_kwargs.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def update(self, count: int) -> None:
+            updates.append(count)
+
+    monkeypatch.setitem(sys.modules, "tqdm", SimpleNamespace(tqdm=FakeTqdm))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        html = """
+        <html><head>
+        <title>Story</title>
+        </head><body></body></html>
+        """
+        return httpx.Response(
+            200,
+            text=html,
+            headers={"content-type": "text/html"},
+            request=request,
+        )
+
+    result = await unfurl_urls(
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(handler),
+        console=console,
+    )
+
+    assert result.updated == 2
+    assert progress_kwargs == [
+        {
+            "total": 2,
+            "desc": "unfurl",
+            "unit": "urls",
+            "dynamic_ncols": True,
+            "leave": False,
+            "file": console.file,
+        }
+    ]
+    assert updates == [1, 1]
+    output = buffer.getvalue()
+    assert "unfurl: loading saved URL rows" in output
+    assert "unfurl: fetching metadata for 2 saved URLs" in output

@@ -14,6 +14,7 @@ import httpx
 from rich.console import Console
 
 from tweetxvault.config import DEFAULT_USER_AGENT, AppConfig, XDGPaths
+from tweetxvault.interactive import emit_status, progress_callback, status_printer
 from tweetxvault.jobs import locked_archive_job
 from tweetxvault.utils import utc_now
 
@@ -157,6 +158,8 @@ async def download_media(
     console: Console | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> MediaDownloadResult:
+    console = console or Console(stderr=True)
+    status = status_printer(console, "media download")
     async with locked_archive_job(config=config, paths=paths, console=console) as job:
         config = job.config
         paths = job.paths
@@ -165,10 +168,20 @@ async def download_media(
         if retry_failed:
             states.add("failed")
         media_types = {"photo"} if photos_only else None
+        emit_status(status, "loading pending media rows")
         rows = store.list_media_rows(states=states, media_types=media_types, limit=limit)
         result = MediaDownloadResult()
         if not rows:
+            emit_status(status, "no media rows pending download")
             return result
+        filters: list[str] = []
+        if photos_only:
+            filters.append("photos only")
+        if retry_failed:
+            filters.append("including failed")
+        filter_suffix = f" ({', '.join(filters)})" if filters else ""
+        limit_suffix = "" if limit is None else f" (limit {limit})"
+        emit_status(status, f"downloading {len(rows)} media rows{filter_suffix}{limit_suffix}")
 
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -186,114 +199,127 @@ async def download_media(
                 job.mark_dirty(rows=len(updates), batches=1)
                 pending_updates.clear()
 
-            for row in rows:
-                result.processed += 1
-                if _download_complete(row, paths.data_dir):
-                    result.skipped += 1
-                    continue
+            with progress_callback(
+                console,
+                label="media download",
+                total=len(rows),
+                unit="rows",
+            ) as progress:
+                for index, row in enumerate(rows, start=1):
+                    try:
+                        result.processed += 1
+                        if _download_complete(row, paths.data_dir):
+                            result.skipped += 1
+                            continue
 
-                state = {
-                    "local_path": row.get("local_path"),
-                    "sha256": row.get("sha256"),
-                    "byte_size": row.get("byte_size"),
-                    "content_type": row.get("content_type"),
-                    "thumbnail_local_path": row.get("thumbnail_local_path"),
-                    "thumbnail_sha256": row.get("thumbnail_sha256"),
-                    "thumbnail_byte_size": row.get("thumbnail_byte_size"),
-                    "thumbnail_content_type": row.get("thumbnail_content_type"),
-                }
-                try:
-                    asset_url = _asset_url(row)
-                    if asset_url is None:
-                        raise ValueError("missing media download URL")
-                    _, destination = _target_path(
-                        paths.data_dir,
-                        row,
-                        url=asset_url,
-                        suffix="",
-                    )
-                    final_path, file_hash, byte_size, content_type = await _download_file(
-                        client,
-                        url=asset_url,
-                        destination=destination,
-                    )
-                    state.update(
-                        {
-                            "local_path": final_path.relative_to(paths.data_dir).as_posix(),
-                            "sha256": file_hash,
-                            "byte_size": byte_size,
-                            "content_type": content_type,
+                        state = {
+                            "local_path": row.get("local_path"),
+                            "sha256": row.get("sha256"),
+                            "byte_size": row.get("byte_size"),
+                            "content_type": row.get("content_type"),
+                            "thumbnail_local_path": row.get("thumbnail_local_path"),
+                            "thumbnail_sha256": row.get("thumbnail_sha256"),
+                            "thumbnail_byte_size": row.get("thumbnail_byte_size"),
+                            "thumbnail_content_type": row.get("thumbnail_content_type"),
                         }
-                    )
+                        try:
+                            asset_url = _asset_url(row)
+                            if asset_url is None:
+                                raise ValueError("missing media download URL")
+                            _, destination = _target_path(
+                                paths.data_dir,
+                                row,
+                                url=asset_url,
+                                suffix="",
+                            )
+                            final_path, file_hash, byte_size, content_type = await _download_file(
+                                client,
+                                url=asset_url,
+                                destination=destination,
+                            )
+                            state.update(
+                                {
+                                    "local_path": final_path.relative_to(paths.data_dir).as_posix(),
+                                    "sha256": file_hash,
+                                    "byte_size": byte_size,
+                                    "content_type": content_type,
+                                }
+                            )
 
-                    poster_url = _poster_url(row)
-                    if poster_url:
-                        _, poster_destination = _target_path(
-                            paths.data_dir,
-                            row,
-                            url=poster_url,
-                            suffix="-poster",
-                        )
-                        (
-                            poster_path,
-                            poster_hash,
-                            poster_size,
-                            poster_content_type,
-                        ) = await _download_file(
-                            client,
-                            url=poster_url,
-                            destination=poster_destination,
-                        )
-                        state.update(
-                            {
-                                "thumbnail_local_path": poster_path.relative_to(
-                                    paths.data_dir
-                                ).as_posix(),
-                                "thumbnail_sha256": poster_hash,
-                                "thumbnail_byte_size": poster_size,
-                                "thumbnail_content_type": poster_content_type,
-                            }
-                        )
+                            poster_url = _poster_url(row)
+                            if poster_url:
+                                _, poster_destination = _target_path(
+                                    paths.data_dir,
+                                    row,
+                                    url=poster_url,
+                                    suffix="-poster",
+                                )
+                                (
+                                    poster_path,
+                                    poster_hash,
+                                    poster_size,
+                                    poster_content_type,
+                                ) = await _download_file(
+                                    client,
+                                    url=poster_url,
+                                    destination=poster_destination,
+                                )
+                                state.update(
+                                    {
+                                        "thumbnail_local_path": poster_path.relative_to(
+                                            paths.data_dir
+                                        ).as_posix(),
+                                        "thumbnail_sha256": poster_hash,
+                                        "thumbnail_byte_size": poster_size,
+                                        "thumbnail_content_type": poster_content_type,
+                                    }
+                                )
 
-                    pending_updates.append(
-                        store.build_media_download_update(
-                            row,
-                            download_state="done",
-                            local_path=state["local_path"],
-                            sha256=state["sha256"],
-                            byte_size=state["byte_size"],
-                            content_type=state["content_type"],
-                            thumbnail_local_path=state["thumbnail_local_path"],
-                            thumbnail_sha256=state["thumbnail_sha256"],
-                            thumbnail_byte_size=state["thumbnail_byte_size"],
-                            thumbnail_content_type=state["thumbnail_content_type"],
-                            downloaded_at=utc_now(),
-                            download_error=None,
-                        )
-                    )
-                    result.downloaded += 1
-                except Exception as exc:
-                    pending_updates.append(
-                        store.build_media_download_update(
-                            row,
-                            download_state="failed",
-                            local_path=state["local_path"],
-                            sha256=state["sha256"],
-                            byte_size=state["byte_size"],
-                            content_type=state["content_type"],
-                            thumbnail_local_path=state["thumbnail_local_path"],
-                            thumbnail_sha256=state["thumbnail_sha256"],
-                            thumbnail_byte_size=state["thumbnail_byte_size"],
-                            thumbnail_content_type=state["thumbnail_content_type"],
-                            downloaded_at=row.get("downloaded_at") or None,
-                            download_error=str(exc),
-                        )
-                    )
-                    result.failed += 1
-                    if console:
-                        console.print(f"media {row['row_key']}: failed ({exc})", highlight=False)
-                if len(pending_updates) >= _UPDATE_BATCH_SIZE:
-                    flush_updates()
+                            pending_updates.append(
+                                store.build_media_download_update(
+                                    row,
+                                    download_state="done",
+                                    local_path=state["local_path"],
+                                    sha256=state["sha256"],
+                                    byte_size=state["byte_size"],
+                                    content_type=state["content_type"],
+                                    thumbnail_local_path=state["thumbnail_local_path"],
+                                    thumbnail_sha256=state["thumbnail_sha256"],
+                                    thumbnail_byte_size=state["thumbnail_byte_size"],
+                                    thumbnail_content_type=state["thumbnail_content_type"],
+                                    downloaded_at=utc_now(),
+                                    download_error=None,
+                                )
+                            )
+                            result.downloaded += 1
+                        except Exception as exc:
+                            pending_updates.append(
+                                store.build_media_download_update(
+                                    row,
+                                    download_state="failed",
+                                    local_path=state["local_path"],
+                                    sha256=state["sha256"],
+                                    byte_size=state["byte_size"],
+                                    content_type=state["content_type"],
+                                    thumbnail_local_path=state["thumbnail_local_path"],
+                                    thumbnail_sha256=state["thumbnail_sha256"],
+                                    thumbnail_byte_size=state["thumbnail_byte_size"],
+                                    thumbnail_content_type=state["thumbnail_content_type"],
+                                    downloaded_at=row.get("downloaded_at") or None,
+                                    download_error=str(exc),
+                                )
+                            )
+                            result.failed += 1
+                            if console:
+                                console.print(
+                                    f"media {row['row_key']}: failed ({exc})",
+                                    highlight=False,
+                                )
+                        if len(pending_updates) >= _UPDATE_BATCH_SIZE:
+                            flush_updates()
+                    finally:
+                        if progress is not None:
+                            progress(index, len(rows))
 
             flush_updates()
         return result

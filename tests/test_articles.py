@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from rich.console import Console
 
 from tests.conftest import make_article_result, make_tweet_detail_response, make_tweet_result
 from tweetxvault.articles import normalize_article_target, refresh_articles
@@ -208,6 +212,58 @@ async def test_refresh_articles_respects_limit(paths, config, auth_bundle) -> No
         }
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_interactive_reports_status(paths, config, auth_bundle, monkeypatch):
+    _seed_preview_article(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system=None)
+    progress_kwargs: list[dict[str, object]] = []
+    updates: list[int] = []
+
+    class FakeTqdm:
+        def __init__(self, *args, **kwargs) -> None:
+            progress_kwargs.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def update(self, count: int) -> None:
+            updates.append(count)
+
+    monkeypatch.setitem(sys.modules, "tqdm", SimpleNamespace(tqdm=FakeTqdm))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_fixture_payload(), request=request)
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+        console=console,
+    )
+
+    assert result.updated == 1
+    assert progress_kwargs == [
+        {
+            "total": 1,
+            "desc": "articles refresh",
+            "unit": "tweets",
+            "dynamic_ncols": True,
+            "leave": False,
+            "file": console.file,
+        }
+    ]
+    assert updates == [1]
+    output = buffer.getvalue()
+    assert "articles refresh: refreshing 1 preview-only article rows" in output
+    assert "articles refresh: resolving TweetDetail query ID" in output
 
 
 @pytest.mark.asyncio

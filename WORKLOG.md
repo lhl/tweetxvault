@@ -2,6 +2,19 @@
 
 ## 2026-03-27
 
+- Added TTY-only progress/status output to follow-up maintenance commands:
+  - `tweetxvault articles refresh`, `tweetxvault media download`, and
+    `tweetxvault unfurl` now emit useful interactive status lines and tqdm-backed
+    progress bars instead of staying mostly silent until the final summary
+  - article refresh also now surfaces TweetDetail retry/rate-limit pacing status
+    during interactive runs, matching the behavior of archive enrich/thread jobs
+  - updated the README and added focused tests that simulate an interactive
+    console for all three commands
+  - validation:
+    - `uv run ruff check tweetxvault/interactive.py tweetxvault/articles.py tweetxvault/media.py tweetxvault/unfurl.py tests/test_articles.py tests/test_media.py tests/test_unfurl.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/interactive.py tweetxvault/articles.py tweetxvault/media.py tweetxvault/unfurl.py tests/test_articles.py tests/test_media.py tests/test_unfurl.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q tests/test_articles.py tests/test_media.py tests/test_unfurl.py`
+
 - Fixed the inconsistent archive-import sampling flag:
   - renamed `tweetxvault import x-archive --limit` to `--sample-limit` so
     `--limit` stops meaning something completely different on that one command

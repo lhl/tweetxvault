@@ -11,6 +11,7 @@ from rich.console import Console
 
 from tweetxvault.config import DEFAULT_USER_AGENT, AppConfig, XDGPaths
 from tweetxvault.extractor import canonicalize_url
+from tweetxvault.interactive import emit_status, progress_callback, status_printer
 from tweetxvault.jobs import locked_archive_job
 from tweetxvault.utils import utc_now
 
@@ -68,16 +69,26 @@ async def unfurl_urls(
     console: Console | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> UrlUnfurlResult:
+    console = console or Console(stderr=True)
+    status = status_printer(console, "unfurl")
     async with locked_archive_job(config=config, paths=paths, console=console) as job:
         config = job.config
         store = job.store
         states = {"pending"}
         if retry_failed:
             states.add("failed")
+        emit_status(status, "loading saved URL rows")
         rows = store.list_url_rows(states=states, limit=limit)
         result = UrlUnfurlResult()
         if not rows:
+            emit_status(status, "no URL rows pending unfurl")
             return result
+        mode_suffix = " (including failed)" if retry_failed else ""
+        limit_suffix = "" if limit is None else f" (limit {limit})"
+        emit_status(
+            status,
+            f"fetching metadata for {len(rows)} saved URLs{mode_suffix}{limit_suffix}",
+        )
 
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -98,103 +109,116 @@ async def unfurl_urls(
                 job.mark_dirty(rows=len(updates), batches=1)
                 pending_updates.clear()
 
-            for row in rows:
-                result.processed += 1
-                request_url = (
-                    row.get("final_url")
-                    or row.get("expanded_url")
-                    or row.get("canonical_url")
-                    or row.get("url")
-                )
-                if not isinstance(request_url, str) or not request_url:
-                    pending_updates.append(
-                        store.build_url_unfurl_update(
-                            row,
-                            http_status=row.get("http_status"),
-                            final_url=row.get("final_url"),
-                            canonical_url=row.get("canonical_url"),
-                            title=row.get("title"),
-                            description=row.get("description"),
-                            site_name=row.get("site_name"),
-                            content_type=row.get("content_type"),
-                            unfurl_state="failed",
-                            last_fetched_at=utc_now(),
-                            download_error="missing URL to unfurl",
+            with progress_callback(
+                console,
+                label="unfurl",
+                total=len(rows),
+                unit="urls",
+            ) as progress:
+                for index, row in enumerate(rows, start=1):
+                    try:
+                        result.processed += 1
+                        request_url = (
+                            row.get("final_url")
+                            or row.get("expanded_url")
+                            or row.get("canonical_url")
+                            or row.get("url")
                         )
-                    )
-                    result.failed += 1
-                    if len(pending_updates) >= _UPDATE_BATCH_SIZE:
-                        flush_updates()
-                    continue
+                        if not isinstance(request_url, str) or not request_url:
+                            pending_updates.append(
+                                store.build_url_unfurl_update(
+                                    row,
+                                    http_status=row.get("http_status"),
+                                    final_url=row.get("final_url"),
+                                    canonical_url=row.get("canonical_url"),
+                                    title=row.get("title"),
+                                    description=row.get("description"),
+                                    site_name=row.get("site_name"),
+                                    content_type=row.get("content_type"),
+                                    unfurl_state="failed",
+                                    last_fetched_at=utc_now(),
+                                    download_error="missing URL to unfurl",
+                                )
+                            )
+                            result.failed += 1
+                            if len(pending_updates) >= _UPDATE_BATCH_SIZE:
+                                flush_updates()
+                            continue
 
-                try:
-                    response = await client.get(request_url)
-                    response.raise_for_status()
-                    final_url = str(response.url)
-                    content_type = response.headers.get("content-type")
-                    title = row.get("title")
-                    description = row.get("description")
-                    site_name = row.get("site_name")
-                    canonical_url = row.get("canonical_url")
-                    if content_type and "html" in content_type.lower():
-                        html = response.text[:500000]
-                        (
-                            parsed_title,
-                            parsed_description,
-                            parsed_site_name,
-                            parsed_canonical_url,
-                        ) = _extract_html_metadata(html)
-                        title = parsed_title or title
-                        description = parsed_description or description
-                        site_name = parsed_site_name or site_name
-                        canonical_url = (
-                            canonicalize_url(parsed_canonical_url)
-                            or canonicalize_url(final_url)
-                            or canonical_url
-                        )
-                    else:
-                        canonical_url = canonical_url or canonicalize_url(final_url)
-                    pending_updates.append(
-                        store.build_url_unfurl_update(
-                            row,
-                            http_status=response.status_code,
-                            final_url=final_url,
-                            canonical_url=canonical_url,
-                            title=title,
-                            description=description,
-                            site_name=site_name,
-                            content_type=content_type,
-                            unfurl_state="done",
-                            last_fetched_at=utc_now(),
-                            download_error=None,
-                        )
-                    )
-                    result.updated += 1
-                except Exception as exc:
-                    pending_updates.append(
-                        store.build_url_unfurl_update(
-                            row,
-                            http_status=getattr(
-                                getattr(exc, "response", None),
-                                "status_code",
-                                None,
-                            ),
-                            final_url=row.get("final_url"),
-                            canonical_url=row.get("canonical_url"),
-                            title=row.get("title"),
-                            description=row.get("description"),
-                            site_name=row.get("site_name"),
-                            content_type=row.get("content_type"),
-                            unfurl_state="failed",
-                            last_fetched_at=utc_now(),
-                            download_error=str(exc),
-                        )
-                    )
-                    result.failed += 1
-                    if console:
-                        console.print(f"url {row['row_key']}: failed ({exc})", highlight=False)
-                if len(pending_updates) >= _UPDATE_BATCH_SIZE:
-                    flush_updates()
+                        try:
+                            response = await client.get(request_url)
+                            response.raise_for_status()
+                            final_url = str(response.url)
+                            content_type = response.headers.get("content-type")
+                            title = row.get("title")
+                            description = row.get("description")
+                            site_name = row.get("site_name")
+                            canonical_url = row.get("canonical_url")
+                            if content_type and "html" in content_type.lower():
+                                html = response.text[:500000]
+                                (
+                                    parsed_title,
+                                    parsed_description,
+                                    parsed_site_name,
+                                    parsed_canonical_url,
+                                ) = _extract_html_metadata(html)
+                                title = parsed_title or title
+                                description = parsed_description or description
+                                site_name = parsed_site_name or site_name
+                                canonical_url = (
+                                    canonicalize_url(parsed_canonical_url)
+                                    or canonicalize_url(final_url)
+                                    or canonical_url
+                                )
+                            else:
+                                canonical_url = canonical_url or canonicalize_url(final_url)
+                            pending_updates.append(
+                                store.build_url_unfurl_update(
+                                    row,
+                                    http_status=response.status_code,
+                                    final_url=final_url,
+                                    canonical_url=canonical_url,
+                                    title=title,
+                                    description=description,
+                                    site_name=site_name,
+                                    content_type=content_type,
+                                    unfurl_state="done",
+                                    last_fetched_at=utc_now(),
+                                    download_error=None,
+                                )
+                            )
+                            result.updated += 1
+                        except Exception as exc:
+                            pending_updates.append(
+                                store.build_url_unfurl_update(
+                                    row,
+                                    http_status=getattr(
+                                        getattr(exc, "response", None),
+                                        "status_code",
+                                        None,
+                                    ),
+                                    final_url=row.get("final_url"),
+                                    canonical_url=row.get("canonical_url"),
+                                    title=row.get("title"),
+                                    description=row.get("description"),
+                                    site_name=row.get("site_name"),
+                                    content_type=row.get("content_type"),
+                                    unfurl_state="failed",
+                                    last_fetched_at=utc_now(),
+                                    download_error=str(exc),
+                                )
+                            )
+                            result.failed += 1
+                            if console:
+                                console.print(
+                                    f"url {row['row_key']}: failed ({exc})",
+                                    highlight=False,
+                                )
+                        if len(pending_updates) >= _UPDATE_BATCH_SIZE:
+                            flush_updates()
+                    finally:
+                        if progress is not None:
+                            progress(index, len(rows))
 
             flush_updates()
         return result

@@ -442,6 +442,9 @@ uv run tweetxvault unfurl --limit 100
 uv run tweetxvault unfurl --retry-failed
 ```
 
+Interactive TTY runs show progress bars and status lines for both media downloads
+and URL unfurls.
+
 ### Thread Expansion
 
 ```bash
@@ -478,6 +481,9 @@ uv run tweetxvault articles refresh --all
 uv run tweetxvault articles refresh https://x.com/dimitrispapail/status/2026531440414925307
 uv run tweetxvault articles refresh 2026531440414925307
 ```
+
+Interactive TTY runs show refresh progress/status, including TweetDetail pacing
+messages when X starts rate-limiting those requests.
 
 ### Maintenance
 

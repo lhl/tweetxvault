@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import sys
+from io import StringIO
+from types import SimpleNamespace
+
 import httpx
 import pytest
+from rich.console import Console
 
 from tests.conftest import (
     make_article_result,
@@ -235,3 +240,66 @@ async def test_download_media_retries_failed_rows_and_respects_limit(paths, conf
         assert len(pending_video) == 1
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_download_media_interactive_reports_status(paths, config, monkeypatch) -> None:
+    _seed_archive(paths)
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system=None)
+    progress_kwargs: list[dict[str, object]] = []
+    updates: list[int] = []
+
+    class FakeTqdm:
+        def __init__(self, *args, **kwargs) -> None:
+            progress_kwargs.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def update(self, count: int) -> None:
+            updates.append(count)
+
+    monkeypatch.setitem(sys.modules, "tqdm", SimpleNamespace(tqdm=FakeTqdm))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith(".mp4"):
+            return httpx.Response(
+                200,
+                content=b"video-bytes",
+                headers={"content-type": "video/mp4"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            content=b"image-bytes",
+            headers={"content-type": "image/jpeg"},
+            request=request,
+        )
+
+    result = await download_media(
+        config=config,
+        paths=paths,
+        transport=httpx.MockTransport(handler),
+        console=console,
+    )
+
+    assert result.downloaded == 3
+    assert progress_kwargs == [
+        {
+            "total": 3,
+            "desc": "media download",
+            "unit": "rows",
+            "dynamic_ncols": True,
+            "leave": False,
+            "file": console.file,
+        }
+    ]
+    assert updates == [1, 1, 1]
+    output = buffer.getvalue()
+    assert "media download: loading pending media rows" in output
+    assert "media download: downloading 3 media rows" in output
