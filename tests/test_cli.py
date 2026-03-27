@@ -146,10 +146,61 @@ def test_sync_likes_help_describes_flags() -> None:
     result = runner.invoke(cli.app, ["sync", "likes", "--help"])
 
     assert result.exit_code == 0
-    assert "Reset saved sync state for the targeted collection before syncing." in result.stdout
-    assert "Continue older history past duplicates without resetting sync state." in result.stdout
-    assert "Clear any saved backfill cursor for the targeted collection" in result.stdout
-    assert "Maximum number of pages to fetch for this run." in result.stdout
+    assert "Reset saved sync state" in result.stdout
+    assert "Continue older history past duplicates" in result.stdout
+    assert "Clear any saved backfill cursor" in result.stdout
+    assert "Maximum number of pages to fetch for this" in result.stdout
+
+
+def test_root_help_lists_group_descriptions() -> None:
+    result = runner.invoke(cli.app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "auth" in result.stdout
+    assert "Check auth and refresh query IDs." in result.stdout
+    assert "articles" in result.stdout
+    assert "Refresh archived article bodies." in result.stdout
+    assert "export" in result.stdout
+    assert "Export the local archive." in result.stdout
+    assert "import" in result.stdout
+    assert "Import and enrich official X archives." in result.stdout
+    assert "media" in result.stdout
+    assert "Download archived tweet media." in result.stdout
+    assert "threads" in result.stdout
+    assert "Expand archived tweet threads." in result.stdout
+    assert "view" in result.stdout
+    assert "Render archived tweets in the terminal." in result.stdout
+
+
+def test_view_bookmarks_help_describes_flags() -> None:
+    result = runner.invoke(cli.app, ["view", "bookmarks", "--help"])
+
+    assert result.exit_code == 0
+    assert "View bookmarked tweets." in result.stdout
+    assert "Maximum number of rows to display." in result.stdout
+    assert "Display order: newest or oldest." in result.stdout
+
+
+def test_media_download_help_describes_flags() -> None:
+    result = runner.invoke(cli.app, ["media", "download", "--help"])
+
+    assert result.exit_code == 0
+    assert "Download archived tweet media files." in result.stdout
+    assert "Maximum number of pending media rows" in result.stdout
+    assert "Only download photo rows and skip video or" in result.stdout
+    assert "Retry rows that previously failed" in result.stdout
+
+
+def test_search_help_describes_flags() -> None:
+    result = runner.invoke(cli.app, ["search", "--help"])
+
+    assert result.exit_code == 0
+    assert "Search archived posts and articles." in result.stdout
+    assert "Search query text." in result.stdout
+    assert "Maximum number of results to" in result.stdout
+    assert "Search mode: auto, fts," in result.stdout
+    assert "Comma-delimited search result" in result.stdout
+    assert "Comma-delimited collections:" in result.stdout
 
 
 def test_view_bookmarks_prints_rows(paths, monkeypatch) -> None:

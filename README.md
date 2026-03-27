@@ -207,6 +207,25 @@ If the `[embed]` extra is installed, new tweets are automatically embedded after
 `tweetxvault sync all` still covers bookmarks + likes only; authored tweets stay opt-in via `tweetxvault sync tweets`.
 `--head-only` is the escape hatch when an old saved backfill cursor is no longer useful: it clears that cursor for the targeted collection and runs only the normal head pass. It cannot be combined with `--full`, `--backfill`, or `--article-backfill`.
 
+Common sync flags:
+
+- `--full`: clear the saved sync state for that collection and start a fresh incremental crawl without deleting stored tweets.
+- `--backfill`: keep walking older pages past duplicate detection when you want more history without resetting state.
+- `--head-only`: clear a saved older-history cursor and do only the normal head pass; use this to stop `resume older`.
+- `--article-backfill`: rewalk existing pages to refresh article-bearing tweets after article extraction changes.
+- `--limit N`: cap the run to `N` fetched pages for debugging, sampling, or shorter catch-up runs.
+- `--browser`, `--profile`, `--profile-path`: force a specific browser/profile for cookie extraction on just that run.
+
+Backfill status markers shown by `tweetxvault stats`:
+
+- `resume older`: the next sync will do its normal head pass, then resume older history from a saved cursor.
+- `none saved`: no older-history cursor is saved for that collection.
+- `saved only`: a cursor exists without the normal incomplete marker; this is an unusual transitional state.
+- `incomplete`: the sync state says older history is unfinished but no cursor is currently saved; this is also unusual.
+
+To clear `resume older`, run `tweetxvault sync <collection> --head-only`, for example `tweetxvault sync likes --head-only`.
+Use `tweetxvault sync <command> --help` for the current CLI flag descriptions.
+
 ### Importing an X archive
 
 ```bash

@@ -47,11 +47,11 @@ from tweetxvault.threads import expand_threads
 from tweetxvault.unfurl import unfurl_urls
 
 app = typer.Typer(no_args_is_help=True)
-article_app = typer.Typer(no_args_is_help=True)
-auth_app = typer.Typer(no_args_is_help=True)
-export_app = typer.Typer(no_args_is_help=True)
-import_app = typer.Typer(no_args_is_help=True)
-media_app = typer.Typer(no_args_is_help=True)
+article_app = typer.Typer(no_args_is_help=True, help="Refresh archived article bodies.")
+auth_app = typer.Typer(no_args_is_help=True, help="Check auth and refresh query IDs.")
+export_app = typer.Typer(no_args_is_help=True, help="Export the local archive.")
+import_app = typer.Typer(no_args_is_help=True, help="Import and enrich official X archives.")
+media_app = typer.Typer(no_args_is_help=True, help="Download archived tweet media.")
 sync_app = typer.Typer(
     no_args_is_help=True,
     help=(
@@ -59,21 +59,21 @@ sync_app = typer.Typer(
         "Run 'tweetxvault sync <command> --help' to see that subcommand's flags."
     ),
 )
-thread_app = typer.Typer(no_args_is_help=True)
-view_app = typer.Typer(no_args_is_help=True)
+thread_app = typer.Typer(no_args_is_help=True, help="Expand archived tweet threads.")
+view_app = typer.Typer(no_args_is_help=True, help="Render archived tweets in the terminal.")
 
-app.add_typer(article_app, name="articles")
-app.add_typer(auth_app, name="auth")
-app.add_typer(export_app, name="export")
-app.add_typer(import_app, name="import")
-app.add_typer(media_app, name="media")
+app.add_typer(article_app, name="articles", help="Refresh archived article bodies.")
+app.add_typer(auth_app, name="auth", help="Check auth and refresh query IDs.")
+app.add_typer(export_app, name="export", help="Export the local archive.")
+app.add_typer(import_app, name="import", help="Import and enrich official X archives.")
+app.add_typer(media_app, name="media", help="Download archived tweet media.")
 app.add_typer(
     sync_app,
     name="sync",
     help="Sync bookmarks, likes, or authored tweets.",
 )
-app.add_typer(thread_app, name="threads")
-app.add_typer(view_app, name="view")
+app.add_typer(thread_app, name="threads", help="Expand archived tweet threads.")
+app.add_typer(view_app, name="view", help="Render archived tweets in the terminal.")
 
 
 BROWSER_HELP = (
@@ -116,6 +116,20 @@ DEBUG_AUTH_OPTION = Annotated[
 SEARCH_TYPE_HELP = "Comma-delimited search result types: post, article."
 SEARCH_COLLECTION_HELP = "Comma-delimited collections: bookmark, like, tweet."
 SEARCH_SORT_HELP = "Search result sort: relevance, newest, oldest."
+ARTICLE_LIMIT_HELP = "Maximum number of archived article rows or explicit targets to process."
+THREAD_LIMIT_HELP = "Maximum number of archived thread targets to process."
+VIEW_LIMIT_HELP = "Maximum number of rows to display."
+VIEW_SORT_HELP = "Display order: newest or oldest."
+EXPORT_COLLECTION_HELP = "Collection to export: bookmarks, likes, tweets, or all."
+EXPORT_OUT_HELP = "Destination file path. Defaults to the exports/ directory."
+MEDIA_LIMIT_HELP = "Maximum number of pending media rows to process."
+MEDIA_PHOTOS_ONLY_HELP = "Only download photo rows and skip video or animated GIF media."
+RETRY_FAILED_HELP = "Retry rows that previously failed instead of only untouched pending rows."
+UNFURL_LIMIT_HELP = "Maximum number of saved URL rows to fetch metadata for."
+EMBED_REGEN_HELP = "Clear existing embeddings before recomputing them."
+SEARCH_QUERY_HELP = "Search query text."
+SEARCH_LIMIT_HELP = "Maximum number of results to return."
+SEARCH_MODE_HELP = "Search mode: auto, fts, vector, or hybrid."
 # Keep the user-facing flag as --type, but map it onto internal search-result kinds so
 # search code does not collide with storage-level record_type/type terminology.
 SEARCH_TYPE_ALIASES = {
@@ -128,6 +142,26 @@ SEARCH_SORT_OPTION = Annotated[
     Literal["relevance", "newest", "oldest"],
     typer.Option("--sort", help=SEARCH_SORT_HELP),
 ]
+ARTICLE_LIMIT_OPTION = Annotated[int | None, typer.Option("--limit", help=ARTICLE_LIMIT_HELP)]
+THREAD_LIMIT_OPTION = Annotated[int | None, typer.Option("--limit", help=THREAD_LIMIT_HELP)]
+VIEW_LIMIT_OPTION = Annotated[int, typer.Option("--limit", help=VIEW_LIMIT_HELP)]
+VIEW_SORT_OPTION = Annotated[str, typer.Option("--sort", help=VIEW_SORT_HELP)]
+EXPORT_COLLECTION_OPTION = Annotated[str, typer.Option("--collection", help=EXPORT_COLLECTION_HELP)]
+EXPORT_OUT_OPTION = Annotated[Path | None, typer.Option("--out", help=EXPORT_OUT_HELP)]
+MEDIA_LIMIT_OPTION = Annotated[int | None, typer.Option("--limit", help=MEDIA_LIMIT_HELP)]
+PHOTOS_ONLY_OPTION = Annotated[
+    bool,
+    typer.Option("--photos-only", help=MEDIA_PHOTOS_ONLY_HELP),
+]
+RETRY_FAILED_OPTION = Annotated[
+    bool,
+    typer.Option("--retry-failed", help=RETRY_FAILED_HELP),
+]
+UNFURL_LIMIT_OPTION = Annotated[int | None, typer.Option("--limit", help=UNFURL_LIMIT_HELP)]
+EMBED_REGEN_OPTION = Annotated[bool, typer.Option("--regen", help=EMBED_REGEN_HELP)]
+SEARCH_QUERY_ARGUMENT = Annotated[str, typer.Argument(help=SEARCH_QUERY_HELP)]
+SEARCH_LIMIT_OPTION = Annotated[int, typer.Option("--limit", help=SEARCH_LIMIT_HELP)]
+SEARCH_MODE_OPTION = Annotated[str, typer.Option("--mode", help=SEARCH_MODE_HELP)]
 
 
 def _configure_logging() -> Console:
@@ -722,7 +756,7 @@ def sync_everything(
     raise typer.Exit(outcome.exit_code)
 
 
-@auth_app.command("check")
+@auth_app.command("check", help="Validate local auth and probe remote timeline readiness.")
 def auth_check(
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
@@ -784,7 +818,7 @@ def auth_check(
         raise typer.Exit(2)
 
 
-@auth_app.command("refresh-ids")
+@auth_app.command("refresh-ids", help="Force-refresh GraphQL query IDs from X's JS bundles.")
 def auth_refresh_ids() -> None:
     console = _configure_logging()
     _, paths = load_config()
@@ -803,7 +837,7 @@ def auth_refresh_ids() -> None:
     console.print(f"refreshed {len(cache.ids)} query IDs into {store.path}")
 
 
-@article_app.command("refresh")
+@article_app.command("refresh", help="Refresh archived article bodies via TweetDetail.")
 def refresh_archived_articles(
     targets: Annotated[
         list[str] | None,
@@ -815,7 +849,7 @@ def refresh_archived_articles(
             "--all", help="Refresh all archived article rows, not just preview-only ones."
         ),
     ] = False,
-    limit: int | None = None,
+    limit: ARTICLE_LIMIT_OPTION = None,
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
         str | None,
@@ -863,13 +897,13 @@ def refresh_archived_articles(
     )
 
 
-@thread_app.command("expand")
+@thread_app.command("expand", help="Expand archived tweet threads via TweetDetail.")
 def expand_archive_threads(
     targets: Annotated[
         list[str] | None,
         typer.Argument(help="Tweet IDs or x.com status URLs to expand."),
     ] = None,
-    limit: int | None = None,
+    limit: THREAD_LIMIT_OPTION = None,
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
         str | None,
@@ -926,34 +960,34 @@ def expand_archive_threads(
     )
 
 
-@view_app.command("bookmarks")
-def view_bookmarks(limit: int = 20, sort: str = "newest") -> None:
+@view_app.command("bookmarks", help="View bookmarked tweets.")
+def view_bookmarks(limit: VIEW_LIMIT_OPTION = 20, sort: VIEW_SORT_OPTION = "newest") -> None:
     console = _configure_logging()
     _render_archive_view(console, collection="bookmarks", limit=limit, sort=sort)
 
 
-@view_app.command("likes")
-def view_likes(limit: int = 20, sort: str = "newest") -> None:
+@view_app.command("likes", help="View liked tweets.")
+def view_likes(limit: VIEW_LIMIT_OPTION = 20, sort: VIEW_SORT_OPTION = "newest") -> None:
     console = _configure_logging()
     _render_archive_view(console, collection="likes", limit=limit, sort=sort)
 
 
-@view_app.command("all")
-def view_all(limit: int = 20, sort: str = "newest") -> None:
+@view_app.command("all", help="View bookmarks, likes, and authored tweets together.")
+def view_all(limit: VIEW_LIMIT_OPTION = 20, sort: VIEW_SORT_OPTION = "newest") -> None:
     console = _configure_logging()
     _render_archive_view(console, collection="all", limit=limit, sort=sort)
 
 
-@view_app.command("tweets")
-def view_tweets(limit: int = 20, sort: str = "newest") -> None:
+@view_app.command("tweets", help="View authored tweets.")
+def view_tweets(limit: VIEW_LIMIT_OPTION = 20, sort: VIEW_SORT_OPTION = "newest") -> None:
     console = _configure_logging()
     _render_archive_view(console, collection="tweets", limit=limit, sort=sort)
 
 
-@export_app.command("json")
+@export_app.command("json", help="Export the archive as JSON.")
 def export_json(
-    collection: Annotated[str, typer.Option("--collection")] = "all",
-    out: Annotated[Path | None, typer.Option("--out")] = None,
+    collection: EXPORT_COLLECTION_OPTION = "all",
+    out: EXPORT_OUT_OPTION = None,
 ) -> None:
     console = _configure_logging()
     normalized = _normalize_collection_or_exit(collection, console)
@@ -975,10 +1009,10 @@ def export_json(
     console.print(f"exported {display_collection_name(normalized)} archive to {out_path}")
 
 
-@export_app.command("html")
+@export_app.command("html", help="Export the archive as HTML.")
 def export_html(
-    collection: Annotated[str, typer.Option("--collection")] = "all",
-    out: Annotated[Path | None, typer.Option("--out")] = None,
+    collection: EXPORT_COLLECTION_OPTION = "all",
+    out: EXPORT_OUT_OPTION = None,
 ) -> None:
     console = _configure_logging()
     normalized = _normalize_collection_or_exit(collection, console)
@@ -1045,7 +1079,7 @@ def import_grailbird_command(
     console.print(f'tweetxvault import x-archive "{result.output_path}"', highlight=False)
 
 
-@import_app.command("x-archive")
+@import_app.command("x-archive", help="Import an official X archive ZIP or extracted directory.")
 def import_x_archive_command(
     archive: Annotated[
         Path, typer.Argument(help="Path to an X archive zip or extracted directory.")
@@ -1160,7 +1194,10 @@ def import_x_archive_command(
     _print_archive_followup(console, result)
 
 
-@import_app.command("enrich")
+@import_app.command(
+    "enrich",
+    help="Continue pending TweetDetail follow-up for an imported archive.",
+)
 def import_archive_enrich(
     limit: Annotated[
         int | None,
@@ -1209,11 +1246,11 @@ def import_archive_enrich(
     _print_archive_followup(console, result)
 
 
-@media_app.command("download")
+@media_app.command("download", help="Download archived tweet media files.")
 def media_download(
-    limit: int | None = None,
-    photos_only: bool = False,
-    retry_failed: bool = False,
+    limit: MEDIA_LIMIT_OPTION = None,
+    photos_only: PHOTOS_ONLY_OPTION = False,
+    retry_failed: RETRY_FAILED_OPTION = False,
 ) -> None:
     console = _configure_logging()
     try:
@@ -1243,8 +1280,11 @@ def media_download(
     )
 
 
-@app.command("unfurl")
-def unfurl_archive(limit: int | None = None, retry_failed: bool = False) -> None:
+@app.command("unfurl", help="Fetch canonical URL metadata for saved links.")
+def unfurl_archive(
+    limit: UNFURL_LIMIT_OPTION = None,
+    retry_failed: RETRY_FAILED_OPTION = False,
+) -> None:
     console = _configure_logging()
     try:
         config, paths = load_config()
@@ -1468,7 +1508,7 @@ def rehydrate_archive() -> None:
 
 
 @app.command("embed")
-def embed_archive(regen: bool = False) -> None:
+def embed_archive(regen: EMBED_REGEN_OPTION = False) -> None:
     """Generate embeddings for archived tweets. Resumes by default."""
     from tqdm import tqdm
 
@@ -1517,9 +1557,9 @@ def embed_archive(regen: bool = False) -> None:
 
 @app.command("search")
 def search_archive(
-    query: str,
-    limit: int = 20,
-    mode: str = "auto",
+    query: SEARCH_QUERY_ARGUMENT,
+    limit: SEARCH_LIMIT_OPTION = 20,
+    mode: SEARCH_MODE_OPTION = "auto",
     sort: SEARCH_SORT_OPTION = "relevance",
     type_filter: Annotated[str | None, typer.Option("--type", help=SEARCH_TYPE_HELP)] = None,
     collection_filter: Annotated[

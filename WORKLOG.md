@@ -2,6 +2,24 @@
 
 ## 2026-03-27
 
+- Expanded CLI help/documentation coverage beyond `sync`:
+  - audited the remaining command surfaces and added explicit help text for the
+    nested command groups plus representative bare flags such as `view --limit`
+    / `--sort`, `media download --photos-only`, `unfurl --retry-failed`,
+    `embed --regen`, and `search --mode`
+  - updated `README.md` with short sync-flag and backfill-marker bullets,
+    including the exact `tweetxvault sync <collection> --head-only` command
+    used to clear `resume older`
+  - validation:
+    - `uv run ruff check tweetxvault/cli.py tests/test_cli.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/cli.py tests/test_cli.py`
+    - `uv run pytest -q tests/test_cli.py -k "help or version"`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault --help`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault sync likes --help`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault view bookmarks --help`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault media download --help`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault search --help`
+
 - Fixed the sync help surface after confirming the bare group output was too
   sparse:
   - added descriptive help text to the `sync` command group plus the
