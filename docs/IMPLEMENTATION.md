@@ -175,6 +175,9 @@ Historical note: this was the shipped MVP backend after the SeekDB spike failed 
   - `tweetxvault sync` now behaves like the normal bookmarks + likes sync pass instead of acting as a help-only group
   - the default sync path visibly runs archive enrich, thread expansion, article refresh, media download, and unfurl unless `--skip-*` flags opt out
   - authored tweets remain explicit via `tweetxvault sync tweets`, so the comprehensive default still does not silently expand into a third live collection
+- [x] Documented how to backfill older archives after upgrading:
+  - `README.md` now includes a single manual follow-up recipe covering `import enrich`, `threads expand`, `articles refresh`, `media download`, and `unfurl`
+  - the README also shows bounded `--limit` examples for each follow-up command so incremental validation runs are part of the documented workflow
 - [x] First-run UX: all commands auto-create XDG dirs. `sync` commands validate auth before API calls, probe the target collection(s) before writing data, and print actionable errors (not stack traces) on failure.
 - [x] Exit codes: 0 success, 1 auth/config error, 2 API/network/runtime sync error. `sync all` uses 2 for partial runtime failure after reporting per-collection results.
 

@@ -234,6 +234,44 @@ Backfill status markers shown by `tweetxvault stats`:
 To clear `resume older`, run `tweetxvault sync <collection> --head-only`, for example `tweetxvault sync likes --head-only`.
 Use `tweetxvault sync <command> --help` for the current CLI flag descriptions.
 
+### Backfilling an existing archive
+
+If your archive was built before the default follow-up sync behavior landed, or if
+you already have imported archive data and want to fill in the missing follow-up
+rows later, run the follow-up commands directly:
+
+```bash
+# Sparse archive-imported tweet placeholders -> TweetDetail enrichment
+uv run tweetxvault import enrich
+
+# Parent/reply/context tweet capture
+uv run tweetxvault threads expand
+
+# Preview-only article rows -> full article bodies
+uv run tweetxvault articles refresh
+
+# Pending media files
+uv run tweetxvault media download
+
+# Saved URLs -> canonical/final URL metadata
+uv run tweetxvault unfurl
+```
+
+Every command in that follow-up path supports `--limit`, so you can do bounded
+incremental tests first:
+
+```bash
+uv run tweetxvault import enrich --limit 100
+uv run tweetxvault threads expand --limit 100
+uv run tweetxvault articles refresh --limit 100
+uv run tweetxvault media download --limit 100
+uv run tweetxvault unfurl --limit 100
+```
+
+That is also the recovery path for older archives or interrupted long-running
+follow-up jobs. `media download` and `unfurl` additionally support
+`--retry-failed` if you want to revisit rows that previously failed.
+
 ### Importing an X archive
 
 ```bash
@@ -388,11 +426,17 @@ HTML exports now render tweet media, URL metadata, and full article bodies when 
 # Download all pending archived media files into the local data dir
 uv run tweetxvault media download
 
+# Download only the next 100 pending media rows
+uv run tweetxvault media download --limit 100
+
 # Only download photos
 uv run tweetxvault media download --photos-only
 
 # Fetch final URL, canonical URL, title, and description metadata
 uv run tweetxvault unfurl
+
+# Unfurl only the next 100 saved URLs
+uv run tweetxvault unfurl --limit 100
 
 # Retry previously failed URL unfurls
 uv run tweetxvault unfurl --retry-failed
@@ -403,6 +447,9 @@ uv run tweetxvault unfurl --retry-failed
 ```bash
 # Expand archived tweets through TweetDetail to capture parents/context rows
 uv run tweetxvault threads expand
+
+# Expand only the next 100 queued thread targets
+uv run tweetxvault threads expand --limit 100
 
 # Expand a specific thread target by URL or ID
 uv run tweetxvault threads expand https://x.com/dimitrispapail/status/2026531440414925307
@@ -420,6 +467,9 @@ Explicit thread targets are idempotent by default: previously expanded targets a
 ```bash
 # Refresh preview-only archived article rows via TweetDetail
 uv run tweetxvault articles refresh
+
+# Refresh only the next 100 preview-only article rows
+uv run tweetxvault articles refresh --limit 100
 
 # Refresh every archived article row, not just preview-only ones
 uv run tweetxvault articles refresh --all

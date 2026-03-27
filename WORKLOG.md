@@ -2,6 +2,16 @@
 
 ## 2026-03-27
 
+- Documented the manual follow-up/backfill path for older archives:
+  - added a dedicated `README.md` section showing the full catch-up sequence for
+    pre-default-followup archives: `import enrich`, `threads expand`, `articles
+    refresh`, `media download`, and `unfurl`
+  - explicitly documented that each of those follow-up commands supports
+    `--limit` so bounded incremental test runs are easy before committing to a
+    long archive-maintenance pass
+  - added concrete `--limit` examples to the media, unfurl, thread-expansion,
+    and article-refresh sections instead of leaving that fact implicit in `--help`
+
 - Realigned the default sync UX around the actual archive-maintenance workflow:
   - bare `tweetxvault sync` now runs the same bookmarks + likes pass as `sync all`
     instead of acting like a help-only command group
