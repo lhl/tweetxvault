@@ -125,8 +125,8 @@ To force a specific browser or profile for one command:
 
 ```bash
 uv run tweetxvault auth check --browser chrome
-uv run tweetxvault sync all --browser brave --profile "Profile 2"
-uv run tweetxvault sync all --browser firefox --profile-path /path/to/profile
+uv run tweetxvault sync --browser brave --profile "Profile 2"
+uv run tweetxvault sync --browser firefox --profile-path /path/to/profile
 ```
 
 How `--browser` behaves:
@@ -175,7 +175,11 @@ This probes the API without writing any data and reports credential status and e
 ### Syncing
 
 ```bash
-# Sync everything (incremental by default)
+# Normal archive maintenance: sync bookmarks + likes, then run archive enrich,
+# thread expansion, article refresh, media download, and unfurl.
+uv run tweetxvault sync
+
+# Explicit alias for the same default sync pass
 uv run tweetxvault sync all
 
 # Sync just bookmarks, likes, or your own authored tweets
@@ -184,13 +188,13 @@ uv run tweetxvault sync likes
 uv run tweetxvault sync tweets
 
 # Force a specific browser profile for this run
-uv run tweetxvault sync all --browser chrome --profile "Profile 2"
+uv run tweetxvault sync --browser chrome --profile "Profile 2"
 
 # Full re-sync from scratch (resets sync state, does not delete existing data)
-uv run tweetxvault sync all --full
+uv run tweetxvault sync --full
 
 # Continue past duplicates without resetting state
-uv run tweetxvault sync all --backfill
+uv run tweetxvault sync --backfill
 
 # Clear a saved historical backfill cursor and run only the head pass
 uv run tweetxvault sync likes --head-only
@@ -199,12 +203,15 @@ uv run tweetxvault sync likes --head-only
 uv run tweetxvault sync bookmarks --article-backfill
 
 # Limit to N pages per collection
-uv run tweetxvault sync all --limit 5
+uv run tweetxvault sync --limit 5
+
+# Opt out of one or more automatic follow-up jobs for this run
+uv run tweetxvault sync --skip-media --skip-unfurl
 ```
 
 If the `[embed]` extra is installed, new tweets are automatically embedded after each sync on a best-effort basis; if embedding fails, sync still succeeds and you can retry later with `tweetxvault embed`.
 `--article-backfill` updates stored `raw_json` and normalized secondary rows inline, so it does not require a follow-up `tweetxvault rehydrate`.
-`tweetxvault sync all` still covers bookmarks + likes only; authored tweets stay opt-in via `tweetxvault sync tweets`.
+By default, `tweetxvault sync` and `tweetxvault sync all` both cover bookmarks + likes, then visibly run the follow-up archive-maintenance passes for TweetDetail enrich, threads, preview-only articles, media, and unfurls. Authored tweets stay opt-in via `tweetxvault sync tweets`.
 `--head-only` is the escape hatch when an old saved backfill cursor is no longer useful: it clears that cursor for the targeted collection and runs only the normal head pass. It cannot be combined with `--full`, `--backfill`, or `--article-backfill`.
 
 Common sync flags:
@@ -213,6 +220,7 @@ Common sync flags:
 - `--backfill`: keep walking older pages past duplicate detection when you want more history without resetting state.
 - `--head-only`: clear a saved older-history cursor and do only the normal head pass; use this to stop `resume older`.
 - `--article-backfill`: rewalk existing pages to refresh article-bearing tweets after article extraction changes.
+- `--skip-enrich`, `--skip-threads`, `--skip-articles`, `--skip-media`, `--skip-unfurl`: skip one or more automatic follow-up archive-maintenance jobs for just that sync run.
 - `--limit N`: cap the run to `N` fetched pages for debugging, sampling, or shorter catch-up runs.
 - `--browser`, `--profile`, `--profile-path`: force a specific browser/profile for cookie extraction on just that run.
 
@@ -449,8 +457,8 @@ while that compact is running to skip it and exit; if you do, run
 ## Unattended sync via cron
 
 ```cron
-# Sync bookmarks and likes every 6 hours
-0 */6 * * * cd /path/to/tweetxvault && uv run tweetxvault sync all 2>> /tmp/tweetxvault.log
+# Sync bookmarks/likes plus the normal follow-up archive maintenance every 6 hours
+0 */6 * * * cd /path/to/tweetxvault && uv run tweetxvault sync 2>> /tmp/tweetxvault.log
 ```
 
 A process lock prevents overlapping runs.

@@ -196,6 +196,104 @@ async def test_sync_collection_end_to_end_and_resume(paths, config: AppConfig, a
 
 
 @pytest.mark.asyncio
+async def test_sync_collection_runs_followups_when_requested(
+    paths,
+    config: AppConfig,
+    auth_bundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _save_query_ids(paths)
+    calls: list[object] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        _operation, variables = _op_and_variables(request)
+        count = int(variables["count"])
+        if count == 1:
+            return httpx.Response(
+                200,
+                json=make_bookmarks_response(["probe"], cursor="probe-cursor"),
+                request=request,
+            )
+        return httpx.Response(200, json=make_bookmarks_response(["1"]), request=request)
+
+    async def fake_followups(**kwargs) -> None:
+        calls.append(kwargs["plan"])
+
+    monkeypatch.setattr(sync_module, "_run_auto_followups", fake_followups)
+
+    result = await sync_collection(
+        "bookmarks",
+        full=False,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        query_ids={"Bookmarks": "qid-bookmarks"},
+        transport=httpx.MockTransport(handler),
+        console=_console(),
+        sleep=lambda _: asyncio.sleep(0),
+        followups=sync_module.SyncFollowupPlan(),
+    )
+
+    assert result.pages_fetched == 1
+    assert calls == [sync_module.SyncFollowupPlan()]
+
+
+@pytest.mark.asyncio
+async def test_run_auto_followups_continues_after_task_failure(
+    paths,
+    config: AppConfig,
+    auth_bundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=False, color_system=None)
+    calls: list[str] = []
+
+    async def fail_enrich(**_kwargs):
+        calls.append("enrich")
+        raise RuntimeError("boom")
+
+    async def ok_threads(**_kwargs):
+        calls.append("threads")
+        return SimpleNamespace(processed=1, expanded=1, skipped=0, failed=0)
+
+    async def ok_articles(**_kwargs):
+        calls.append("articles")
+        return SimpleNamespace(processed=1, updated=1, failed=0)
+
+    async def ok_media(**_kwargs):
+        calls.append("media")
+        return SimpleNamespace(processed=1, downloaded=1, skipped=0, failed=0)
+
+    async def ok_unfurl(**_kwargs):
+        calls.append("unfurl")
+        return SimpleNamespace(processed=1, updated=1, failed=0)
+
+    monkeypatch.setattr(sync_module, "_run_followup_archive_enrich", fail_enrich)
+    monkeypatch.setattr(sync_module, "_run_followup_threads", ok_threads)
+    monkeypatch.setattr(sync_module, "_run_followup_articles", ok_articles)
+    monkeypatch.setattr(sync_module, "_run_followup_media", ok_media)
+    monkeypatch.setattr(sync_module, "_run_followup_unfurl", ok_unfurl)
+
+    await sync_module._run_auto_followups(
+        plan=sync_module.SyncFollowupPlan(),
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=None,
+        console=console,
+        sleep=lambda _: asyncio.sleep(0),
+    )
+
+    assert calls == ["enrich", "threads", "articles", "media", "unfurl"]
+    output = buffer.getvalue()
+    assert "sync follow-up: running archive enrich" in output
+    assert "sync follow-up archive enrich failed" in output
+    assert "sync follow-up: threads: 1 processed, 1 expanded, 0 skipped, 0 failed" in output
+
+
+@pytest.mark.asyncio
 async def test_sync_collection_interrupt_best_effort_optimizes_after_committed_pages(
     paths,
     config: AppConfig,

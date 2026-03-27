@@ -2,6 +2,20 @@
 
 ## 2026-03-27
 
+- Realigned the default sync UX around the actual archive-maintenance workflow:
+  - bare `tweetxvault sync` now runs the same bookmarks + likes pass as `sync all`
+    instead of acting like a help-only command group
+  - the default sync surface now explicitly describes and forwards the automatic
+    follow-up jobs for archive enrich, threads expand, articles refresh, media
+    download, and unfurl, with `--skip-*` flags as the per-run escape hatches
+  - updated `README.md` examples and the cron example to prefer `tweetxvault
+    sync`, while keeping authored tweets explicit via `tweetxvault sync tweets`
+  - validation:
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q tests/test_cli.py -k 'sync or version'`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q tests/test_sync.py -k 'followups or interrupt'`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault sync --help`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault sync all --help`
+
 - Added best-effort interrupt compaction for long-running archive writers:
   - introduced shared write tracking in `tweetxvault/jobs.py` using both
     committed batch/row counts and Lance version deltas so `Ctrl-C` cleanup is

@@ -131,7 +131,11 @@ def test_sync_help_lists_subcommand_descriptions() -> None:
     result = runner.invoke(cli.app, ["sync", "--help"])
 
     assert result.exit_code == 0
-    assert "Sync bookmarks, likes, or authored tweets." in result.stdout
+    assert "Run the normal sync pass." in result.stdout
+    assert "Without a subcommand" in result.stdout
+    assert "archive enrich" in result.stdout
+    assert "--skip-enrich" in result.stdout
+    assert "--skip-threads" in result.stdout
     assert "bookmarks" in result.stdout
     assert "Sync bookmarked tweets." in result.stdout
     assert "likes" in result.stdout
@@ -139,7 +143,17 @@ def test_sync_help_lists_subcommand_descriptions() -> None:
     assert "tweets" in result.stdout
     assert "Sync authored tweets." in result.stdout
     assert "all" in result.stdout
-    assert "Sync bookmarks, then likes." in result.stdout
+    assert "media download" in result.stdout
+
+
+def test_sync_all_help_describes_default_followups() -> None:
+    result = runner.invoke(cli.app, ["sync", "all", "--help"])
+
+    assert result.exit_code == 0
+    assert "Sync bookmarks and likes" in result.stdout
+    assert "archive enrich" in result.stdout
+    assert "--skip-media" in result.stdout
+    assert "--skip-unfurl" in result.stdout
 
 
 def test_sync_likes_help_describes_flags() -> None:
@@ -156,6 +170,8 @@ def test_root_help_lists_group_descriptions() -> None:
     result = runner.invoke(cli.app, ["--help"])
 
     assert result.exit_code == 0
+    assert "sync" in result.stdout
+    assert "Run the normal sync pass." in result.stdout
     assert "auth" in result.stdout
     assert "Check auth and refresh query IDs." in result.stdout
     assert "articles" in result.stdout
@@ -632,6 +648,7 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
         config=None,
         auth_bundle=None,
         console=None,
+        followups=None,
     ):
         forwarded.update(
             {
@@ -641,6 +658,7 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
                 "article_backfill": article_backfill,
                 "head_only": head_only,
                 "limit": limit,
+                "followups": followups,
             }
         )
         return SimpleNamespace(pages_fetched=2, tweets_seen=3, stop_reason="empty")
@@ -656,6 +674,7 @@ def test_sync_bookmarks_forwards_article_backfill(paths, monkeypatch) -> None:
         "article_backfill": True,
         "head_only": False,
         "limit": None,
+        "followups": cli.SyncFollowupPlan(),
     }
     assert "bookmarks: 2 pages, 3 tweets, empty" in buffer.getvalue()
 
@@ -682,6 +701,7 @@ def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
         config=None,
         auth_bundle=None,
         console=None,
+        followups=None,
     ):
         forwarded.update(
             {
@@ -691,6 +711,7 @@ def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
                 "article_backfill": article_backfill,
                 "head_only": head_only,
                 "limit": limit,
+                "followups": followups,
             }
         )
         return SimpleNamespace(pages_fetched=2, tweets_seen=3, stop_reason="empty")
@@ -706,6 +727,7 @@ def test_sync_likes_forwards_article_backfill(paths, monkeypatch) -> None:
         "article_backfill": True,
         "head_only": False,
         "limit": None,
+        "followups": cli.SyncFollowupPlan(),
     }
     assert "likes: 2 pages, 3 tweets, empty" in buffer.getvalue()
 
@@ -732,6 +754,7 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
         config=None,
         auth_bundle=None,
         console=None,
+        followups=None,
     ):
         forwarded.update(
             {
@@ -741,6 +764,7 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
                 "article_backfill": article_backfill,
                 "head_only": head_only,
                 "limit": limit,
+                "followups": followups,
             }
         )
         return SimpleNamespace(pages_fetched=2, tweets_seen=3, stop_reason="empty")
@@ -756,6 +780,7 @@ def test_sync_tweets_forwards_article_backfill(paths, monkeypatch) -> None:
         "article_backfill": True,
         "head_only": False,
         "limit": None,
+        "followups": cli.SyncFollowupPlan(),
     }
     assert "tweets: 2 pages, 3 tweets, empty" in buffer.getvalue()
 
@@ -781,6 +806,7 @@ def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
         config=None,
         auth_bundle=None,
         console=None,
+        followups=None,
     ):
         forwarded.update(
             {
@@ -789,6 +815,7 @@ def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
                 "article_backfill": article_backfill,
                 "head_only": head_only,
                 "limit": limit,
+                "followups": followups,
             }
         )
         return SimpleNamespace(
@@ -809,10 +836,108 @@ def test_sync_all_forwards_article_backfill(paths, monkeypatch) -> None:
         "article_backfill": True,
         "head_only": False,
         "limit": None,
+        "followups": cli.SyncFollowupPlan(),
     }
     output = buffer.getvalue()
     assert "bookmarks: 2 pages, 3 tweets" in output
     assert "likes: failed (boom)" in output
+
+
+def test_sync_default_runs_sync_all_with_full_followups(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_all(
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        head_only=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+        followups=None,
+    ):
+        forwarded.update(
+            {
+                "full": full,
+                "backfill": backfill,
+                "article_backfill": article_backfill,
+                "head_only": head_only,
+                "limit": limit,
+                "followups": followups,
+            }
+        )
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(collection="bookmarks", pages_fetched=2, tweets_seen=3),
+                SimpleNamespace(collection="likes", pages_fetched=1, tweets_seen=2),
+            ],
+            errors={},
+            exit_code=0,
+        )
+
+    monkeypatch.setattr(cli, "sync_all", fake_sync_all)
+
+    result = runner.invoke(cli.app, ["sync"])
+
+    assert result.exit_code == 0
+    assert forwarded == {
+        "full": False,
+        "backfill": False,
+        "article_backfill": False,
+        "head_only": False,
+        "limit": None,
+        "followups": cli.SyncFollowupPlan(),
+    }
+    output = buffer.getvalue()
+    assert "bookmarks: 2 pages, 3 tweets" in output
+    assert "likes: 1 pages, 2 tweets" in output
+
+
+def test_sync_default_skip_flags_disable_selected_followups(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="t")),
+    )
+    forwarded = {}
+
+    async def fake_sync_all(
+        *,
+        full,
+        backfill=False,
+        article_backfill=False,
+        head_only=False,
+        limit=None,
+        config=None,
+        auth_bundle=None,
+        console=None,
+        followups=None,
+    ):
+        forwarded["followups"] = followups
+        return SimpleNamespace(results=[], errors={}, exit_code=0)
+
+    monkeypatch.setattr(cli, "sync_all", fake_sync_all)
+
+    result = runner.invoke(cli.app, ["sync", "--skip-media", "--skip-threads"])
+
+    assert result.exit_code == 0
+    assert forwarded["followups"] == cli.SyncFollowupPlan(
+        media=False,
+        threads=False,
+    )
 
 
 def test_sync_likes_forwards_head_only(paths, monkeypatch) -> None:
@@ -837,6 +962,7 @@ def test_sync_likes_forwards_head_only(paths, monkeypatch) -> None:
         config=None,
         auth_bundle=None,
         console=None,
+        followups=None,
     ):
         forwarded.update(
             {
@@ -846,6 +972,7 @@ def test_sync_likes_forwards_head_only(paths, monkeypatch) -> None:
                 "article_backfill": article_backfill,
                 "head_only": head_only,
                 "limit": limit,
+                "followups": followups,
             }
         )
         return SimpleNamespace(pages_fetched=1, tweets_seen=20, stop_reason="duplicate")
@@ -861,6 +988,7 @@ def test_sync_likes_forwards_head_only(paths, monkeypatch) -> None:
         "article_backfill": False,
         "head_only": True,
         "limit": None,
+        "followups": cli.SyncFollowupPlan(),
     }
     assert "likes: 1 pages, 20 tweets, duplicate" in buffer.getvalue()
 

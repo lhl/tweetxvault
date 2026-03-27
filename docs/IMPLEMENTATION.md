@@ -171,6 +171,10 @@ Historical note: this was the shipped MVP backend after the SeekDB spike failed 
   - documented the `resume older`, `none saved`, `saved only`, and `incomplete` status markers plus the exact `--head-only` command used to clear `resume older`
 - [x] Updated `AGENTS.md` to keep CLI help/docs/tests in sync going forward:
   - new user-facing flags and status markers now require explicit CLI help text, README updates when behavior is user-facing, and representative help-output test coverage
+- [x] Made bare `tweetxvault sync` the default archive-maintenance entrypoint:
+  - `tweetxvault sync` now behaves like the normal bookmarks + likes sync pass instead of acting as a help-only group
+  - the default sync path visibly runs archive enrich, thread expansion, article refresh, media download, and unfurl unless `--skip-*` flags opt out
+  - authored tweets remain explicit via `tweetxvault sync tweets`, so the comprehensive default still does not silently expand into a third live collection
 - [x] First-run UX: all commands auto-create XDG dirs. `sync` commands validate auth before API calls, probe the target collection(s) before writing data, and print actionable errors (not stack traces) on failure.
 - [x] Exit codes: 0 success, 1 auth/config error, 2 API/network/runtime sync error. `sync all` uses 2 for partial runtime failure after reporting per-collection results.
 

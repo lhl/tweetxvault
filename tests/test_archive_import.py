@@ -643,6 +643,56 @@ def test_enrich_imported_archive_reuses_existing_import_state(
     assert result.pending_enrichment == 3
 
 
+def test_enrich_imported_archive_can_skip_live_reconciliation(
+    paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive_dir = _write_archive_dir(tmp_path)
+    _disable_live_reconciliation(monkeypatch)
+
+    asyncio.run(
+        import_x_archive(
+            archive_dir,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
+        )
+    )
+
+    provided_auth = _auth_bundle()
+    captured: dict[str, object] = {}
+
+    async def fail_reconciliation(**_kwargs):
+        raise AssertionError("live reconciliation should be skipped")
+
+    async def fake_enrich_pending_rows(**kwargs):
+        captured["limit"] = kwargs["limit"]
+        captured["auth_token"] = kwargs["auth_bundle"].auth_token
+        captured["user_id"] = kwargs["auth_bundle"].user_id
+        return 5, 0, 1, 2
+
+    monkeypatch.setattr(archive_import, "_run_live_reconciliation", fail_reconciliation)
+    monkeypatch.setattr(archive_import, "_enrich_pending_rows", fake_enrich_pending_rows)
+
+    result = asyncio.run(
+        enrich_imported_archive(
+            limit=7,
+            reconcile_live=False,
+            config=AppConfig(),
+            paths=paths,
+            auth_bundle=provided_auth,
+            console=_console(),
+        )
+    )
+
+    assert captured == {"limit": 7, "auth_token": "auth", "user_id": "42"}
+    assert result.reconciled_collections == []
+    assert result.warnings == []
+    assert result.detail_lookups == 5
+    assert result.detail_terminal_unavailable == 0
+    assert result.detail_transient_failures == 1
+    assert result.pending_enrichment == 2
+
+
 def test_enrich_pending_rows_batches_detail_writes(paths, monkeypatch: pytest.MonkeyPatch) -> None:
     store = open_archive_store(paths, create=True)
     assert store is not None

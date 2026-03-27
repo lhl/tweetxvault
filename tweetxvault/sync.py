@@ -101,6 +101,19 @@ class SyncAllResult:
     errors: dict[str, str]
 
 
+@dataclass(slots=True)
+class SyncFollowupPlan:
+    enrich: bool = True
+    articles: bool = True
+    media: bool = True
+    unfurl: bool = True
+    threads: bool = True
+
+    @property
+    def enabled(self) -> bool:
+        return any((self.enrich, self.articles, self.media, self.unfurl, self.threads))
+
+
 class ProcessLock:
     def __init__(self, path: Path):
         self.path = path
@@ -397,6 +410,7 @@ async def sync_collection(
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    followups: SyncFollowupPlan | None = None,
 ) -> SyncResult:
     if config is None or paths is None:
         loaded_config, loaded_paths = load_config()
@@ -413,7 +427,7 @@ async def sync_collection(
         query_ids=query_ids,
         transport=transport,
     )
-    return await _sync_collection_ready(
+    result = await _sync_collection_ready(
         collection=collection,
         full=full,
         backfill=backfill,
@@ -428,6 +442,17 @@ async def sync_collection(
         console=console,
         sleep=sleep,
     )
+    if followups is not None and followups.enabled:
+        await _run_auto_followups(
+            plan=followups,
+            config=config,
+            paths=paths,
+            auth_bundle=preflight.auth,
+            transport=transport,
+            console=console,
+            sleep=sleep,
+        )
+    return result
 
 
 def _embed_new_tweets(store: Any, console: Console | None) -> None:
@@ -456,6 +481,254 @@ def _embed_new_tweets(store: Any, console: Console | None) -> None:
 def _log_embedding_warning(console: Console | None, message: str) -> None:
     if console is not None:
         console.print(f"[yellow]{message}[/yellow]")
+
+
+def _log_sync_followup(console: Console | None, message: str) -> None:
+    if console is not None:
+        console.print(f"sync follow-up: {message}", highlight=False)
+
+
+async def _run_followup_archive_enrich(
+    *,
+    config: AppConfig,
+    paths: XDGPaths,
+    auth_bundle: ResolvedAuthBundle,
+    transport: httpx.AsyncBaseTransport | None,
+    console: Console,
+):
+    from tweetxvault.archive_import import enrich_imported_archive
+
+    return await enrich_imported_archive(
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=transport,
+        console=console,
+        reconcile_live=False,
+    )
+
+
+async def _run_followup_threads(
+    *,
+    config: AppConfig,
+    paths: XDGPaths,
+    auth_bundle: ResolvedAuthBundle,
+    transport: httpx.AsyncBaseTransport | None,
+    console: Console,
+    sleep: Callable[[float], Awaitable[None]],
+):
+    from tweetxvault.threads import expand_threads
+
+    return await expand_threads(
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=transport,
+        console=console,
+        sleep=sleep,
+    )
+
+
+async def _run_followup_articles(
+    *,
+    config: AppConfig,
+    paths: XDGPaths,
+    auth_bundle: ResolvedAuthBundle,
+    transport: httpx.AsyncBaseTransport | None,
+    console: Console,
+    sleep: Callable[[float], Awaitable[None]],
+):
+    from tweetxvault.articles import refresh_articles
+
+    return await refresh_articles(
+        targets=None,
+        preview_only=True,
+        limit=None,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=transport,
+        console=console,
+        sleep=sleep,
+    )
+
+
+async def _run_followup_media(
+    *,
+    config: AppConfig,
+    paths: XDGPaths,
+    console: Console,
+):
+    from tweetxvault.media import download_media
+
+    return await download_media(
+        limit=None,
+        photos_only=False,
+        retry_failed=False,
+        config=config,
+        paths=paths,
+        console=console,
+    )
+
+
+async def _run_followup_unfurl(
+    *,
+    config: AppConfig,
+    paths: XDGPaths,
+    console: Console,
+):
+    from tweetxvault.unfurl import unfurl_urls
+
+    return await unfurl_urls(
+        limit=None,
+        retry_failed=False,
+        config=config,
+        paths=paths,
+        console=console,
+    )
+
+
+async def _run_auto_followups(
+    *,
+    plan: SyncFollowupPlan,
+    config: AppConfig,
+    paths: XDGPaths,
+    auth_bundle: ResolvedAuthBundle,
+    transport: httpx.AsyncBaseTransport | None,
+    console: Console,
+    sleep: Callable[[float], Awaitable[None]],
+) -> None:
+    if not plan.enabled:
+        return
+
+    if plan.enrich:
+        _log_sync_followup(console, "running archive enrich")
+        try:
+            result = await _run_followup_archive_enrich(
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                transport=transport,
+                console=console,
+            )
+        except ConfigError as exc:
+            _log_sync_followup(console, f"archive enrich skipped ({exc})")
+        except Exception as exc:
+            _log_embedding_warning(
+                console,
+                "sync follow-up archive enrich failed; "
+                f"run 'tweetxvault import enrich' later ({exc})",
+            )
+        else:
+            _log_sync_followup(
+                console,
+                "archive enrich: "
+                f"{result.detail_lookups} refreshed, "
+                f"{result.detail_terminal_unavailable} terminal, "
+                f"{result.detail_transient_failures} transient failures, "
+                f"{result.pending_enrichment} pending",
+            )
+
+    if plan.threads:
+        _log_sync_followup(console, "running threads expand")
+        try:
+            result = await _run_followup_threads(
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                transport=transport,
+                console=console,
+                sleep=sleep,
+            )
+        except Exception as exc:
+            _log_embedding_warning(
+                console,
+                "sync follow-up threads expand failed; "
+                f"run 'tweetxvault threads expand' later ({exc})",
+            )
+        else:
+            _log_sync_followup(
+                console,
+                "threads: "
+                f"{result.processed} processed, "
+                f"{result.expanded} expanded, "
+                f"{result.skipped} skipped, "
+                f"{result.failed} failed",
+            )
+
+    if plan.articles:
+        _log_sync_followup(console, "running articles refresh")
+        try:
+            result = await _run_followup_articles(
+                config=config,
+                paths=paths,
+                auth_bundle=auth_bundle,
+                transport=transport,
+                console=console,
+                sleep=sleep,
+            )
+        except Exception as exc:
+            _log_embedding_warning(
+                console,
+                "sync follow-up articles refresh failed; "
+                f"run 'tweetxvault articles refresh' later ({exc})",
+            )
+        else:
+            _log_sync_followup(
+                console,
+                "articles: "
+                f"{result.processed} processed, "
+                f"{result.updated} refreshed, "
+                f"{result.failed} failed",
+            )
+
+    if plan.media:
+        _log_sync_followup(console, "running media download")
+        try:
+            result = await _run_followup_media(
+                config=config,
+                paths=paths,
+                console=console,
+            )
+        except Exception as exc:
+            _log_embedding_warning(
+                console,
+                "sync follow-up media download failed; "
+                f"run 'tweetxvault media download' later ({exc})",
+            )
+        else:
+            _log_sync_followup(
+                console,
+                "media: "
+                f"{result.processed} processed, "
+                f"{result.downloaded} downloaded, "
+                f"{result.skipped} skipped, "
+                f"{result.failed} failed",
+            )
+
+    if plan.unfurl:
+        _log_sync_followup(console, "running unfurl")
+        try:
+            result = await _run_followup_unfurl(
+                config=config,
+                paths=paths,
+                console=console,
+            )
+        except Exception as exc:
+            _log_embedding_warning(
+                console,
+                f"sync follow-up unfurl failed; run 'tweetxvault unfurl' later ({exc})",
+            )
+        else:
+            _log_sync_followup(
+                console,
+                "unfurl: "
+                f"{result.processed} processed, "
+                f"{result.updated} updated, "
+                f"{result.failed} failed",
+            )
 
 
 async def _sync_collection_ready(
@@ -641,6 +914,7 @@ async def sync_all(
     transport: httpx.AsyncBaseTransport | None = None,
     console: Console | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    followups: SyncFollowupPlan | None = None,
 ) -> SyncAllResult:
     if config is None or paths is None:
         loaded_config, loaded_paths = load_config()
@@ -685,4 +959,14 @@ async def sync_all(
             errors[collection] = str(exc)
             console.print(f"{collection}: failed ({exc})")
             break
+    if exit_code == 0 and followups is not None and followups.enabled:
+        await _run_auto_followups(
+            plan=followups,
+            config=config,
+            paths=paths,
+            auth_bundle=preflight.auth,
+            transport=transport,
+            console=console,
+            sleep=sleep,
+        )
     return SyncAllResult(exit_code=exit_code, results=results, errors=errors)

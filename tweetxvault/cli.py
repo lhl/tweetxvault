@@ -42,7 +42,13 @@ from tweetxvault.grailbird import convert_archive as convert_grailbird_archive
 from tweetxvault.media import download_media
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import open_archive_store
-from tweetxvault.sync import ProcessLock, run_preflight, sync_all, sync_collection
+from tweetxvault.sync import (
+    ProcessLock,
+    SyncFollowupPlan,
+    run_preflight,
+    sync_all,
+    sync_collection,
+)
 from tweetxvault.threads import expand_threads
 from tweetxvault.unfurl import unfurl_urls
 
@@ -52,12 +58,18 @@ auth_app = typer.Typer(no_args_is_help=True, help="Check auth and refresh query 
 export_app = typer.Typer(no_args_is_help=True, help="Export the local archive.")
 import_app = typer.Typer(no_args_is_help=True, help="Import and enrich official X archives.")
 media_app = typer.Typer(no_args_is_help=True, help="Download archived tweet media.")
+SYNC_GROUP_HELP = (
+    "Run the normal sync pass. Without a subcommand, this syncs bookmarks and likes, "
+    "then runs archive enrich, thread expansion, article refresh, media download, "
+    "and unfurl unless you skip them."
+)
+SYNC_ALL_HELP = (
+    "Sync bookmarks and likes, then run archive enrich, thread expansion, article "
+    "refresh, media download, and unfurl unless skipped."
+)
 sync_app = typer.Typer(
-    no_args_is_help=True,
-    help=(
-        "Sync bookmarks, likes, or authored tweets. "
-        "Run 'tweetxvault sync <command> --help' to see that subcommand's flags."
-    ),
+    invoke_without_command=True,
+    help=SYNC_GROUP_HELP,
 )
 thread_app = typer.Typer(no_args_is_help=True, help="Expand archived tweet threads.")
 view_app = typer.Typer(no_args_is_help=True, help="Render archived tweets in the terminal.")
@@ -70,7 +82,7 @@ app.add_typer(media_app, name="media", help="Download archived tweet media.")
 app.add_typer(
     sync_app,
     name="sync",
-    help="Sync bookmarks, likes, or authored tweets.",
+    help=SYNC_GROUP_HELP,
 )
 app.add_typer(thread_app, name="threads", help="Expand archived tweet threads.")
 app.add_typer(view_app, name="view", help="Render archived tweets in the terminal.")
@@ -92,6 +104,11 @@ HEAD_ONLY_HELP = (
     "Does not resume older historical backfill state."
 )
 SYNC_LIMIT_HELP = "Maximum number of pages to fetch for this run."
+SYNC_SKIP_ENRICH_HELP = "Skip automatic archive TweetDetail enrichment after sync."
+SYNC_SKIP_ARTICLES_HELP = "Skip automatic article-body refresh after sync."
+SYNC_SKIP_MEDIA_HELP = "Skip automatic media downloads after sync."
+SYNC_SKIP_UNFURL_HELP = "Skip automatic URL unfurls after sync."
+SYNC_SKIP_THREADS_HELP = "Skip automatic thread expansion after sync."
 SYNC_BROWSER_OPTION = Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)]
 SYNC_PROFILE_OPTION = Annotated[
     str | None,
@@ -108,6 +125,26 @@ SYNC_ARTICLE_BACKFILL_OPTION = Annotated[
 SYNC_HEAD_ONLY_OPTION = Annotated[
     bool,
     typer.Option("--head-only", help=HEAD_ONLY_HELP),
+]
+SYNC_SKIP_ENRICH_OPTION = Annotated[
+    bool,
+    typer.Option("--skip-enrich", help=SYNC_SKIP_ENRICH_HELP),
+]
+SYNC_SKIP_ARTICLES_OPTION = Annotated[
+    bool,
+    typer.Option("--skip-articles", help=SYNC_SKIP_ARTICLES_HELP),
+]
+SYNC_SKIP_MEDIA_OPTION = Annotated[
+    bool,
+    typer.Option("--skip-media", help=SYNC_SKIP_MEDIA_HELP),
+]
+SYNC_SKIP_UNFURL_OPTION = Annotated[
+    bool,
+    typer.Option("--skip-unfurl", help=SYNC_SKIP_UNFURL_HELP),
+]
+SYNC_SKIP_THREADS_OPTION = Annotated[
+    bool,
+    typer.Option("--skip-threads", help=SYNC_SKIP_THREADS_HELP),
 ]
 DEBUG_AUTH_OPTION = Annotated[
     bool,
@@ -446,6 +483,110 @@ def _run_sync_command(
         raise typer.Exit(2) from exc
 
 
+def _sync_followup_plan(
+    *,
+    skip_enrich: bool,
+    skip_articles: bool,
+    skip_media: bool,
+    skip_unfurl: bool,
+    skip_threads: bool,
+) -> SyncFollowupPlan:
+    return SyncFollowupPlan(
+        enrich=not skip_enrich,
+        articles=not skip_articles,
+        media=not skip_media,
+        unfurl=not skip_unfurl,
+        threads=not skip_threads,
+    )
+
+
+def _run_sync_all_command(
+    *,
+    full: bool,
+    backfill: bool,
+    article_backfill: bool,
+    head_only: bool,
+    limit: int | None,
+    browser: str | None,
+    profile: str | None,
+    profile_path: Path | None,
+    skip_enrich: bool,
+    skip_articles: bool,
+    skip_media: bool,
+    skip_unfurl: bool,
+    skip_threads: bool,
+) -> None:
+    followups = _sync_followup_plan(
+        skip_enrich=skip_enrich,
+        skip_articles=skip_articles,
+        skip_media=skip_media,
+        skip_unfurl=skip_unfurl,
+        skip_threads=skip_threads,
+    )
+    console, outcome = _run_sync_command(
+        browser=browser,
+        profile=profile,
+        profile_path=profile_path,
+        runner=lambda config, auth_bundle, runner_console: sync_all(
+            full=full,
+            backfill=backfill,
+            article_backfill=article_backfill,
+            head_only=head_only,
+            limit=limit,
+            config=config,
+            auth_bundle=auth_bundle,
+            console=runner_console,
+            followups=followups,
+        ),
+    )
+    for result in outcome.results:
+        console.print(
+            f"{result.collection}: {result.pages_fetched} pages, {result.tweets_seen} tweets"
+        )
+    for collection, error in outcome.errors.items():
+        console.print(f"{collection}: failed ({error})")
+    raise typer.Exit(outcome.exit_code)
+
+
+@sync_app.callback()
+def sync_default(
+    ctx: typer.Context,
+    full: Annotated[bool, typer.Option("--full", help=SYNC_FULL_HELP)] = False,
+    backfill: Annotated[
+        bool,
+        typer.Option("--backfill", help=SYNC_BACKFILL_HELP),
+    ] = False,
+    article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
+    head_only: SYNC_HEAD_ONLY_OPTION = False,
+    limit: Annotated[int | None, typer.Option("--limit", help=SYNC_LIMIT_HELP)] = None,
+    browser: SYNC_BROWSER_OPTION = None,
+    profile: SYNC_PROFILE_OPTION = None,
+    profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    skip_enrich: SYNC_SKIP_ENRICH_OPTION = False,
+    skip_articles: SYNC_SKIP_ARTICLES_OPTION = False,
+    skip_media: SYNC_SKIP_MEDIA_OPTION = False,
+    skip_unfurl: SYNC_SKIP_UNFURL_OPTION = False,
+    skip_threads: SYNC_SKIP_THREADS_OPTION = False,
+) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_sync_all_command(
+        full=full,
+        backfill=backfill,
+        article_backfill=article_backfill,
+        head_only=head_only,
+        limit=limit,
+        browser=browser,
+        profile=profile,
+        profile_path=profile_path,
+        skip_enrich=skip_enrich,
+        skip_articles=skip_articles,
+        skip_media=skip_media,
+        skip_unfurl=skip_unfurl,
+        skip_threads=skip_threads,
+    )
+
+
 def _register_sync_collection_command(collection: str):
     command_help = {
         "bookmarks": "Sync bookmarked tweets.",
@@ -465,7 +606,19 @@ def _register_sync_collection_command(collection: str):
         browser: SYNC_BROWSER_OPTION = None,
         profile: SYNC_PROFILE_OPTION = None,
         profile_path: SYNC_PROFILE_PATH_OPTION = None,
+        skip_enrich: SYNC_SKIP_ENRICH_OPTION = False,
+        skip_articles: SYNC_SKIP_ARTICLES_OPTION = False,
+        skip_media: SYNC_SKIP_MEDIA_OPTION = False,
+        skip_unfurl: SYNC_SKIP_UNFURL_OPTION = False,
+        skip_threads: SYNC_SKIP_THREADS_OPTION = False,
     ) -> None:
+        followups = _sync_followup_plan(
+            skip_enrich=skip_enrich,
+            skip_articles=skip_articles,
+            skip_media=skip_media,
+            skip_unfurl=skip_unfurl,
+            skip_threads=skip_threads,
+        )
         console, result = _run_sync_command(
             browser=browser,
             profile=profile,
@@ -480,6 +633,7 @@ def _register_sync_collection_command(collection: str):
                 config=config,
                 auth_bundle=auth_bundle,
                 console=runner_console,
+                followups=followups,
             ),
         )
         console.print(
@@ -718,7 +872,7 @@ sync_likes = _register_sync_collection_command("likes")
 sync_tweets = _register_sync_collection_command("tweets")
 
 
-@sync_app.command("all", help="Sync bookmarks, then likes.")
+@sync_app.command("all", help=SYNC_ALL_HELP)
 def sync_everything(
     full: Annotated[bool, typer.Option("--full", help=SYNC_FULL_HELP)] = False,
     backfill: Annotated[
@@ -731,29 +885,27 @@ def sync_everything(
     browser: SYNC_BROWSER_OPTION = None,
     profile: SYNC_PROFILE_OPTION = None,
     profile_path: SYNC_PROFILE_PATH_OPTION = None,
+    skip_enrich: SYNC_SKIP_ENRICH_OPTION = False,
+    skip_articles: SYNC_SKIP_ARTICLES_OPTION = False,
+    skip_media: SYNC_SKIP_MEDIA_OPTION = False,
+    skip_unfurl: SYNC_SKIP_UNFURL_OPTION = False,
+    skip_threads: SYNC_SKIP_THREADS_OPTION = False,
 ) -> None:
-    console, outcome = _run_sync_command(
+    _run_sync_all_command(
+        full=full,
+        backfill=backfill,
+        article_backfill=article_backfill,
+        head_only=head_only,
+        limit=limit,
         browser=browser,
         profile=profile,
         profile_path=profile_path,
-        runner=lambda config, auth_bundle, runner_console: sync_all(
-            full=full,
-            backfill=backfill,
-            article_backfill=article_backfill,
-            head_only=head_only,
-            limit=limit,
-            config=config,
-            auth_bundle=auth_bundle,
-            console=runner_console,
-        ),
+        skip_enrich=skip_enrich,
+        skip_articles=skip_articles,
+        skip_media=skip_media,
+        skip_unfurl=skip_unfurl,
+        skip_threads=skip_threads,
     )
-    for result in outcome.results:
-        console.print(
-            f"{result.collection}: {result.pages_fetched} pages, {result.tweets_seen} tweets"
-        )
-    for collection, error in outcome.errors.items():
-        console.print(f"{collection}: failed ({error})")
-    raise typer.Exit(outcome.exit_code)
 
 
 @auth_app.command("check", help="Validate local auth and probe remote timeline readiness.")

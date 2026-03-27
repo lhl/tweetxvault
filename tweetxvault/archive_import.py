@@ -956,6 +956,7 @@ async def _run_archive_followup(
     *,
     collections: list[str],
     detail_limit: int | None,
+    reconcile_live: bool,
     config: AppConfig,
     paths: XDGPaths,
     auth_bundle: ResolvedAuthBundle | None,
@@ -963,16 +964,25 @@ async def _run_archive_followup(
     console: Console,
     status: Callable[[str], None] | None = None,
 ) -> ArchiveEnrichResult:
-    reconciled_collections, reconcile_warnings, resolved_auth = await _run_live_reconciliation(
-        collections=collections,
-        config=config,
-        paths=paths,
-        auth_bundle=auth_bundle,
-        transport=transport,
-        console=console,
-        status=status,
-    )
-    warnings = list(reconcile_warnings)
+    warnings: list[str] = []
+    if reconcile_live:
+        reconciled_collections, reconcile_warnings, resolved_auth = await _run_live_reconciliation(
+            collections=collections,
+            config=config,
+            paths=paths,
+            auth_bundle=auth_bundle,
+            transport=transport,
+            console=console,
+            status=status,
+        )
+        warnings.extend(reconcile_warnings)
+    else:
+        reconciled_collections = []
+        try:
+            resolved_auth = auth_bundle or resolve_auth_bundle(config)
+        except ConfigError as exc:
+            warnings.append(f"detail enrichment skipped: {exc}")
+            resolved_auth = None
     detail_succeeded = 0
     detail_terminal = 0
     detail_transient = 0
@@ -1292,6 +1302,7 @@ def _aggregate_import_counts(manifest_rows: list[dict[str, Any]]) -> dict[str, i
 async def enrich_imported_archive(
     *,
     limit: int | None = None,
+    reconcile_live: bool = True,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
     auth_bundle: ResolvedAuthBundle | None = None,
@@ -1320,6 +1331,7 @@ async def enrich_imported_archive(
     return await _run_archive_followup(
         collections=_followup_collections_from_counts(counts),
         detail_limit=limit,
+        reconcile_live=reconcile_live,
         config=config,
         paths=paths,
         auth_bundle=auth_bundle,
@@ -1793,6 +1805,7 @@ async def import_x_archive(
         followup = await _run_archive_followup(
             collections=_followup_collections_from_counts(counts),
             detail_limit=None if enrich else detail_lookups,
+            reconcile_live=True,
             config=config,
             paths=paths,
             auth_bundle=auth_bundle,
