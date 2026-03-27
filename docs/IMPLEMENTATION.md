@@ -440,7 +440,7 @@ Fresh fixture status (2026-03-16):
   - interrupted archive imports now mark the manifest `failed` even on `KeyboardInterrupt` / cancellation before re-raising
   - archive dataset `raw_capture` rows now use deterministic keys per `(archive_digest, operation, filename)` so interrupted reruns overwrite instead of duplicating archive captures
   - added `tweetxvault import x-archive --regen` to clear archive-import-owned rows, manifests, and copied archive media files without touching live-owned rows
-  - upgraded interactive archive import progress from coarse phase markers to tqdm-backed rate/ETA output, and added `--debug --limit N` as a sampled diagnostic import path that does not poison normal `completed` manifests
+  - upgraded interactive archive import progress from coarse phase markers to tqdm-backed rate/ETA output, and added sampled import mode (now exposed as `--sample-limit N`) that does not poison normal `completed` manifests
 - [x] Optimized archive import for large existing archives:
   - added storage-level row-key prefetching so archive import can bulk hydrate existing rows into the page buffer instead of issuing one LanceDB lookup per merged tweet/object/media/url/article record
   - changed authored-tweet import to precompute and merge small graph chunks with one prefetch pass per chunk, and changed like import to prefetch `tweet:like` + `tweet_object` rows before placeholder seeding

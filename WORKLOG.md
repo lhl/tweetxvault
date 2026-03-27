@@ -2,6 +2,18 @@
 
 ## 2026-03-27
 
+- Fixed the inconsistent archive-import sampling flag:
+  - renamed `tweetxvault import x-archive --limit` to `--sample-limit` so
+    `--limit` stops meaning something completely different on that one command
+  - removed the extra `--debug` requirement because `--sample-limit` already
+    makes the sampled/non-completed import semantics explicit
+  - updated README/docs/tests to describe sampled imports with the new flag name
+  - validation:
+    - `uv run ruff check tweetxvault/cli.py tweetxvault/archive_import.py tests/test_cli.py tests/test_archive_import.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/cli.py tweetxvault/archive_import.py tests/test_cli.py tests/test_archive_import.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q tests/test_cli.py -k 'import_x_archive or import_x_archive_help or import_enrich' tests/test_archive_import.py -k 'sample_limit or sampled or enrich_imported_archive'`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault import x-archive --help`
+
 - Documented the manual follow-up/backfill path for older archives:
   - added a dedicated `README.md` section showing the full catch-up sequence for
     pre-default-followup archives: `import enrich`, `threads expand`, `articles

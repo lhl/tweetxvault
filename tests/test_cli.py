@@ -166,6 +166,15 @@ def test_sync_likes_help_describes_flags() -> None:
     assert "Maximum number of pages to fetch for this" in result.stdout
 
 
+def test_import_x_archive_help_describes_sample_limit() -> None:
+    result = runner.invoke(cli.app, ["import", "x-archive", "--help"])
+
+    assert result.exit_code == 0
+    assert "--sample-limit" in result.stdout
+    assert "stores a sampled manifest" in result.stdout
+    assert "--detail-lookups" in result.stdout
+
+
 def test_root_help_lists_group_descriptions() -> None:
     result = runner.invoke(cli.app, ["--help"])
 
@@ -1142,7 +1151,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         regen=False,
         enrich=False,
         detail_lookups=0,
-        limit=None,
+        sample_limit=None,
         debug=False,
         config=None,
         paths=None,
@@ -1155,7 +1164,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
                 "regen": regen,
                 "enrich": enrich,
                 "detail_lookups": detail_lookups,
-                "limit": limit,
+                "sample_limit": sample_limit,
                 "debug": debug,
                 "detail_delay": config.sync.detail_delay if config is not None else None,
                 "auth_bundle": auth_bundle,
@@ -1186,7 +1195,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         archive_path,
         regen=True,
         detail_lookups=25,
-        limit=100,
+        sample_limit=100,
         debug=True,
     )
 
@@ -1195,7 +1204,7 @@ def test_import_x_archive_reports_runner_result(paths, monkeypatch, tmp_path: Pa
         "regen": True,
         "enrich": False,
         "detail_lookups": 25,
-        "limit": 100,
+        "sample_limit": 100,
         "debug": True,
         "detail_delay": 0,
         "auth_bundle": None,
@@ -1224,7 +1233,7 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
         regen=False,
         enrich=False,
         detail_lookups=0,
-        limit=None,
+        sample_limit=None,
         debug=False,
         config=None,
         paths=None,
@@ -1237,7 +1246,7 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
                 "regen": regen,
                 "enrich": enrich,
                 "detail_lookups": detail_lookups,
-                "limit": limit,
+                "sample_limit": sample_limit,
                 "debug": debug,
             }
         )
@@ -1269,7 +1278,7 @@ def test_import_x_archive_enrich_reuses_existing_import(paths, monkeypatch, tmp_
         "regen": False,
         "enrich": True,
         "detail_lookups": 0,
-        "limit": None,
+        "sample_limit": None,
         "debug": False,
     }
     output = buffer.getvalue().replace("\n", " ")

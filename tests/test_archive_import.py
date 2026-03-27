@@ -1239,19 +1239,22 @@ def test_import_x_archive_preserves_attempt_start_time(
     store.close()
 
 
-def test_import_x_archive_limit_requires_debug(paths, tmp_path: Path) -> None:
+def test_import_x_archive_sample_limit_does_not_require_debug(paths, tmp_path: Path) -> None:
     archive_dir = _write_archive_dir(tmp_path)
 
-    with pytest.raises(ConfigError, match="--limit requires --debug"):
-        asyncio.run(
-            import_x_archive(
-                archive_dir,
-                limit=1,
-                config=AppConfig(),
-                paths=paths,
-                console=_console(),
-            )
+    result = asyncio.run(
+        import_x_archive(
+            archive_dir,
+            sample_limit=1,
+            config=AppConfig(),
+            paths=paths,
+            console=_console(),
         )
+    )
+
+    assert result.skipped is False
+    assert result.followup_performed is False
+    assert any("sampled import" in warning for warning in result.warnings)
 
 
 def test_sampled_debug_import_stays_non_completed_and_full_import_can_rerun(
@@ -1263,7 +1266,7 @@ def test_sampled_debug_import_stays_non_completed_and_full_import_can_rerun(
     sampled = asyncio.run(
         import_x_archive(
             archive_dir,
-            limit=1,
+            sample_limit=1,
             debug=True,
             config=AppConfig(),
             paths=paths,
@@ -1273,7 +1276,7 @@ def test_sampled_debug_import_stays_non_completed_and_full_import_can_rerun(
 
     assert sampled.skipped is False
     assert sampled.followup_performed is False
-    assert any("sampled debug import" in warning for warning in sampled.warnings)
+    assert any("sampled import" in warning for warning in sampled.warnings)
 
     store = open_archive_store(paths, create=False)
     assert store is not None

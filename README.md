@@ -287,8 +287,8 @@ uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip --enrich
 # Run a bounded TweetDetail follow-up after the automatic bulk tweets/likes reconciliation
 uv run tweetxvault import x-archive ~/Downloads/twitter-archive --detail-lookups 100
 
-# Sample/debug a large archive without touching the normal follow-up path
-uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip --regen --debug --limit 1000
+# Sample a large archive without touching the normal follow-up path
+uv run tweetxvault import x-archive ~/Downloads/twitter-archive.zip --regen --sample-limit 1000
 
 # Continue pending TweetDetail follow-up later without re-reading the archive ZIP
 uv run tweetxvault import enrich
@@ -316,7 +316,7 @@ Import follow-up options:
 - Interactive TTY runs show tqdm progress bars for hashing, tweet/like import, media copy, and detail enrichment by default.
 - Non-interactive runs stay quiet by default aside from warnings/errors, so cron/piped runs do not get interactive progress output.
 - `--debug` adds per-phase timing diagnostics on top of that interactive progress output.
-- `--limit N` requires `--debug` and is a sampled diagnostic import: tweetxvault still hashes and parses the full archive files, but only imports the first `N` authored tweets, deleted tweets, likes, and media files after load. Sampled runs are stored as `sampled`, not `completed`, and skip the automatic live follow-up unless you explicitly ask for `--enrich` / `--detail-lookups`.
+- `--sample-limit N` is the sampled import path: tweetxvault still hashes and parses the full archive files, but only imports the first `N` authored tweets, deleted tweets, likes, and media files after load. Sampled runs are stored as `sampled`, not `completed`, and skip the automatic live follow-up unless you explicitly ask for `--enrich` / `--detail-lookups`.
 
 ### Importing old "Grailbird" archives (pre-2018)
 

@@ -1347,7 +1347,7 @@ async def import_x_archive(
     detail_lookups: int = 0,
     enrich: bool = False,
     regen: bool = False,
-    limit: int | None = None,
+    sample_limit: int | None = None,
     debug: bool = False,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -1361,10 +1361,8 @@ async def import_x_archive(
     runner_console = _runner_console(console, force=debug)
     if enrich and detail_lookups > 0:
         raise ConfigError("Use either --enrich or --detail-lookups, not both.")
-    if limit is not None and limit <= 0:
-        raise ConfigError("--limit must be greater than zero.")
-    if limit is not None and not debug:
-        raise ConfigError("--limit requires --debug because it runs a sampled diagnostic import.")
+    if sample_limit is not None and sample_limit <= 0:
+        raise ConfigError("--sample-limit must be greater than zero.")
     _emit_status(status, f"opening {archive_path}")
     debug_summaries: list[str] = []
     with _ArchiveInput(archive_path) as source:
@@ -1391,16 +1389,16 @@ async def import_x_archive(
         generation_date = _manifest_generation_date(source.manifest)
         counts = _initial_counts()
         warnings: list[str] = []
-        sampled_import = limit is not None
+        sampled_import = sample_limit is not None
         final_status = "sampled" if sampled_import else "completed"
         if sampled_import:
             warnings.append(
-                f"sampled debug import: limiting authored tweets, deleted tweets, likes, and "
-                f"media files to {limit} items each after full dataset load"
+                f"sampled import: limiting authored tweets, deleted tweets, likes, and "
+                f"media files to {sample_limit} items each after full dataset load"
             )
             warnings.append(
-                "sampled debug import still hashes and parses the full archive files before "
-                "slicing imported rows"
+                "sampled import still hashes and parses the full archive files before slicing "
+                "imported rows"
             )
         _emit_status(status, "loading archive account metadata...")
         account_started = perf_counter()
@@ -1534,9 +1532,9 @@ async def import_x_archive(
                 total_tweets = len(tweets)
                 total_deleted_tweets = len(deleted_tweets)
                 total_likes = len(likes)
-                tweets = _slice_for_sample(tweets, limit=limit)
-                deleted_tweets = _slice_for_sample(deleted_tweets, limit=limit)
-                likes = _slice_for_sample(likes, limit=limit)
+                tweets = _slice_for_sample(tweets, limit=sample_limit)
+                deleted_tweets = _slice_for_sample(deleted_tweets, limit=sample_limit)
+                likes = _slice_for_sample(likes, limit=sample_limit)
                 _emit_status(
                     status,
                     (
@@ -1703,7 +1701,7 @@ async def import_x_archive(
                 media_total = 0
                 if isinstance(media_directory, str):
                     media_total = len(
-                        _slice_for_sample(source.iter_files(media_directory), limit=limit)
+                        _slice_for_sample(source.iter_files(media_directory), limit=sample_limit)
                     )
                 media_started = perf_counter()
                 with _progress_callback(
@@ -1721,7 +1719,7 @@ async def import_x_archive(
                         counts=counts,
                         warnings=warnings,
                         progress=media_progress,
-                        limit=limit,
+                        limit=sample_limit,
                         write_tracker=write_tracker,
                     )
                 if debug:
@@ -1780,8 +1778,8 @@ async def import_x_archive(
 
         if sampled_import and not followup_requested:
             warnings.append(
-                "sampled debug import skipped automatic live reconciliation and detail "
-                "enrichment; rerun without --limit for normal follow-up"
+                "sampled import skipped automatic live reconciliation and detail enrichment; "
+                "rerun without --sample-limit for normal follow-up"
             )
             final_counts = dict(counts)
             final_counts["pending_enrichment"] = pending_after_import

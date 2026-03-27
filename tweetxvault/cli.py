@@ -1268,14 +1268,15 @@ def import_x_archive_command(
             ),
         ),
     ] = 0,
-    limit: Annotated[
+    sample_limit: Annotated[
         int | None,
         typer.Option(
-            "--limit",
+            "--sample-limit",
             min=1,
             help=(
-                "Debug/sample mode: import at most N authored tweets, deleted tweets, likes, "
-                "and media files after full dataset load. Requires --debug."
+                "Sample mode: import at most N authored tweets, deleted tweets, likes, and "
+                "media files after full dataset load. This stores a sampled manifest instead "
+                "of a completed import."
             ),
         ),
     ] = None,
@@ -1311,7 +1312,7 @@ def import_x_archive_command(
                 regen=regen,
                 enrich=enrich,
                 detail_lookups=detail_lookups,
-                limit=limit,
+                sample_limit=sample_limit,
                 debug=debug,
                 config=config,
                 paths=paths,
