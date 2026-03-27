@@ -2,6 +2,19 @@
 
 ## 2026-03-27
 
+- Fixed the sync help surface after confirming the bare group output was too
+  sparse:
+  - added descriptive help text to the `sync` command group plus the
+    `bookmarks`, `likes`, `tweets`, and `all` subcommands
+  - added missing help strings for the sync-only `--full`, `--backfill`, and
+    `--limit` flags so `tweetxvault sync likes --help` is self-explanatory
+  - validation:
+    - `uv run ruff check tweetxvault/cli.py tests/test_cli.py`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check tweetxvault/cli.py tests/test_cli.py`
+    - `uv run pytest -q tests/test_cli.py -k "sync_help or version"`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault sync --help`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run tweetxvault sync likes --help`
+
 - Added `tweetxvault --version` for local-build verification:
   - the CLI now prints `tweetxvault <semver>` and, when invoked from a git
     checkout, includes the short commit hash plus a `dirty` marker when tracked

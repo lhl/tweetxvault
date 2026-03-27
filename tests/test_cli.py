@@ -127,6 +127,31 @@ def test_version_text_includes_git_revision_and_dirty_marker(
     assert cli._version_text() == f"tweetxvault {cli.__version__} (abc1234, dirty)"
 
 
+def test_sync_help_lists_subcommand_descriptions() -> None:
+    result = runner.invoke(cli.app, ["sync", "--help"])
+
+    assert result.exit_code == 0
+    assert "Sync bookmarks, likes, or authored tweets." in result.stdout
+    assert "bookmarks" in result.stdout
+    assert "Sync bookmarked tweets." in result.stdout
+    assert "likes" in result.stdout
+    assert "Sync liked tweets." in result.stdout
+    assert "tweets" in result.stdout
+    assert "Sync authored tweets." in result.stdout
+    assert "all" in result.stdout
+    assert "Sync bookmarks, then likes." in result.stdout
+
+
+def test_sync_likes_help_describes_flags() -> None:
+    result = runner.invoke(cli.app, ["sync", "likes", "--help"])
+
+    assert result.exit_code == 0
+    assert "Reset saved sync state for the targeted collection before syncing." in result.stdout
+    assert "Continue older history past duplicates without resetting sync state." in result.stdout
+    assert "Clear any saved backfill cursor for the targeted collection" in result.stdout
+    assert "Maximum number of pages to fetch for this run." in result.stdout
+
+
 def test_view_bookmarks_prints_rows(paths, monkeypatch) -> None:
     _seed_archive(paths)
     buffer = StringIO()

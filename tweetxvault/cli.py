@@ -52,7 +52,13 @@ auth_app = typer.Typer(no_args_is_help=True)
 export_app = typer.Typer(no_args_is_help=True)
 import_app = typer.Typer(no_args_is_help=True)
 media_app = typer.Typer(no_args_is_help=True)
-sync_app = typer.Typer(no_args_is_help=True)
+sync_app = typer.Typer(
+    no_args_is_help=True,
+    help=(
+        "Sync bookmarks, likes, or authored tweets. "
+        "Run 'tweetxvault sync <command> --help' to see that subcommand's flags."
+    ),
+)
 thread_app = typer.Typer(no_args_is_help=True)
 view_app = typer.Typer(no_args_is_help=True)
 
@@ -61,7 +67,11 @@ app.add_typer(auth_app, name="auth")
 app.add_typer(export_app, name="export")
 app.add_typer(import_app, name="import")
 app.add_typer(media_app, name="media")
-app.add_typer(sync_app, name="sync")
+app.add_typer(
+    sync_app,
+    name="sync",
+    help="Sync bookmarks, likes, or authored tweets.",
+)
 app.add_typer(thread_app, name="threads")
 app.add_typer(view_app, name="view")
 
@@ -75,10 +85,13 @@ ARTICLE_BACKFILL_HELP = (
     "Rewalk existing timeline pages without resetting sync state so older items can pick up "
     "new article fields."
 )
+SYNC_FULL_HELP = "Reset saved sync state for the targeted collection before syncing."
+SYNC_BACKFILL_HELP = "Continue older history past duplicates without resetting sync state."
 HEAD_ONLY_HELP = (
     "Clear any saved backfill cursor for the targeted collection and run only the head pass. "
     "Does not resume older historical backfill state."
 )
+SYNC_LIMIT_HELP = "Maximum number of pages to fetch for this run."
 SYNC_BROWSER_OPTION = Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)]
 SYNC_PROFILE_OPTION = Annotated[
     str | None,
@@ -400,12 +413,21 @@ def _run_sync_command(
 
 
 def _register_sync_collection_command(collection: str):
+    command_help = {
+        "bookmarks": "Sync bookmarked tweets.",
+        "likes": "Sync liked tweets.",
+        "tweets": "Sync authored tweets.",
+    }[collection]
+
     def command(
-        full: bool = False,
-        backfill: bool = False,
+        full: Annotated[bool, typer.Option("--full", help=SYNC_FULL_HELP)] = False,
+        backfill: Annotated[
+            bool,
+            typer.Option("--backfill", help=SYNC_BACKFILL_HELP),
+        ] = False,
         article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
         head_only: SYNC_HEAD_ONLY_OPTION = False,
-        limit: int | None = None,
+        limit: Annotated[int | None, typer.Option("--limit", help=SYNC_LIMIT_HELP)] = None,
         browser: SYNC_BROWSER_OPTION = None,
         profile: SYNC_PROFILE_OPTION = None,
         profile_path: SYNC_PROFILE_PATH_OPTION = None,
@@ -432,7 +454,7 @@ def _register_sync_collection_command(collection: str):
         )
 
     command.__name__ = f"sync_{collection}"
-    return sync_app.command(collection)(command)
+    return sync_app.command(collection, help=command_help)(command)
 
 
 def _format_created_at(raw: str | None) -> str:
@@ -662,13 +684,16 @@ sync_likes = _register_sync_collection_command("likes")
 sync_tweets = _register_sync_collection_command("tweets")
 
 
-@sync_app.command("all")
+@sync_app.command("all", help="Sync bookmarks, then likes.")
 def sync_everything(
-    full: bool = False,
-    backfill: bool = False,
+    full: Annotated[bool, typer.Option("--full", help=SYNC_FULL_HELP)] = False,
+    backfill: Annotated[
+        bool,
+        typer.Option("--backfill", help=SYNC_BACKFILL_HELP),
+    ] = False,
     article_backfill: SYNC_ARTICLE_BACKFILL_OPTION = False,
     head_only: SYNC_HEAD_ONLY_OPTION = False,
-    limit: int | None = None,
+    limit: Annotated[int | None, typer.Option("--limit", help=SYNC_LIMIT_HELP)] = None,
     browser: SYNC_BROWSER_OPTION = None,
     profile: SYNC_PROFILE_OPTION = None,
     profile_path: SYNC_PROFILE_PATH_OPTION = None,

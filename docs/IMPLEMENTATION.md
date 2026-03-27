@@ -163,6 +163,9 @@ Historical note: this was the shipped MVP backend after the SeekDB spike failed 
 - [x] Added `tweetxvault --version`:
   - prints the package semver and, when running from a git checkout, the short commit hash
   - appends `dirty` when tracked files differ from `HEAD`, which makes editable local-tool installs easier to verify before pushing
+- [x] Improved sync help output:
+  - `tweetxvault sync --help` now explains that it is a command group and lists descriptive summaries for `bookmarks`, `likes`, `tweets`, and `all`
+  - `tweetxvault sync <subcommand> --help` now gives real descriptions for `--full`, `--backfill`, and `--limit` instead of showing bare flag names
 - [x] First-run UX: all commands auto-create XDG dirs. `sync` commands validate auth before API calls, probe the target collection(s) before writing data, and print actionable errors (not stack traces) on failure.
 - [x] Exit codes: 0 success, 1 auth/config error, 2 API/network/runtime sync error. `sync all` uses 2 for partial runtime failure after reporting per-collection results.
 
