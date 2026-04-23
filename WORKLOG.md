@@ -2,6 +2,20 @@
 
 ## 2026-04-23
 
+- Prepared release metadata for `v0.2.4`:
+  - bumped package version from `0.2.3` to `0.2.4`
+  - summarized the new `--version` flag, default sync-maintenance run, follow-up
+    TTY progress, batched archive-enrich writes, interrupt-time archive compact,
+    clarified sync/follow-up docs, and the dev-dep/lock security refresh in
+    `CHANGELOG.md`
+  - release validation/build commands for this cut:
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check`
+    - `uv run ruff check`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv build`
+    - `uvx --from twine twine check dist/tweetxvault-0.2.4*`
+    - `uv run --isolated --with dist/tweetxvault-0.2.4-py3-none-any.whl tweetxvault --help`
+
 - Cleaned up dev-dep configuration and refreshed the lock for a clean security audit before the next release:
   - replaced the deprecated `[tool.uv].dev-dependencies` block with a PEP 735 `[dependency-groups].dev`; `uv sync` no longer prints the `tool.uv.dev-dependencies` deprecation warning
   - removed the duplicated `[project.optional-dependencies].dev` entry; only the new group remains
