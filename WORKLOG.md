@@ -1,5 +1,17 @@
 # WORKLOG
 
+## 2026-04-23
+
+- Cleaned up dev-dep configuration and refreshed the lock for a clean security audit before the next release:
+  - replaced the deprecated `[tool.uv].dev-dependencies` block with a PEP 735 `[dependency-groups].dev`; `uv sync` no longer prints the `tool.uv.dev-dependencies` deprecation warning
+  - removed the duplicated `[project.optional-dependencies].dev` entry; only the new group remains
+  - relaxed `pytest-asyncio` upper bound to `<2` and raised `pytest` to `>=9.0.3,<10` so the lock can pick up the pytest `/tmp/pytest-of-*` CVE fix (CVE-2025-71176)
+  - regenerated `uv.lock`: `pygments` 2.19.2 -> 2.20.0 (CVE-2026-4539 ReDoS in the unused ADL lexer), `pytest` 8.4.2 -> 9.0.3, `pytest-asyncio` 0.26.0 -> 1.3.0
+  - validation:
+    - `UV_CACHE_DIR=/tmp/uv-cache uvx pip-audit -r <uv export> --no-deps --disable-pip` -> `No known vulnerabilities found`
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q` -> 197 passed on pytest 9.0.3 / pytest-asyncio 1.3.0
+    - `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check` / `uv run ruff format --check` clean
+
 ## 2026-03-27
 
 - Added TTY-only progress/status output to follow-up maintenance commands:
