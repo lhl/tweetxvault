@@ -67,6 +67,10 @@ Use semver-style version bumps:
       `uvx --from twine twine upload dist/tweetxvault-X.Y.Z-py3-none-any.whl dist/tweetxvault-X.Y.Z.tar.gz`
 - [ ] Verify the published install path from PyPI:
       `uvx --refresh --from "tweetxvault==X.Y.Z" tweetxvault --help`
+- [ ] Extract the `## [X.Y.Z]` section body from `CHANGELOG.md` to a notes file
+      (stop before the next `## [` header and before the `[x.y.z]: ...` link
+      footer), then create the GitHub Release and mark it latest:
+      `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <path> --latest`
 - [ ] Verify the GitHub tag/release page and PyPI project page both show the new
       version correctly
 - [ ] Confirm the tree is clean again with `git status -sb`
@@ -86,3 +90,8 @@ Use semver-style version bumps:
   the release entry when the version is being prepared.
 - If a release includes breaking behavior or archive upgrade steps, add the
   upgrade note to both `README.md` and `CHANGELOG.md`.
+- GitHub Releases are a separate overlay on top of pushed git tags. Tags alone
+  do not populate the Releases page; `gh release create` is what exposes a tag
+  as a versioned release with notes and a browsable entry. Historical tags
+  `v0.1.0` through `v0.2.4` were backfilled on 2026-04-23 using the per-version
+  `CHANGELOG.md` sections as release notes.

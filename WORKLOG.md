@@ -2,6 +2,17 @@
 
 ## 2026-04-23
 
+- Backfilled GitHub Releases for every published tag so the project Releases
+  page stops being empty:
+  - created `v0.1.0`, `v0.1.1`, `v0.2.0`, `v0.2.1`, `v0.2.2`, `v0.2.3`, and
+    `v0.2.4` via `gh release create`, using each matching `## [X.Y.Z]` section
+    of `CHANGELOG.md` as the release body
+  - marked `v0.2.4` as the "Latest" release; the older ones as normal releases
+  - did not attach binary wheels/sdists to the GitHub Releases; PyPI stays the
+    canonical distribution channel
+  - added a `gh release create` step to `docs/PUBLISH.md` so future releases
+    create the GitHub Release alongside the PyPI publish
+
 - Prepared release metadata for `v0.2.4`:
   - bumped package version from `0.2.3` to `0.2.4`
   - summarized the new `--version` flag, default sync-maintenance run, follow-up
