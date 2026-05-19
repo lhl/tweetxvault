@@ -1,5 +1,36 @@
 # WORKLOG
 
+## 2026-05-19
+
+- Fixed missing article media for articles embedded via quoted/retweeted tweets in
+  likes/bookmarks/user-tweets timelines:
+  - problem: when a timeline tweet embeds an article via
+    `retweeted_status_result` or `quoted_status_result` (the article appears as a
+    `tweet_relation` such as `quote_of` / `retweet_of` on the liked/bookmarked
+    wrapper, not as the focal tweet), tweetxvault correctly extracts article text
+    (`title`, summary, `plain_text`) into an `article:{embedded_tweet_id}` row
+    with `status="body_present"`, but timeline payloads do not include
+    `cover_media` or `media_entities` for that embedded article block — so no
+    `article_cover` / `article_media` rows are persisted and `tweetxvault media
+    download` has nothing to fetch
+  - why `articles refresh` did not help before: default selection only targeted
+    preview-only article rows; embedded rows already had body text and were skipped
+  - fix: `ArchiveStore.get_article_tweet_ids_missing_article_media()` selects
+    article rows with no `article_cover` / `article_media` media rows; default
+    `articles refresh` unions those with preview-only rows and refetches via
+    authenticated `TweetDetail` (which returns full `cover_media` +
+    `media_entities`) through the existing `persist_tweet_detail` path — no
+    extractor changes
+  - added `--include-missing-article-media/--no-include-missing-article-media` CLI
+    flag (default on)
+  - tests cover storage selector, like-page `quote_of` persist + refresh backfill,
+    CLI forwarding, and opt-out behavior
+  - validation:
+    - `uv run ruff format --check tweetxvault tests`
+    - `uv run ruff check tweetxvault tests`
+    - `uv run pytest tests/test_storage.py tests/test_articles.py tests/test_media.py tests/test_cli.py -q`
+    - `uv run pytest -q`
+
 ## 2026-04-23
 
 - Backfilled GitHub Releases for every published tag so the project Releases

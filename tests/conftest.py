@@ -109,6 +109,7 @@ def make_article_result(
     preview_text: str,
     plain_text: str | None = None,
     url: str | None = None,
+    include_cover: bool = True,
 ) -> dict[str, object]:
     article: dict[str, object] = {
         "id": article_id,
@@ -116,10 +117,11 @@ def make_article_result(
         "title": title,
         "preview_text": preview_text,
         "metadata": {"first_published_at_secs": 1_742_003_200},
-        "cover_media": {
-            "media_info": {"original_img_url": "https://pbs.twimg.com/article-cover.jpg"}
-        },
     }
+    if include_cover:
+        article["cover_media"] = {
+            "media_info": {"original_img_url": "https://pbs.twimg.com/article-cover.jpg"}
+        }
     if plain_text is not None:
         article["plain_text"] = plain_text
     if url is not None:

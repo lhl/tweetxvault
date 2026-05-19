@@ -1001,6 +1001,16 @@ def refresh_archived_articles(
             "--all", help="Refresh all archived article rows, not just preview-only ones."
         ),
     ] = False,
+    include_missing_article_media: Annotated[
+        bool,
+        typer.Option(
+            "--include-missing-article-media/--no-include-missing-article-media",
+            help=(
+                "Also refresh article rows that already have body text but are missing "
+                "article cover/inline media rows."
+            ),
+        ),
+    ] = True,
     limit: ARTICLE_LIMIT_OPTION = None,
     browser: Annotated[str | None, typer.Option("--browser", help=BROWSER_HELP)] = None,
     profile: Annotated[
@@ -1028,6 +1038,7 @@ def refresh_archived_articles(
             refresh_articles(
                 targets=targets,
                 preview_only=not all_articles,
+                include_missing_article_media=include_missing_article_media,
                 limit=limit,
                 config=config,
                 paths=paths,

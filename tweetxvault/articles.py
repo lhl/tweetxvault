@@ -22,6 +22,7 @@ from tweetxvault.exceptions import ConfigError
 from tweetxvault.interactive import emit_status, progress_callback, status_printer
 from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
+from tweetxvault.storage import ArchiveStore
 from tweetxvault.utils import resolve_query_ids
 
 _STATUS_URL_RE = re.compile(r"/status/(\d+)")
@@ -44,10 +45,35 @@ def normalize_article_target(value: str) -> str:
     raise ConfigError(f"Unsupported article target '{value}'. Use a tweet ID or x.com status URL.")
 
 
+def _article_refresh_tweet_ids(
+    store: ArchiveStore,
+    *,
+    preview_only: bool,
+    include_missing_article_media: bool,
+    limit: int | None,
+) -> tuple[list[str], int]:
+    missing_article_media_added = 0
+    if preview_only:
+        tweet_ids = store.get_article_tweet_ids(preview_only=True, limit=None)
+        if include_missing_article_media:
+            seen = set(tweet_ids)
+            for tweet_id in store.get_article_tweet_ids_missing_article_media(limit=None):
+                if tweet_id not in seen:
+                    tweet_ids.append(tweet_id)
+                    seen.add(tweet_id)
+                    missing_article_media_added += 1
+    else:
+        tweet_ids = store.get_article_tweet_ids(preview_only=False, limit=None)
+    if limit is not None:
+        tweet_ids = tweet_ids[:limit]
+    return tweet_ids, missing_article_media_added
+
+
 async def refresh_articles(
     *,
     targets: list[str] | None = None,
     preview_only: bool = True,
+    include_missing_article_media: bool = True,
     limit: int | None = None,
     config: AppConfig | None = None,
     paths: XDGPaths | None = None,
@@ -69,8 +95,18 @@ async def refresh_articles(
             tweet_ids = [normalize_article_target(target) for target in targets]
             emit_status(status, f"explicit target refresh over {len(tweet_ids)} tweets")
         else:
-            tweet_ids = store.get_article_tweet_ids(preview_only=preview_only, limit=limit)
-            row_label = "preview-only article rows" if preview_only else "article rows"
+            tweet_ids, missing_article_media_added = _article_refresh_tweet_ids(
+                store,
+                preview_only=preview_only,
+                include_missing_article_media=include_missing_article_media,
+                limit=limit,
+            )
+            if preview_only and include_missing_article_media and missing_article_media_added:
+                row_label = "preview-only and missing-article-media article rows"
+            elif preview_only:
+                row_label = "preview-only article rows"
+            else:
+                row_label = "article rows"
             limit_suffix = "" if limit is None else f" (limit {limit})"
             emit_status(status, f"refreshing {len(tweet_ids)} {row_label}{limit_suffix}")
         result = ArticleRefreshResult()

@@ -357,3 +357,159 @@ async def test_refresh_articles_adapts_to_rate_limit_headers(paths, auth_bundle)
     assert result.updated == 2
     assert len(sleep_calls) == 1
     assert sleep_calls[0] > 3.0
+
+
+EMBEDDED_ARTICLE_TWEET_ID = "8888888888888888"
+LIKE_WRAPPER_TWEET_ID = "7777777777777777"
+
+
+def _seed_embedded_article_like(paths) -> None:
+    quoted = make_tweet_result(
+        EMBEDDED_ARTICLE_TWEET_ID,
+        "embedded article tweet",
+        user_id="5000",
+        article=make_article_result(
+            f"embedded-article-{EMBEDDED_ARTICLE_TWEET_ID}",
+            title="Embedded article title",
+            preview_text="Embedded summary",
+            plain_text="Embedded article body",
+            include_cover=False,
+        ),
+    )
+    wrapper = make_tweet_result(
+        LIKE_WRAPPER_TWEET_ID,
+        "liked quote",
+        user_id="6000",
+        quoted_tweet=quoted,
+    )
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id=LIKE_WRAPPER_TWEET_ID,
+                text="liked quote",
+                author_id="6000",
+                author_username="user6000",
+                author_display_name="User 6000",
+                created_at="Sat Mar 14 00:00:00 +0000 2026",
+                sort_index="10",
+                raw_json=wrapper,
+            )
+        ],
+        last_head_tweet_id=LIKE_WRAPPER_TWEET_ID,
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+    store.close()
+
+
+def _embedded_article_detail_payload() -> dict[str, object]:
+    article = make_article_result(
+        f"embedded-article-{EMBEDDED_ARTICLE_TWEET_ID}",
+        title="Embedded article title",
+        preview_text="Embedded summary",
+        plain_text="Embedded article body",
+        url=f"https://x.com/i/article/{EMBEDDED_ARTICLE_TWEET_ID}",
+    )
+    article["media_entities"] = [
+        {
+            "media_key": "article-inline-1",
+            "media_info": {"original_img_url": "https://pbs.twimg.com/article-inline.jpg"},
+        }
+    ]
+    return make_tweet_detail_response(
+        [
+            make_tweet_result(
+                EMBEDDED_ARTICLE_TWEET_ID,
+                "embedded article tweet",
+                user_id="5000",
+                article=article,
+            )
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_backfills_media_for_embedded_body_present_articles(
+    paths,
+    config,
+    auth_bundle,
+) -> None:
+    _seed_embedded_article_like(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        article_rows = store.list_article_rows(preview_only=False)
+        assert len(article_rows) == 1
+        assert article_rows[0]["tweet_id"] == EMBEDDED_ARTICLE_TWEET_ID
+        assert article_rows[0]["status"] == "body_present"
+        article_media = [
+            row
+            for row in store.list_media_rows()
+            if row["source"] in {"article_cover", "article_media"}
+        ]
+        assert article_media == []
+    finally:
+        store.close()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert f'"focalTweetId":"{EMBEDDED_ARTICLE_TWEET_ID}"' in request.url.params["variables"]
+        return httpx.Response(200, json=_embedded_article_detail_payload(), request=request)
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 1
+    assert result.updated == 1
+    assert result.failed == 0
+
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    try:
+        article_media = [
+            row
+            for row in store.list_media_rows()
+            if row["source"] in {"article_cover", "article_media"}
+        ]
+        assert len(article_media) == 2
+        assert {row["source"] for row in article_media} == {"article_cover", "article_media"}
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_articles_skips_missing_article_media_when_disabled(
+    paths,
+    config,
+    auth_bundle,
+) -> None:
+    _seed_embedded_article_like(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected request {request.url}")
+
+    result = await refresh_articles(
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        include_missing_article_media=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.processed == 0
+    assert result.updated == 0
+    assert result.failed == 0

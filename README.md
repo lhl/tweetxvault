@@ -467,9 +467,28 @@ Explicit thread targets are idempotent by default: previously expanded targets a
 
 ### Article Refresh
 
+When you like, bookmark, or sync a tweet that **quotes or retweets** an
+article-bearing post, the article is stored against the embedded tweet id as a
+`quote_of` / `retweet_of` relation — not as the focal timeline tweet. X's
+Bookmarks/Likes/UserTweets payloads include enough article text
+(`title`/`plain_text`) for a `body_present` row, but usually omit
+`cover_media` and inline `media_entities` on that embedded block. Sync therefore
+captures the article body without article cover/inline media, and
+`tweetxvault media download` has nothing article-sourced to fetch until the
+article is refetched.
+
+By default, `articles refresh` now also selects those body-present article rows
+missing `article_cover` / `article_media` entries and refetches them via
+authenticated `TweetDetail` (same path as a directly liked article tweet).
+Disable that extra pass with `--no-include-missing-article-media`.
+
 ```bash
 # Refresh preview-only archived article rows via TweetDetail
 uv run tweetxvault articles refresh
+
+# Default run also backfills article cover/inline media for embedded articles
+# (quoted/retweeted article tweets). Old preview-only behavior:
+# uv run tweetxvault articles refresh --no-include-missing-article-media
 
 # Refresh only the next 100 preview-only article rows
 uv run tweetxvault articles refresh --limit 100

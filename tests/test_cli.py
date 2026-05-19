@@ -1061,6 +1061,29 @@ def test_refresh_archived_articles_reports_runner_result(paths, monkeypatch) -> 
     assert "articles: 1 processed, 1 refreshed, 0 failed" in output
 
 
+def test_refresh_archived_articles_forwards_include_missing_article_media(paths, monkeypatch) -> None:
+    buffer = StringIO()
+    _capture_console(monkeypatch, buffer)
+    monkeypatch.setattr(cli, "load_config", lambda: (AppConfig(), paths))
+    monkeypatch.setattr(
+        cli,
+        "_prepare_auth_override",
+        lambda config, console, **kwargs: (config, SimpleNamespace(auth_token="token", ct0="ct0")),
+    )
+
+    captured: dict[str, object] = {}
+
+    async def fake_refresh_articles(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(processed=0, updated=0, failed=0)
+
+    monkeypatch.setattr(cli, "refresh_articles", fake_refresh_articles)
+
+    cli.refresh_archived_articles(include_missing_article_media=False)
+
+    assert captured["include_missing_article_media"] is False
+
+
 def test_expand_archive_threads_reports_runner_result(paths, monkeypatch) -> None:
     buffer = StringIO()
     _capture_console(monkeypatch, buffer)
