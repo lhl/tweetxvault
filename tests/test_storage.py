@@ -1229,3 +1229,133 @@ def test_export_rows_include_secondary_objects(paths) -> None:
     assert any(item["source"] == "tweet_media" for item in row["media"])
     assert row["urls"][0]["resolved"]["canonical_url"] == "https://example.com/story?keep=1"
     store.close()
+
+
+def test_get_article_tweet_ids_missing_article_media_selects_body_present_without_article_media(
+    paths,
+) -> None:
+    store = open_archive_store(paths, create=True)
+    assert store is not None
+
+    embedded_id = "9001"
+    wrapper_id = "9000"
+    quoted = make_tweet_result(
+        embedded_id,
+        "quoted article tweet",
+        user_id="2000",
+        article=make_article_result(
+            "embedded-article-9001",
+            title="Embedded title",
+            preview_text="Embedded summary",
+            plain_text="Embedded body",
+            include_cover=False,
+        ),
+    )
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id=wrapper_id,
+                text="liked quote",
+                author_id="1000",
+                author_username="user1000",
+                author_display_name="User 1000",
+                created_at="Sat Mar 14 00:00:00 +0000 2026",
+                sort_index="10",
+                raw_json=make_tweet_result(
+                    wrapper_id,
+                    "liked quote",
+                    user_id="1000",
+                    quoted_tweet=quoted,
+                ),
+            )
+        ],
+        last_head_tweet_id=wrapper_id,
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    full_id = "9100"
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id=full_id,
+                text="focal article tweet",
+                author_id="1100",
+                author_username="user1100",
+                author_display_name="User 1100",
+                created_at="Sat Mar 14 00:00:00 +0000 2026",
+                sort_index="10",
+                raw_json=make_tweet_result(
+                    full_id,
+                    "focal article tweet",
+                    user_id="1100",
+                    article=make_article_result(
+                        "full-article-9100",
+                        title="Full title",
+                        preview_text="Full summary",
+                        plain_text="Full body",
+                    ),
+                ),
+            )
+        ],
+        last_head_tweet_id=full_id,
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    preview_id = "9200"
+    store.persist_page(
+        operation="Likes",
+        collection_type="like",
+        cursor_in=None,
+        cursor_out=None,
+        http_status=200,
+        raw_json={"ok": True},
+        tweets=[
+            TimelineTweet(
+                tweet_id=preview_id,
+                text="preview article tweet",
+                author_id="1200",
+                author_username="user1200",
+                author_display_name="User 1200",
+                created_at="Sat Mar 14 00:00:00 +0000 2026",
+                sort_index="10",
+                raw_json=make_tweet_result(
+                    preview_id,
+                    "preview article tweet",
+                    user_id="1200",
+                    article=make_article_result(
+                        "preview-article-9200",
+                        title="Preview title",
+                        preview_text="Preview summary",
+                        include_cover=False,
+                    ),
+                ),
+            )
+        ],
+        last_head_tweet_id=preview_id,
+        backfill_cursor=None,
+        backfill_incomplete=False,
+    )
+
+    missing_article_media = store.get_article_tweet_ids_missing_article_media()
+    preview_only = store.get_article_tweet_ids(preview_only=True)
+
+    assert embedded_id in missing_article_media
+    assert full_id not in missing_article_media
+    assert preview_id in missing_article_media
+    assert preview_id in preview_only
+    assert embedded_id not in preview_only
+    store.close()

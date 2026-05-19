@@ -1571,6 +1571,30 @@ class ArchiveStore:
             for row in self.list_article_rows(preview_only=preview_only, limit=limit)
         ]
 
+    def get_article_tweet_ids_missing_article_media(
+        self,
+        *,
+        limit: int | None = None,
+    ) -> list[str]:
+        article_rows = self.table.search().where("record_type = 'article'").to_list()
+        media_rows = (
+            self.table.search()
+            .where(
+                _and_expr(
+                    "record_type = 'media'",
+                    _expr_in("source", {"article_cover", "article_media"}),
+                )
+            )
+            .to_list()
+        )
+        with_media = {row["tweet_id"] for row in media_rows if isinstance(row.get("tweet_id"), str)}
+        missing = sorted(
+            row["tweet_id"]
+            for row in article_rows
+            if isinstance(row.get("tweet_id"), str) and row["tweet_id"] not in with_media
+        )
+        return missing[:limit] if limit is not None else missing
+
     def list_tweet_objects_for_enrichment(
         self, *, limit: int | None = None
     ) -> list[dict[str, Any]]:
