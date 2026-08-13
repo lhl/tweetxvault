@@ -55,6 +55,7 @@ These are our architectural choices, made to serve tweetxvault's goals (unattend
 - **DB**: the shipped backend is pure LanceDB. The archive uses a denormalized single-table model that preserves page-atomic sync semantics while unlocking local FTS/vector search.
 - **Storage module shape**: use `tweetxvault/storage/backend.py` as the concrete backend module. The LanceDB design changes storage semantics enough that pretending we have a thin interchangeable database adapter would be misleading; keep one real backend implementation behind the `ArchiveStore` API.
 - **Primary capture approach**: Direct GraphQL API calls (httpx, async), not Playwright interception.
+- **Bluesky capture approach**: resolve a public handle to its AT Protocol PDS, page `app.bsky.feed.like` records from the repository, and hydrate referenced posts through the public AppView. Store them in the shared `like` collection with prefixed IDs and explicit source provenance; no Bluesky credentials are required.
 - **Query IDs**: Auto-discover query IDs from Twitter web JS bundles with an on-disk TTL cache + fallback static IDs (avoid manual weekly updates).
 - **Rate limiting/backoff**: Exponential backoff and cooldown on repeated `429` (parameters adjustable).
 - **Auth**: Cookie-based session auth (no username/password automation).
@@ -577,6 +578,7 @@ Primary commands:
 ```
 tweetxvault sync bookmarks            # incremental
 tweetxvault sync likes                # incremental
+tweetxvault sync bluesky HANDLE       # public Bluesky likes, no auth
 tweetxvault sync tweets               # your own authored tweets
 tweetxvault sync all                  # preflight both, then sync bookmarks + likes
 tweetxvault sync all --full           # full resync (ignore duplicates)

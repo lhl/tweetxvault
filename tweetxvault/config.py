@@ -55,11 +55,18 @@ class SyncConfig(BaseModel):
     timeout: float = Field(default=30.0, ge=1.0)
 
 
+class BlueskyConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    handle: str | None = None
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     auth: AuthConfig = Field(default_factory=AuthConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
+    bluesky: BlueskyConfig = Field(default_factory=BlueskyConfig)
 
 
 class XDGPaths(BaseModel):
@@ -182,4 +189,6 @@ def load_config(env: Mapping[str, str] | None = None) -> tuple[AppConfig, XDGPat
         config.auth = config.auth.model_copy(update=auth_updates)
     if sync_updates:
         config.sync = config.sync.model_copy(update=sync_updates)
+    if bluesky_handle := env.get("TWEETXVAULT_BLUESKY_HANDLE"):
+        config.bluesky = config.bluesky.model_copy(update={"handle": bluesky_handle})
     return config, paths

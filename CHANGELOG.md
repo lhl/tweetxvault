@@ -6,6 +6,17 @@ were backfilled from git tags and `WORKLOG.md`.
 
 The format is loosely based on Keep a Changelog.
 
+## [Unreleased]
+
+### Added
+
+- Added `tweetxvault sync bluesky HANDLE` for credential-free archival of public Bluesky likes into the shared Likes collection, including post text, author metadata, images, video playlists, external links, raw records, and source provenance.
+- Added `[bluesky].handle` / `TWEETXVAULT_BLUESKY_HANDLE` configuration so recurring runs can omit the handle argument.
+
+### Changed
+
+- JSON exports now include each membership row's `source`, and chronological sorting accepts both X timestamps and ISO 8601 timestamps from Bluesky.
+
 ## [0.2.5] - 2026-07-21
 
 ### Changed

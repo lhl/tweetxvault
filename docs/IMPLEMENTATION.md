@@ -11,6 +11,15 @@ Hard constraints:
 
 Definition of done: passes `uv run ruff format --check`, `uv run ruff check`, and `uv run pytest`.
 
+## Bluesky Likes
+
+- [x] Resolve Bluesky handles to DIDs and their declared AT Protocol PDS.
+- [x] Page public `app.bsky.feed.like` records and hydrate referenced posts in public AppView batches.
+- [x] Normalize posts, authors, images, videos, links, timestamps, raw records, and source provenance into the shared LanceDB archive.
+- [x] Keep per-account sync state isolated with a DID-scoped folder key and collision-proof `bsky:` post IDs.
+- [x] Add `tweetxvault sync bluesky [HANDLE] [--full] [--limit N]` plus config/env defaults.
+- [x] Cover URI normalization, environment config, public API requests, storage, media, links, and CLI help with tests.
+
 Planning note (2026-03-15):
 - The sections below describe the completed SQLite-backed MVP.
 - The SQLite -> LanceDB migration landed on 2026-03-15.

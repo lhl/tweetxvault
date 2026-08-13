@@ -166,6 +166,15 @@ def test_sync_likes_help_describes_flags() -> None:
     assert "Maximum number of pages to fetch for this" in result.stdout
 
 
+def test_sync_bluesky_help_describes_public_likes() -> None:
+    result = runner.invoke(cli.app, ["sync", "bluesky", "--help"])
+
+    assert result.exit_code == 0
+    assert "public likes" in result.stdout
+    assert "--full" in result.stdout
+    assert "--limit" in result.stdout
+
+
 def test_import_x_archive_help_describes_sample_limit() -> None:
     result = runner.invoke(cli.app, ["import", "x-archive", "--help"])
 

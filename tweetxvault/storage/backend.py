@@ -73,7 +73,10 @@ def _parse_created_at(raw: str | None) -> datetime | None:
     try:
         return datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
     except (TypeError, ValueError):
-        return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
 
 
 @dataclass(slots=True)
@@ -235,6 +238,7 @@ EMBEDDING_DIM = 384
 SECONDARY_RECORD_TYPES = ("tweet_object", "tweet_relation", "media", "url", "url_ref", "article")
 LIVE_SOURCE = "live_graphql"
 ARCHIVE_SOURCE = "x_archive"
+BLUESKY_SOURCE = "bluesky_api"
 SEARCH_KIND_POST = "post"
 SEARCH_KIND_ARTICLE = "article"
 SEARCH_COLLECTION_ORDER = ("bookmark", "like", "tweet")
@@ -1363,6 +1367,55 @@ class ArchiveStore:
         )
         self._merge_records(list(buffer.records.values()))
 
+    def persist_external_page(
+        self,
+        *,
+        operation: str,
+        collection_type: str,
+        folder_id: str,
+        cursor_in: str | None,
+        cursor_out: str | None,
+        http_status: int,
+        raw_json: dict[str, Any],
+        tweets: list[TimelineTweet],
+        graph: ExtractedTweetGraph,
+        source: str,
+        last_head_tweet_id: str | None,
+        backfill_cursor: str | None,
+        backfill_incomplete: bool,
+    ) -> None:
+        """Persist a normalized page from a non-X source into the shared archive."""
+        buffer = _PageBuffer()
+        self.append_raw_capture(
+            operation,
+            cursor_in,
+            cursor_out,
+            http_status,
+            raw_json,
+            source=source,
+            cursor=buffer,
+        )
+        for tweet in tweets:
+            self.upsert_tweet(tweet, cursor=buffer)
+            self.upsert_membership(
+                tweet.tweet_id,
+                collection_type,
+                source=source,
+                sort_index=tweet.sort_index,
+                folder_id=folder_id,
+                cursor=buffer,
+            )
+        self._buffer_secondary_graph(graph, source=source, cursor=buffer)
+        self.set_sync_state(
+            collection_type,
+            folder_id=folder_id,
+            last_head_tweet_id=last_head_tweet_id,
+            backfill_cursor=backfill_cursor,
+            backfill_incomplete=backfill_incomplete,
+            cursor=buffer,
+        )
+        self._merge_records(list(buffer.records.values()))
+
     def list_media_rows(
         self,
         *,
@@ -1851,6 +1904,7 @@ class ArchiveStore:
             filter_expr += f" AND collection_type = {_expr_quote(collection)}"
         tweet_columns = [
             "tweet_id",
+            "source",
             "text",
             "author_id",
             "author_username",
@@ -1957,6 +2011,7 @@ class ArchiveStore:
             exported.append(
                 {
                     "tweet_id": row["tweet_id"],
+                    "source": row["source"],
                     "text": row["text"],
                     "author": {
                         "id": row["author_id"],

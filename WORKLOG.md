@@ -1,5 +1,15 @@
 # WORKLOG
 
+## 2026-08-13
+
+- Added native public Bluesky-likes ingestion:
+  - resolves handles and PDS endpoints using AT Protocol identity documents
+  - pages `app.bsky.feed.like` records and hydrates post views in batches through the public Bluesky AppView
+  - stores normalized posts, authors, images, video playlists, links, raw captures, DID-scoped checkpoints, and `bluesky_api` provenance in the existing LanceDB Likes collection
+  - adds `tweetxvault sync bluesky`, `[bluesky].handle`, and `TWEETXVAULT_BLUESKY_HANDLE`
+  - exports membership source metadata and sorts Bluesky ISO 8601 timestamps chronologically alongside X timestamps
+  - validated a live bounded sync for `buruthebull.com`: 100 like records archived, including 98 currently available hydrated posts
+
 ## 2026-07-21
 
 - Prepared release metadata for `v0.2.5`:

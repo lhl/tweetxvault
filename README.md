@@ -1,10 +1,12 @@
 # tweetxvault
 
-A Python CLI tool for archiving your Twitter/X bookmarks, likes, and authored tweets into a local [LanceDB](https://lancedb.github.io/lancedb/) database, with support for importing official X archive exports into the same store. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
+A Python CLI tool for archiving Twitter/X bookmarks, likes, authored tweets, and public Bluesky likes into a local [LanceDB](https://lancedb.github.io/lancedb/) database, with support for importing official X archive exports into the same store. Runs unattended via cron, supports incremental sync with crash-safe resume, and preserves raw API responses so you never lose data.
 
 <img src="https://raw.githubusercontent.com/lhl/tweetxvault/main/docs/screenshot.png" alt="tweetxvault view all" width="800">
 
 ## Features
+
+- **Bluesky likes** — archives any account's public likes, posts, images, videos, and external links without Bluesky credentials
 
 - **Incremental sync** — fetches only new items by default; resumes interrupted backfills automatically
 - **Official X archive import** — imports authored tweets, deleted tweets, likes, and exported media from official X archive ZIPs/directories into the same local archive
@@ -204,6 +206,9 @@ uv run tweetxvault sync all
 uv run tweetxvault sync bookmarks
 uv run tweetxvault sync likes
 uv run tweetxvault sync tweets
+
+# Sync public Bluesky likes (no Bluesky login required)
+uv run tweetxvault sync bluesky buruthebull.com
 
 # Force a specific browser profile for this run
 uv run tweetxvault sync --browser chrome --profile "Profile 2"
@@ -537,6 +542,19 @@ while that compact is running to skip it and exit; if you do, run
 
 A process lock prevents overlapping runs.
 
+### Bluesky likes
+
+`tweetxvault sync bluesky HANDLE` resolves the handle to its personal data server, reads its public `app.bsky.feed.like` records, and hydrates the referenced posts through Bluesky's public AppView. Likes are merged into the normal `like` collection with `source: "bluesky_api"`; their IDs are prefixed with `bsky:` so they cannot collide with X status IDs. Deleted or otherwise unavailable referenced posts are preserved as sparse membership rows so incremental sync does not repeatedly crawl past them.
+
+You can omit the command argument by configuring a default handle:
+
+```toml
+[bluesky]
+handle = "buruthebull.com"
+```
+
+or by setting `TWEETXVAULT_BLUESKY_HANDLE`. Use `--limit N` for a bounded run or `--full` to reset only that Bluesky account's sync checkpoint. This command does not require or inspect X cookies, and it is intentionally separate from `tweetxvault sync all`.
+
 ## Configuration
 
 All configuration is optional. Defaults work out of the box with browser cookie extraction.
@@ -553,6 +571,8 @@ All configuration is optional. Defaults work out of the box with browser cookie 
 | `sync.cooldown_threshold` | `3` consecutive 429s | `TWEETXVAULT_COOLDOWN_THRESHOLD` |
 | `sync.cooldown_duration` | `300.0` s | `TWEETXVAULT_COOLDOWN_DURATION` |
 | `sync.timeout` | `30.0` s | `TWEETXVAULT_TIMEOUT` |
+
+The optional `bluesky.handle` setting maps to `TWEETXVAULT_BLUESKY_HANDLE`.
 
 TweetDetail-heavy jobs such as `tweetxvault import enrich`, `tweetxvault threads expand`,
 and `tweetxvault articles refresh` pace themselves from X's live rate-limit headers when

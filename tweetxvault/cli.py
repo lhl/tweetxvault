@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import httpx
 import typer
 from loguru import logger
 from rich import box
@@ -30,6 +31,7 @@ from tweetxvault.auth import (
     list_available_browser_candidates,
     resolve_auth_bundle,
 )
+from tweetxvault.bluesky import sync_bluesky_likes
 from tweetxvault.config import ensure_paths, load_config
 from tweetxvault.exceptions import ConfigError, ProcessLockError, TweetXVaultError
 from tweetxvault.export import export_html_archive, export_json_archive
@@ -104,6 +106,7 @@ HEAD_ONLY_HELP = (
     "Does not resume older historical backfill state."
 )
 SYNC_LIMIT_HELP = "Maximum number of pages to fetch for this run."
+BLUESKY_HANDLE_HELP = "Bluesky handle whose public likes should be archived."
 SYNC_SKIP_ENRICH_HELP = "Skip automatic archive TweetDetail enrichment after sync."
 SYNC_SKIP_ARTICLES_HELP = "Skip automatic article-body refresh after sync."
 SYNC_SKIP_MEDIA_HELP = "Skip automatic media downloads after sync."
@@ -718,7 +721,10 @@ def _parse_created_at(raw: str | None) -> datetime | None:
     try:
         return datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
     except (ValueError, TypeError):
-        return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
 
 
 def _search_result_score(row: dict[str, Any]) -> float:
@@ -754,6 +760,7 @@ class _TweetListRow:
     author_username: str | None
     author_id: str | None
     text: Text
+    source: str | None = None
     match: str | None = None
     score: str | None = None
 
@@ -767,6 +774,9 @@ def _format_tweet_text(raw: str | None, *, highlight_query: str | None = None) -
 
 
 def _tweet_row_url(row: _TweetListRow) -> str:
+    if row.source == "bluesky_api" and row.author_username and row.tweet_id:
+        rkey = row.tweet_id.rsplit(":", 1)[-1]
+        return f"https://bsky.app/profile/{row.author_username}/post/{rkey}"
     if row.author_username and row.tweet_id:
         return f"https://x.com/{row.author_username}/status/{row.tweet_id}"
     return f"https://x.com/i/web/status/{row.tweet_id or ''}"
@@ -845,6 +855,7 @@ def _render_archive_view(
             author_username=(row.get("author") or {}).get("username"),
             author_id=(row.get("author") or {}).get("id"),
             text=_format_tweet_text(row.get("text")),
+            source=row.get("source"),
         )
         for row in rows
     ]
@@ -870,6 +881,39 @@ def _highlight_search_matches(text: str, query: str) -> Text:
 sync_bookmarks = _register_sync_collection_command("bookmarks")
 sync_likes = _register_sync_collection_command("likes")
 sync_tweets = _register_sync_collection_command("tweets")
+
+
+@sync_app.command("bluesky", help="Sync public likes from a Bluesky account.")
+def sync_bluesky(
+    handle: Annotated[str | None, typer.Argument(help=BLUESKY_HANDLE_HELP)] = None,
+    full: Annotated[bool, typer.Option("--full", help=SYNC_FULL_HELP)] = False,
+    limit: Annotated[int | None, typer.Option("--limit", help=SYNC_LIMIT_HELP)] = None,
+) -> None:
+    """Archive the public likes collection for a Bluesky handle."""
+    console = _configure_logging()
+    config, paths = load_config()
+    target = handle or config.bluesky.handle
+    if not target:
+        console.print("[red]Provide a Bluesky handle or set TWEETXVAULT_BLUESKY_HANDLE.[/red]")
+        raise typer.Exit(1)
+    try:
+        result = asyncio.run(
+            sync_bluesky_likes(
+                target,
+                full=full,
+                limit=limit,
+                config=config,
+                paths=paths,
+                console=console,
+            )
+        )
+    except (httpx.HTTPError, ValueError, ProcessLockError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(
+        f"Bluesky sync complete for @{result.handle}: {result.posts_archived} new likes archived, "
+        f"{result.posts_hydrated} posts currently available ({result.stop_reason})."
+    )
 
 
 @sync_app.command("all", help=SYNC_ALL_HELP)
@@ -1799,6 +1843,7 @@ def search_archive(
                     author_username=row.get("author_username"),
                     author_id=row.get("author_id"),
                     text=_format_tweet_text(row.get("text"), highlight_query=query),
+                    source=row.get("source"),
                     match=match_label,
                     score=str(score) if score not in (None, "") else None,
                 )
