@@ -257,6 +257,11 @@ async def sync_bluesky_likes(
             folder_id = f"bluesky:{did}"
             if full:
                 store.reset_sync_state("like", folder_id=folder_id)
+            previous_state = store.get_sync_state("like", folder_id=folder_id)
+            saved_backfill = (
+                previous_state.backfill_cursor if previous_state.backfill_incomplete else None
+            )
+            resuming_backfill = False
             existing = set() if full else store.get_collection_tweet_ids("like")
             cursor: str | None = None
             pages = likes_seen = posts_archived = posts_hydrated = 0
@@ -317,6 +322,9 @@ async def sync_bluesky_likes(
                     likes_seen += len(records)
                     posts_archived += len(tweets)
                     posts_hydrated += len(views)
+                    state_cursor = (
+                        saved_backfill if saved_backfill and not resuming_backfill else next_cursor
+                    )
                     store.persist_external_page(
                         operation="BlueskyLikes",
                         collection_type="like",
@@ -329,8 +337,8 @@ async def sync_bluesky_likes(
                         graph=graph,
                         source=BLUESKY_SOURCE,
                         last_head_tweet_id=_post_id(subject_uris[0]) if subject_uris else None,
-                        backfill_cursor=next_cursor,
-                        backfill_incomplete=bool(next_cursor),
+                        backfill_cursor=state_cursor,
+                        backfill_incomplete=bool(state_cursor),
                     )
                     console.print(
                         f"Bluesky likes: page {pages}, {posts_archived} new posts archived"
@@ -338,6 +346,11 @@ async def sync_bluesky_likes(
                     if not records or not next_cursor:
                         break
                     if not full and subject_uris and not new_uris:
+                        if saved_backfill and not resuming_backfill:
+                            cursor = saved_backfill
+                            saved_backfill = None
+                            resuming_backfill = True
+                            continue
                         stop_reason = "existing_posts"
                         break
                     if limit is not None and pages >= limit:
