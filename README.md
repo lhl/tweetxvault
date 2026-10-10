@@ -553,6 +553,7 @@ All configuration is optional. Defaults work out of the box with browser cookie 
 | `sync.cooldown_threshold` | `3` consecutive 429s | `TWEETXVAULT_COOLDOWN_THRESHOLD` |
 | `sync.cooldown_duration` | `300.0` s | `TWEETXVAULT_COOLDOWN_DURATION` |
 | `sync.timeout` | `30.0` s | `TWEETXVAULT_TIMEOUT` |
+| `sync.thread_limit` | unlimited | `TWEETXVAULT_THREAD_LIMIT` |
 
 TweetDetail-heavy jobs such as `tweetxvault import enrich`, `tweetxvault threads expand`,
 and `tweetxvault articles refresh` pace themselves from X's live rate-limit headers when

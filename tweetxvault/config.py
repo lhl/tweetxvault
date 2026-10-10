@@ -53,6 +53,7 @@ class SyncConfig(BaseModel):
     cooldown_threshold: int = Field(default=3, ge=1)
     cooldown_duration: float = Field(default=300.0, ge=0)
     timeout: float = Field(default=30.0, ge=1.0)
+    thread_limit: int | None = Field(default=None, ge=1)
 
 
 class AppConfig(BaseModel):
@@ -175,6 +176,7 @@ def load_config(env: Mapping[str, str] | None = None) -> tuple[AppConfig, XDGPat
         "cooldown_threshold": _env_int(env, "TWEETXVAULT_COOLDOWN_THRESHOLD"),
         "cooldown_duration": _env_float(env, "TWEETXVAULT_COOLDOWN_DURATION"),
         "timeout": _env_float(env, "TWEETXVAULT_TIMEOUT"),
+        "thread_limit": _env_int(env, "TWEETXVAULT_THREAD_LIMIT"),
     }
     sync_updates = {key: value for key, value in sync_updates.items() if value is not None}
 

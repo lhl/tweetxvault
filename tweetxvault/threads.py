@@ -23,6 +23,7 @@ from tweetxvault.extractor import extract_status_id_from_url
 from tweetxvault.jobs import locked_archive_job, resolve_job_context
 from tweetxvault.query_ids import QueryIdStore, refresh_query_ids
 from tweetxvault.storage import ArchiveStore
+from tweetxvault.storage.backend import _PageBuffer
 from tweetxvault.utils import resolve_query_ids
 
 _SCAN_PROGRESS_EVERY = 100
@@ -34,6 +35,42 @@ class ThreadExpandResult:
     expanded: int = 0
     skipped: int = 0
     failed: int = 0
+
+
+THREAD_WRITE_BATCH = 50
+OPTIMIZE_EVERY = 1000
+
+
+class _ThreadWrites:
+    """Buffers expanded threads so a run makes one LanceDB write per batch, not per thread.
+
+    Every write adds a fragment that later merges and lookups scan until optimize() folds it
+    in, so per-thread writes make a long expansion run progressively slower."""
+
+    def __init__(self, store: ArchiveStore, mark_dirty: Callable[[int, int], None] | None) -> None:
+        self.store = store
+        self.mark_dirty = mark_dirty
+        self.buffer = _PageBuffer()
+        self.pending = 0
+        self.since_optimize = 0
+
+    def add(self) -> None:
+        self.pending += 1
+        if self.pending >= THREAD_WRITE_BATCH:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self.buffer.records:
+            return
+        self.store.merge_rows(list(self.buffer.records.values()))
+        if self.mark_dirty is not None:
+            self.mark_dirty(len(self.buffer.records), 1)
+        self.since_optimize += self.pending
+        self.buffer = _PageBuffer()
+        self.pending = 0
+        if self.since_optimize >= OPTIMIZE_EVERY:
+            self.store.optimize()
+            self.since_optimize = 0
 
 
 def normalize_thread_target(value: str) -> str:
@@ -126,8 +163,8 @@ async def _expand_target(
     client: httpx.AsyncClient,
     config: AppConfig,
     console: Console,
+    writes: _ThreadWrites,
     pacer: AdaptiveRequestPacer | None = None,
-    mark_dirty: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     payload, tweets = await _fetch_detail(
         tweet_id=tweet_id,
@@ -142,9 +179,9 @@ async def _expand_target(
         focal_tweet_id=tweet_id,
         tweets=tweets,
         raw_json=payload,
+        cursor=writes.buffer,
     )
-    if mark_dirty is not None:
-        mark_dirty(1, 1)
+    writes.add()
     return [tweet.tweet_id for tweet in tweets]
 
 
@@ -161,8 +198,8 @@ async def _try_expand_target(
     known_tweet_ids: set[str],
     result: ThreadExpandResult,
     console: Console,
+    writes: _ThreadWrites,
     pacer: AdaptiveRequestPacer | None = None,
-    mark_dirty: Callable[[int, int], None] | None = None,
 ) -> None:
     result.processed += 1
     attempted_targets.add(tweet_id)
@@ -175,8 +212,8 @@ async def _try_expand_target(
             client=client,
             config=config,
             console=console,
+            writes=writes,
             pacer=pacer,
-            mark_dirty=mark_dirty,
         )
     except Exception as exc:
         result.failed += 1
@@ -236,6 +273,7 @@ async def expand_threads(
             attempted_targets: set[str] = set()
             known_tweet_ids: set[str] = set()
             pacer = AdaptiveRequestPacer(config.sync.detail_delay)
+            writes = _ThreadWrites(store, job.mark_dirty)
 
             if targets:
                 requested, duplicate_count = _dedupe_targets(
@@ -272,8 +310,8 @@ async def expand_threads(
                         known_tweet_ids=known_tweet_ids,
                         result=result,
                         console=console,
+                        writes=writes,
                         pacer=pacer,
-                        mark_dirty=job.mark_dirty,
                     )
                     _log_scan_progress(
                         console,
@@ -317,8 +355,8 @@ async def expand_threads(
                         known_tweet_ids=known_tweet_ids,
                         result=result,
                         console=console,
+                        writes=writes,
                         pacer=pacer,
-                        mark_dirty=job.mark_dirty,
                     )
                     _log_scan_progress(
                         console,
@@ -389,8 +427,8 @@ async def expand_threads(
                             known_tweet_ids=known_tweet_ids,
                             result=result,
                             console=console,
+                            writes=writes,
                             pacer=pacer,
-                            mark_dirty=job.mark_dirty,
                         )
                         _log_scan_progress(
                             console,
@@ -401,5 +439,6 @@ async def expand_threads(
                         )
         finally:
             await client.aclose()
+            writes.flush()
 
         return result
