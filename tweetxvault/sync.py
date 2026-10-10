@@ -521,7 +521,7 @@ async def _run_followup_threads(
     from tweetxvault.threads import expand_threads
 
     return await expand_threads(
-        limit=None,
+        limit=config.sync.thread_limit,
         config=config,
         paths=paths,
         auth_bundle=auth_bundle,

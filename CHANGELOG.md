@@ -6,6 +6,21 @@ were backfilled from git tags and `WORKLOG.md`.
 
 The format is loosely based on Keep a Changelog.
 
+## [Unreleased]
+
+### Changed
+
+- Thread expansion now writes to the archive once per 50 threads instead of once
+  per thread, looks up each thread's existing rows in one batched query, and
+  compacts every 1,000 threads. Long expansion runs previously slowed down as
+  every write added a LanceDB fragment that later merges and lookups had to scan.
+- `tweetxvault optimize` now also maintains a BTREE index on `row_key`.
+
+### Added
+
+- `sync.thread_limit` / `TWEETXVAULT_THREAD_LIMIT` caps how many threads one
+  `sync` follow-up expands, so scheduled runs finish within their interval.
+
 ## [0.2.5] - 2026-07-21
 
 ### Changed

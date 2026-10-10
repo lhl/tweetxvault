@@ -548,27 +548,7 @@ def _chunked(items: list[_T], size: int):
 
 
 def _secondary_graph_row_keys(store: ArchiveStore, graph: ExtractedTweetGraph) -> list[str]:
-    row_keys: list[str] = []
-    row_keys.extend(
-        store._row_key_for_tweet_object(item.tweet_id) for item in graph.tweet_objects.values()
-    )
-    row_keys.extend(
-        store._row_key_for_tweet_relation(
-            item.source_tweet_id,
-            item.relation_type,
-            item.target_tweet_id,
-        )
-        for item in graph.relations.values()
-    )
-    row_keys.extend(
-        store._row_key_for_media(item.tweet_id, item.media_key) for item in graph.media.values()
-    )
-    row_keys.extend(store._row_key_for_url(item.url_hash) for item in graph.urls.values())
-    row_keys.extend(
-        store._row_key_for_url_ref(item.tweet_id, item.position) for item in graph.url_refs.values()
-    )
-    row_keys.extend(store._row_key_for_article(item.tweet_id) for item in graph.articles.values())
-    return row_keys
+    return store.secondary_graph_row_keys(graph)
 
 
 def _import_authored_tweets(

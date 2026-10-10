@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from io import StringIO
 
 import httpx
@@ -472,3 +473,77 @@ async def test_expand_threads_logs_rate_limit_progress(
     assert "thread 100: rate limited (HTTP 429), retry 1/1 in 0.1s" in text
     assert "thread 100: rate limited repeatedly, cooling down for 0.0s" in text
     assert "thread 100: failed (Rate limit persisted after retries and cooldown.)" in text
+
+
+def _detail_for_requested_focal(request: httpx.Request) -> httpx.Response:
+    tweet_id = json.loads(request.url.params["variables"])["focalTweetId"]
+    payload = make_tweet_detail_response([make_tweet_result(tweet_id, f"thread {tweet_id}")])
+    return httpx.Response(200, json=payload, request=request)
+
+
+@pytest.mark.asyncio
+async def test_expand_threads_batches_archive_writes(
+    paths, config, auth_bundle, monkeypatch
+) -> None:
+    import tweetxvault.threads as threads_mod
+    from tweetxvault.storage.backend import ArchiveStore
+
+    _seed_thread_archive(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    monkeypatch.setattr(threads_mod, "THREAD_WRITE_BATCH", 2)
+    writes: list[int] = []
+    merge_rows = ArchiveStore.merge_rows
+
+    def counting_merge_rows(self, rows):
+        writes.append(len(rows))
+        merge_rows(self, rows)
+
+    monkeypatch.setattr(ArchiveStore, "merge_rows", counting_merge_rows)
+
+    result = await expand_threads(
+        targets=["100", "200", "300"],
+        refresh=True,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(_detail_for_requested_focal),
+    )
+
+    assert result.expanded == 3
+    # One write for the first full batch, one for the remainder flushed at the end.
+    assert len(writes) == 2
+    store = open_archive_store(paths, create=False)
+    assert store is not None
+    expanded = set(store.list_raw_capture_target_ids("ThreadExpandDetail"))
+    bookmarked = store._rows_for_values("tweet", "tweet_id", ["100"])
+    store.close()
+    assert expanded == {"100", "200", "300"}
+    assert [row["text"] for row in bookmarked] == ["thread 100"]
+
+
+@pytest.mark.asyncio
+async def test_expand_threads_compacts_periodically(
+    paths, config, auth_bundle, monkeypatch
+) -> None:
+    import tweetxvault.threads as threads_mod
+    from tweetxvault.storage.backend import ArchiveStore
+
+    _seed_thread_archive(paths)
+    QueryIdStore(paths).save({"TweetDetail": "detail-qid"})
+    monkeypatch.setattr(threads_mod, "THREAD_WRITE_BATCH", 1)
+    monkeypatch.setattr(threads_mod, "OPTIMIZE_EVERY", 2)
+    calls: list[int] = []
+    monkeypatch.setattr(ArchiveStore, "optimize", lambda self: calls.append(1))
+
+    result = await expand_threads(
+        targets=["100", "200", "300"],
+        refresh=True,
+        config=config,
+        paths=paths,
+        auth_bundle=auth_bundle,
+        transport=httpx.MockTransport(_detail_for_requested_focal),
+    )
+
+    assert result.expanded == 3
+    # Once after the 2nd thread is written, plus the job's own optimize at exit.
+    assert len(calls) == 2

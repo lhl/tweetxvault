@@ -18,7 +18,7 @@ from typing import Any
 import lancedb
 import numpy as np
 import pyarrow as pa
-from lancedb.index import FTS
+from lancedb.index import FTS, BTree
 
 from tweetxvault.client.timelines import TimelineTweet, parse_tweet_detail_tweets
 from tweetxvault.config import XDGPaths
@@ -349,6 +349,32 @@ class ArchiveStore:
 
     def _row_key_for_article(self, tweet_id: str) -> str:
         return f"article:{tweet_id}"
+
+    def secondary_graph_row_keys(self, graph: ExtractedTweetGraph) -> list[str]:
+        row_keys: list[str] = []
+        row_keys.extend(
+            self._row_key_for_tweet_object(item.tweet_id) for item in graph.tweet_objects.values()
+        )
+        row_keys.extend(
+            self._row_key_for_tweet_relation(
+                item.source_tweet_id,
+                item.relation_type,
+                item.target_tweet_id,
+            )
+            for item in graph.relations.values()
+        )
+        row_keys.extend(
+            self._row_key_for_media(item.tweet_id, item.media_key) for item in graph.media.values()
+        )
+        row_keys.extend(self._row_key_for_url(item.url_hash) for item in graph.urls.values())
+        row_keys.extend(
+            self._row_key_for_url_ref(item.tweet_id, item.position)
+            for item in graph.url_refs.values()
+        )
+        row_keys.extend(
+            self._row_key_for_article(item.tweet_id) for item in graph.articles.values()
+        )
+        return row_keys
 
     def _get_row(self, row_key: str) -> dict[str, Any] | None:
         rows = self.table.search().where(f"row_key = {_expr_quote(row_key)}").limit(1).to_list()
@@ -1616,11 +1642,11 @@ class ArchiveStore:
     def _refresh_tweet_records_for_detail(
         self,
         tweet: TimelineTweet,
+        rows: list[dict[str, Any]],
         *,
         cursor: _PageBuffer,
     ) -> None:
         legacy = tweet.raw_json.get("legacy") or {}
-        rows = self._rows_for_values("tweet", "tweet_id", [tweet.tweet_id])
         now = utc_now()
         for row in rows:
             updated = dict(row)
@@ -1657,8 +1683,15 @@ class ArchiveStore:
         *,
         cursor: _PageBuffer,
     ) -> None:
+        rows_by_tweet_id: dict[str, list[dict[str, Any]]] = {}
+        for row in self._rows_for_values("tweet", "tweet_id", [tweet.tweet_id for tweet in tweets]):
+            # A buffer shared across details may already hold a newer version of this row.
+            row = cursor.records.get(row["row_key"], row)
+            rows_by_tweet_id.setdefault(row["tweet_id"], []).append(row)
         for tweet in tweets:
-            self._refresh_tweet_records_for_detail(tweet, cursor=cursor)
+            self._refresh_tweet_records_for_detail(
+                tweet, rows_by_tweet_id.get(tweet.tweet_id, []), cursor=cursor
+            )
 
     def persist_tweet_detail(
         self,
@@ -1699,18 +1732,19 @@ class ArchiveStore:
     ) -> None:
         owns_buffer = cursor is None
         buffer = cursor or _PageBuffer()
+        graph = extract_thread_objects([tweet.raw_json for tweet in tweets])
+        # One batched lookup per thread instead of one query per tweet/object row.
+        self.prefetch_rows(self.secondary_graph_row_keys(graph), cursor=buffer)
+        self._refresh_tweet_records_for_details(tweets, cursor=buffer)
+        self._buffer_secondary_graph(graph, source=LIVE_SOURCE, cursor=buffer)
+        # Queued last: the capture marks the target as expanded, so a failure above must not
+        # leave it behind in a shared buffer.
         self.append_raw_capture(
             "ThreadExpandDetail",
             focal_tweet_id,
             None,
             http_status,
             raw_json,
-            source=LIVE_SOURCE,
-            cursor=buffer,
-        )
-        self._refresh_tweet_records_for_details(tweets, cursor=buffer)
-        self._buffer_secondary_graph(
-            extract_thread_objects([tweet.raw_json for tweet in tweets]),
             source=LIVE_SOURCE,
             cursor=buffer,
         )
@@ -2377,6 +2411,15 @@ class ArchiveStore:
         new_table = arrow_table.set_column(embedding_col_idx, "embedding", null_embeddings)
         self.table = self.db.create_table(self.TABLE_NAME, new_table, mode="overwrite")
 
+    def ensure_row_key_index(self) -> None:
+        """Index row_key: every single-row lookup filters on it, and without an index each one
+        scans the whole table. optimize() folds newly written fragments into it."""
+        if self.table.count_rows() == 0:
+            return
+        if any(getattr(idx, "columns", None) == ["row_key"] for idx in self.table.list_indices()):
+            return
+        self.table.create_index("row_key", config=BTree())
+
     def ensure_fts_index(self) -> None:
         """Create the tweet-text FTS index if it doesn't exist."""
         indices = self.table.list_indices()
@@ -2743,6 +2786,7 @@ class ArchiveStore:
         return len(self.table.list_versions())
 
     def optimize(self) -> None:
+        self.ensure_row_key_index()
         self.table.optimize(cleanup_older_than=timedelta(seconds=0))
 
 
